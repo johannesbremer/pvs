@@ -100,6 +100,8 @@ import {
   RenderEauDocumentResult,
   RenderErpBundleArgs,
   RenderErpBundleResult,
+  RunValidationArgs,
+  RunValidationResult,
   ValidationSummaryArgs,
   ValidationSummaryResult,
 } from "../src/domain/emission";
@@ -467,6 +469,13 @@ export const IntegrationGroup = GroupSpec.make("integration")
       name: "getValidationSummary",
       args: ValidationSummaryArgs,
       returns: ValidationSummaryResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "runValidation",
+      args: RunValidationArgs,
+      returns: RunValidationResult,
     }),
   );
 

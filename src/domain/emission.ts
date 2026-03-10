@@ -4,7 +4,11 @@ import { Schema } from "effect";
 import { AttachmentRefValue, IsoDate, IsoDateTime } from "../../confect/tables/primitives";
 import { EauPayload } from "../fhir-r4-effect/resources/eau";
 import { ErpPayload } from "../fhir-r4-effect/resources/erp";
-import { OraclePlanFields, OraclePluginFields } from "../../tools/oracles/types";
+import {
+  OracleExecutionResultFields,
+  OraclePlanFields,
+  OraclePluginFields,
+} from "../../tools/oracles/types";
 
 export const XmlRenderResult = Schema.Struct({
   family: Schema.Literal("ERP", "EAU"),
@@ -135,4 +139,30 @@ export const ValidationSummaryMissing = Schema.Struct({
 export const ValidationSummaryResult = Schema.Union(
   ValidationSummaryFound,
   ValidationSummaryMissing,
+);
+
+export const RunValidationArgs = Schema.Struct({
+  artifactId: GenericId.GenericId("artifacts"),
+  family: Schema.optional(Schema.String),
+  documentId: Schema.optional(GenericId.GenericId("clinicalDocuments")),
+  profileVersion: Schema.optional(Schema.String),
+  payloadPreviewXml: Schema.optional(Schema.String),
+  payloadPreview: Schema.optional(Schema.String),
+});
+export const RunValidationMissing = Schema.Struct({
+  outcome: Schema.Literal("artifact-not-found"),
+});
+export const RunValidationUnsupported = Schema.Struct({
+  outcome: Schema.Literal("no-oracle-plan"),
+});
+export const RunValidationCompleted = Schema.Struct({
+  outcome: Schema.Literal("completed"),
+  plan: OraclePlanFields,
+  report: OracleExecutionResultFields,
+  validationStatus: Schema.Literal("valid", "invalid"),
+});
+export const RunValidationResult = Schema.Union(
+  RunValidationMissing,
+  RunValidationUnsupported,
+  RunValidationCompleted,
 );

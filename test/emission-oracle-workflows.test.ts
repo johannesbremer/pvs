@@ -184,6 +184,13 @@ describe("emission and oracle workflows", () => {
             documentId: finalized.documentId,
           },
         );
+        const validationRun = yield* test.mutation(
+          refs.public.integration.runValidation,
+          {
+            artifactId: finalized.artifactId,
+            payloadPreviewXml: rendered.found ? rendered.xml.xml : undefined,
+          },
+        );
         const validation = yield* test.query(
           refs.public.integration.getValidationSummary,
           {
@@ -191,7 +198,7 @@ describe("emission and oracle workflows", () => {
           },
         );
 
-        return { rendered, plan, validation };
+        return { rendered, plan, validationRun, validation };
       }),
     );
 
@@ -205,9 +212,14 @@ describe("emission and oracle workflows", () => {
     if (result.plan.found) {
       expect(result.plan.plan.inputKind).toBe("fhir-xml");
     }
+    expect(result.validationRun.outcome).toBe("completed");
+    if (result.validationRun.outcome === "completed") {
+      expect(result.validationRun.validationStatus).toBe("valid");
+      expect(result.validationRun.report.passed).toBe(true);
+    }
     expect(result.validation.found).toBe(true);
     if (result.validation.found) {
-      expect(result.validation.validationStatus).toBe("pending");
+      expect(result.validation.validationStatus).toBe("valid");
     }
   });
 
@@ -306,5 +318,65 @@ describe("emission and oracle workflows", () => {
     expect(result.created.patientViewArtifactId).toBeDefined();
     expect(result.created.employerViewArtifactId).toBeDefined();
     expect(result.created.insurerViewArtifactId).toBeDefined();
+  });
+
+  it("marks artifacts invalid when oracle validation receives broken XML", async () => {
+    const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const test = yield* TestConfect;
+        const artifactId = yield* test.run(
+          Effect.gen(function* () {
+            const writer = yield* DatabaseWriter;
+            return yield* writer.table("artifacts").insert({
+              ownerKind: "documentRevision",
+              ownerId: "revision-1",
+              direction: "outbound",
+              artifactFamily: "ERP",
+              artifactSubtype: "kbv-bundle-xml",
+              transportKind: "fhir-bundle-xml",
+              contentType: "application/fhir+xml",
+              attachment: {
+                storageId: seedStorageId,
+                contentType: "application/fhir+xml",
+                byteSize: 1,
+                sha256: "broken-erp",
+              },
+              validationStatus: "pending",
+              immutableAt: "2026-03-10T11:00:00.000Z",
+            });
+          }),
+          GenericId.GenericId("artifacts"),
+        );
+
+        const validationRun = yield* test.mutation(
+          refs.public.integration.runValidation,
+          {
+            artifactId,
+            payloadPreviewXml: "<Bundle></Bundle>",
+          },
+        );
+        const validation = yield* test.query(
+          refs.public.integration.getValidationSummary,
+          {
+            artifactId,
+          },
+        );
+
+        return {
+          validationRun,
+          validation,
+        };
+      }),
+    );
+
+    expect(result.validationRun.outcome).toBe("completed");
+    if (result.validationRun.outcome === "completed") {
+      expect(result.validationRun.validationStatus).toBe("invalid");
+      expect(result.validationRun.report.passed).toBe(false);
+    }
+    expect(result.validation.found).toBe(true);
+    if (result.validation.found) {
+      expect(result.validation.validationStatus).toBe("invalid");
+    }
   });
 });

@@ -52,10 +52,12 @@ import {
   ListOraclePluginsArgs,
   RenderEauDocumentArgs,
   RenderErpBundleArgs,
+  RunValidationArgs,
   ValidationSummaryArgs,
 } from "../src/domain/emission";
 import { renderEauBundleXml, renderErpBundleXml } from "../src/codecs/xml/fhir";
 import { buildOraclePlan, listOraclePlugins as listRegisteredOraclePlugins } from "../tools/oracles/framework";
+import { buildAndExecuteOraclePlan, resolveOracleFamily } from "../tools/oracles/runtime";
 
 type PatientId = Id<"patients">;
 type SnapshotId = Id<"vsdSnapshots">;
@@ -3039,6 +3041,59 @@ const getValidationSummary = ({ artifactId }: typeof ValidationSummaryArgs.Type)
     };
   });
 
+const runValidation = ({
+  artifactId,
+  family,
+  documentId,
+  profileVersion,
+  payloadPreviewXml,
+  payloadPreview,
+}: typeof RunValidationArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const writer = yield* DatabaseWriter;
+    const artifactOption = yield* reader
+      .table("artifacts")
+      .get(artifactId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(artifactOption)) {
+      return { outcome: "artifact-not-found" as const };
+    }
+
+    const artifact = artifactOption.value;
+    const resolvedFamily = family ?? resolveOracleFamily(artifact.artifactFamily);
+    if (!resolvedFamily) {
+      return { outcome: "no-oracle-plan" as const };
+    }
+
+    const executed = buildAndExecuteOraclePlan({
+      family: resolvedFamily,
+      artifactId: String(artifactId),
+      ...(documentId ? { documentId: String(documentId) } : {}),
+      ...(profileVersion ? { profileVersion } : {}),
+      ...(payloadPreviewXml ? { payloadPreviewXml } : {}),
+      ...(payloadPreview ? { payloadPreview } : {}),
+    });
+
+    if (!executed) {
+      return { outcome: "no-oracle-plan" as const };
+    }
+
+    const validationStatus = executed.report.passed ? "valid" : "invalid";
+    yield* writer.table("artifacts").patch(artifactId, {
+      validationStatus,
+      validationSummary: executed.report.summary,
+    });
+
+    return {
+      outcome: "completed" as const,
+      plan: executed.plan,
+      report: executed.report,
+      validationStatus,
+    };
+  });
+
 const patientsGroup = GroupImpl.make(api, "patients").pipe(
   Layer.provide([
       FunctionImpl.make(api, "patients", "createManual", createManual),
@@ -3209,6 +3264,7 @@ const integrationGroup = GroupImpl.make(api, "integration").pipe(
     FunctionImpl.make(api, "integration", "listOraclePlugins", listOraclePlugins),
     FunctionImpl.make(api, "integration", "buildValidationPlan", buildValidationPlan),
     FunctionImpl.make(api, "integration", "getValidationSummary", getValidationSummary),
+    FunctionImpl.make(api, "integration", "runValidation", runValidation),
   ]),
 );
 

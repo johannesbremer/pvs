@@ -45,3 +45,21 @@ export const OracleReportFields = Schema.Struct({
 });
 
 export type OracleReport = Schema.Schema.Type<typeof OracleReportFields>;
+
+export const OracleFindingFields = Schema.Struct({
+  code: Schema.String,
+  severity: Schema.Literal("info", "warning", "error"),
+  message: Schema.String,
+});
+
+export type OracleFinding = Schema.Schema.Type<typeof OracleFindingFields>;
+
+export const OracleExecutionResultFields = Schema.Struct({
+  family: Schema.String,
+  passed: Schema.Boolean,
+  findings: Schema.Array(OracleFindingFields),
+  summary: Schema.String,
+});
+
+export type OracleExecutionResult =
+  Schema.Schema.Type<typeof OracleExecutionResultFields>;
