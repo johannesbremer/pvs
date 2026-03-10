@@ -1,0 +1,27 @@
+{
+  "name": "pvs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "codegen": "confect codegen",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@confect/cli": "^2.0.0",
+    "@confect/core": "latest",
+    "@confect/server": "latest",
+    "@effect/platform": "^0.94.5",
+    "@effect/platform-node": "^0.104.1",
+    "convex": "^1.32.0",
+    "effect": "latest"
+  },
+  "devDependencies": {
+    "@confect/test": "latest",
+    "@types/node": "latest",
+    "fast-check": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}
