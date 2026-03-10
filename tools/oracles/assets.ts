@@ -2,11 +2,29 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const fhirValidatorAssetsCache = new Map<
+  string,
+  Promise<{
+    validatorJar: string;
+    packageRoot: string;
+    igPaths: Array<string>;
+  }>
+>();
+const fhirValidatorDependencyCache = new Map<
+  string,
+  Promise<
+    Array<{
+      packageId: string;
+      version: string;
+      installDir: string;
+    }>
+  >
+>();
 
 export interface KbvOracleAsset {
   readonly assetId: string;
@@ -52,45 +70,62 @@ export const kbvOracleAssets = {
     fileName: "eAU_Beispiele_V1.2.zip",
     extract: true,
   },
-  kbvFhirErp_1_3_3: {
-    assetId: "kbvFhirErp_1_3_3",
-    url: "https://update.kbv.de/ita-update/DigitaleMuster/ERP/KBV_FHIR_eRP_V1.3.3_zur_Validierung.zip",
-    fileName: "KBV_FHIR_eRP_V1.3.3_zur_Validierung.zip",
+  kbvFhirErp_1_4_1: {
+    assetId: "kbvFhirErp_1_4_1",
+    url: "https://update.kbv.de/ita-update/DigitaleMuster/ERP/Q3_2026/KBV_FHIR_eRP_V1.4.1_zur_Validierung.zip",
+    fileName: "KBV_FHIR_eRP_V1.4.1_zur_Validierung.zip",
+    extract: true,
+  },
+  kbvErpExamples_1_4: {
+    assetId: "kbvErpExamples_1_4",
+    url: "https://update.kbv.de/ita-update/DigitaleMuster/ERP/Q3_2026/eRP_Beispiele_V1.4.zip",
+    fileName: "eRP_Beispiele_V1.4.zip",
     extract: true,
   },
   xpmKvdtPraxis_2026_2_1: {
     assetId: "xpmKvdtPraxis_2026_2_1",
     url: "https://update.kbv.de/ita-update/Abrechnung/xpm-kvdt-praxis-2026.2.1.zip",
     fileName: "xpm-kvdt-praxis-2026.2.1.zip",
+    sha256: "593f32b39f017cf5d6d71488134139e0668ad6a3ba2b7f0323fd1433a7789b9f",
     extract: true,
   },
   kbvPruefassistent_2026_2_1: {
     assetId: "kbvPruefassistent_2026_2_1",
     url: "https://update.kbv.de/ita-update/KBV-Software/Pruefassistent/KBV-Pruefassistent_V2026.2.1.jar",
     fileName: "KBV-Pruefassistent_V2026.2.1.jar",
+    sha256: "24242cc761b02929ba9092d420aa6c74decf840985cbc7bd3f0419cdff068c8a",
   },
   xkm_1_44_0: {
     assetId: "xkm_1_44_0",
     url: "https://update.kbv.de/ita-update/KBV-Software/Kryptomodul/xkm-1.44.0.zip",
     fileName: "xkm-1.44.0.zip",
+    sha256: "5570ef3b2077a125dfe1ce544b7fd79eca71f5781c02eb6d16b4e60fac2f2b6b",
     extract: true,
   },
   xkmPublicKeys_2026_02: {
     assetId: "xkmPublicKeys_2026_02",
     url: "https://update.kbv.de/ita-update/KBV-Software/Kryptomodul/Oeffentliche_Schluessel.zip",
     fileName: "Oeffentliche_Schluessel.zip",
+    sha256: "27b81833fd854ff17ee4ef92017008f65678da018b8bacaff2302fe8b4bd99d6",
     extract: true,
   },
   xkmTestKeys_2026_02: {
     assetId: "xkmTestKeys_2026_02",
     url: "https://update.kbv.de/ita-update/KBV-Software/Kryptomodul/Testschluessel.zip",
     fileName: "Testschluessel.zip",
+    sha256: "472a507c0b98646b5f3286b2a4e6aad5ba9cd85944d7dd057a1cc15bbc1124ce",
     extract: true,
   },
   bmp_2_8_q3_2026: {
     assetId: "bmp_2_8_q3_2026",
     url: "https://update.kbv.de/ita-update/Verordnungen/Arzneimittel/BMP/BMP_2.8_Q3_2026/BMP_V2.8.zip",
     fileName: "BMP_V2.8.zip",
+    extract: true,
+  },
+  bmpExamples_2_8_q3_2026: {
+    assetId: "bmpExamples_2_8_q3_2026",
+    url: "https://update.kbv.de/ita-update/Verordnungen/Arzneimittel/BMP/BMP_2.8_Q3_2026/BMP_Beispieldateien_V2.8.zip",
+    fileName: "BMP_Beispieldateien_V2.8.zip",
     extract: true,
   },
 } as const satisfies Record<string, KbvOracleAsset>;
@@ -109,6 +144,10 @@ export const fhirValidatorPrerequisitePackages = [
     version: "5.5.0",
   },
   {
+    packageId: "hl7.terminology",
+    version: "7.1.0",
+  },
+  {
     packageId: "hl7.terminology.r4",
     version: "6.2.0",
   },
@@ -117,8 +156,16 @@ export const fhirValidatorPrerequisitePackages = [
     version: "6.2.0",
   },
   {
+    packageId: "hl7.terminology.r5",
+    version: "6.5.0",
+  },
+  {
     packageId: "hl7.fhir.uv.extensions",
     version: "5.2.0",
+  },
+  {
+    packageId: "hl7.fhir.uv.extensions",
+    version: "5.3.0-ballot-tc1",
   },
   {
     packageId: "hl7.fhir.uv.extensions.r4",
@@ -126,6 +173,10 @@ export const fhirValidatorPrerequisitePackages = [
   },
   {
     packageId: "hl7.fhir.uv.extensions.r4",
+    version: "5.2.0",
+  },
+  {
+    packageId: "hl7.fhir.uv.extensions.r5",
     version: "5.2.0",
   },
 ] as const satisfies ReadonlyArray<ExternalFhirPackage>;
@@ -136,11 +187,15 @@ export const getKbvOracleCacheDir = () =>
 
 export const getFhirPackageCacheRoot = (
   cacheDir = getKbvOracleCacheDir(),
-) => join(cacheDir, "fhir-home", ".fhir", "packages");
+) => join(resolve(cacheDir), "fhir-home", ".fhir", "packages");
+
+const getFhirDependencyMarkerPath = (
+  cacheDir = getKbvOracleCacheDir(),
+) => join(getFhirPackageCacheRoot(cacheDir), ".kbv-prerequisites.json");
 
 export const getKbvOracleCacheManifestPath = (
   cacheDir = getKbvOracleCacheDir(),
-) => join(cacheDir, "asset-cache.json");
+) => join(resolve(cacheDir), "asset-cache.json");
 
 const hashBuffer = (buffer: Buffer) =>
   createHash("sha256").update(buffer).digest("hex");
@@ -231,7 +286,8 @@ export const downloadManagedAsset = async (
   asset: KbvOracleAsset,
   cacheDir = getKbvOracleCacheDir(),
 ) => {
-  const downloadDir = join(cacheDir, "downloads");
+  const resolvedCacheDir = resolve(cacheDir);
+  const downloadDir = join(resolvedCacheDir, "downloads");
   const downloadPath = join(downloadDir, asset.fileName);
 
   await mkdir(downloadDir, { recursive: true });
@@ -239,7 +295,7 @@ export const downloadManagedAsset = async (
   if (existsSync(downloadPath)) {
     await verifyFileHash(downloadPath, asset.sha256);
     await updateAssetCacheManifest({
-      cacheDir,
+      cacheDir: resolvedCacheDir,
       asset,
       downloadPath,
     });
@@ -271,7 +327,7 @@ export const downloadManagedAsset = async (
   await writeFile(downloadPath, content);
   await rm(tempPath, { force: true });
   await updateAssetCacheManifest({
-    cacheDir,
+    cacheDir: resolvedCacheDir,
     asset,
     downloadPath,
   });
@@ -282,16 +338,34 @@ export const ensureExtractedAsset = async (
   asset: KbvOracleAsset,
   cacheDir = getKbvOracleCacheDir(),
 ) => {
-  const archivePath = await downloadManagedAsset(asset, cacheDir);
+  const resolvedCacheDir = resolve(cacheDir);
   if (asset.extract !== true) {
+    const archivePath = await downloadManagedAsset(asset, resolvedCacheDir);
     return archivePath;
   }
 
-  const extractDir = join(cacheDir, "extracted", asset.assetId);
+  const extractDir = join(resolvedCacheDir, "extracted", asset.assetId);
   const markerPath = join(extractDir, ".ok");
   if (existsSync(markerPath)) {
     return extractDir;
   }
+
+  if (existsSync(extractDir)) {
+    const entries = await readdir(extractDir);
+    const hasExtractedContent = entries.some((entry) => entry !== ".ok");
+    if (hasExtractedContent) {
+      await writeFile(markerPath, "ok");
+      await updateAssetCacheManifest({
+        cacheDir: resolvedCacheDir,
+        asset,
+        downloadPath: join(resolvedCacheDir, "downloads", asset.fileName),
+        extractedPath: extractDir,
+      });
+      return extractDir;
+    }
+  }
+
+  const archivePath = await downloadManagedAsset(asset, resolvedCacheDir);
 
   await rm(extractDir, { recursive: true, force: true });
   await mkdir(extractDir, { recursive: true });
@@ -301,7 +375,7 @@ export const ensureExtractedAsset = async (
   });
   await writeFile(markerPath, "ok");
   await updateAssetCacheManifest({
-    cacheDir,
+    cacheDir: resolvedCacheDir,
     asset,
     downloadPath: archivePath,
     extractedPath: extractDir,
@@ -336,6 +410,56 @@ export const findFileRecursive = async (
   return undefined;
 };
 
+const collectIgDirectories = async (rootDir: string): Promise<Array<string>> => {
+  const directories = new Set<string>();
+
+  const visit = async (currentDir: string) => {
+    const entries = await readdir(currentDir, {
+      withFileTypes: true,
+    });
+    let hasResourceLikeFiles = false;
+
+    for (const entry of entries) {
+      const entryPath = join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        await visit(entryPath);
+        continue;
+      }
+
+      if (
+        entry.name.endsWith(".xml") ||
+        entry.name.endsWith(".json") ||
+        entry.name.endsWith(".map")
+      ) {
+        hasResourceLikeFiles = true;
+      }
+    }
+
+    if (hasResourceLikeFiles) {
+      directories.add(currentDir);
+    }
+  };
+
+  await visit(rootDir);
+  return [...directories].sort((left, right) => {
+    const leftBase = left.split("/").at(-1) ?? left;
+    const rightBase = right.split("/").at(-1) ?? right;
+    const leftPriority = leftBase.startsWith("_") ? 0 : 1;
+    const rightPriority = rightBase.startsWith("_") ? 0 : 1;
+
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+
+    const depthDelta = left.split("/").length - right.split("/").length;
+    if (depthDelta !== 0) {
+      return depthDelta;
+    }
+
+    return left.localeCompare(right);
+  });
+};
+
 export const ensureFhirValidatorAssets = async ({
   family,
   cacheDir = getKbvOracleCacheDir(),
@@ -343,46 +467,44 @@ export const ensureFhirValidatorAssets = async ({
   family: "eRezept" | "eAU";
   cacheDir?: string;
 }) => {
-  const serviceDir = await ensureExtractedAsset(
-    kbvOracleAssets.fhirValidatorService_2_2_0,
-    cacheDir,
-  );
-  const validatorJar = await findFileRecursive(
-    serviceDir,
-    (entryPath) => entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
-  );
-  if (!validatorJar) {
-    throw new Error("validator_cli jar not found in extracted KBV validator service");
+  const resolvedCacheDir = resolve(cacheDir);
+  const cacheKey = `${family}:${resolvedCacheDir}`;
+  const cached = fhirValidatorAssetsCache.get(cacheKey);
+  if (cached) {
+    return cached;
   }
 
-  const packageRoot =
-    family === "eAU"
-      ? await ensureExtractedAsset(kbvOracleAssets.kbvFhirEau_1_2_1, cacheDir)
-      : await ensureExtractedAsset(kbvOracleAssets.kbvFhirErp_1_3_3, cacheDir);
+  const pending = (async () => {
+    const serviceDir = await ensureExtractedAsset(
+      kbvOracleAssets.fhirValidatorService_2_2_0,
+      resolvedCacheDir,
+    );
+    const validatorJar = await findFileRecursive(
+      serviceDir,
+      (entryPath) => entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
+    );
+    if (!validatorJar) {
+      throw new Error("validator_cli jar not found in extracted KBV validator service");
+    }
 
-  const packageEntries = await readdir(packageRoot, {
-    withFileTypes: true,
-  });
-  const nestedIgPaths = packageEntries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => join(packageRoot, entry.name))
-    .sort((left, right) => {
-      const leftBase = left.split("/").at(-1) ?? left;
-      const rightBase = right.split("/").at(-1) ?? right;
-      const leftPriority = leftBase.startsWith("_") ? 0 : 1;
-      const rightPriority = rightBase.startsWith("_") ? 0 : 1;
+    const packageRoot =
+      family === "eAU"
+        ? await ensureExtractedAsset(kbvOracleAssets.kbvFhirEau_1_2_1, resolvedCacheDir)
+        : await ensureExtractedAsset(kbvOracleAssets.kbvFhirErp_1_4_1, resolvedCacheDir);
 
-      if (leftPriority !== rightPriority) {
-        return leftPriority - rightPriority;
-      }
-      return leftBase.localeCompare(rightBase);
-    });
+    const nestedIgPaths = (await collectIgDirectories(packageRoot)).filter(
+      (entryPath) => entryPath !== packageRoot,
+    );
 
-  return {
-    validatorJar,
-    packageRoot,
-    igPaths: [...nestedIgPaths, packageRoot],
-  };
+    return {
+      validatorJar,
+      packageRoot,
+      igPaths: [...nestedIgPaths, packageRoot],
+    };
+  })();
+
+  fhirValidatorAssetsCache.set(cacheKey, pending);
+  return pending;
 };
 
 export const ensureKvdtAssets = async ({
@@ -390,19 +512,23 @@ export const ensureKvdtAssets = async ({
 }: {
   cacheDir?: string;
 }) => {
-  const xpmDir = await ensureExtractedAsset(kbvOracleAssets.xpmKvdtPraxis_2026_2_1, cacheDir);
-  const xkmDir = await ensureExtractedAsset(kbvOracleAssets.xkm_1_44_0, cacheDir);
+  const resolvedCacheDir = resolve(cacheDir);
+  const xpmDir = await ensureExtractedAsset(
+    kbvOracleAssets.xpmKvdtPraxis_2026_2_1,
+    resolvedCacheDir,
+  );
+  const xkmDir = await ensureExtractedAsset(kbvOracleAssets.xkm_1_44_0, resolvedCacheDir);
   const xkmPublicKeysDir = await ensureExtractedAsset(
     kbvOracleAssets.xkmPublicKeys_2026_02,
-    cacheDir,
+    resolvedCacheDir,
   );
   const xkmTestKeysDir = await ensureExtractedAsset(
     kbvOracleAssets.xkmTestKeys_2026_02,
-    cacheDir,
+    resolvedCacheDir,
   );
   const pruefassistentJar = await downloadManagedAsset(
     kbvOracleAssets.kbvPruefassistent_2026_2_1,
-    cacheDir,
+    resolvedCacheDir,
   );
 
   const xpmStartScript = await findFileRecursive(
@@ -437,7 +563,15 @@ export const ensureBmpAssets = async ({
 }: {
   cacheDir?: string;
 }) => {
-  const bmpDir = await ensureExtractedAsset(kbvOracleAssets.bmp_2_8_q3_2026, cacheDir);
+  const resolvedCacheDir = resolve(cacheDir);
+  const bmpDir = await ensureExtractedAsset(
+    kbvOracleAssets.bmp_2_8_q3_2026,
+    resolvedCacheDir,
+  );
+  const bmpExamplesDir = await ensureExtractedAsset(
+    kbvOracleAssets.bmpExamples_2_8_q3_2026,
+    resolvedCacheDir,
+  );
   const bmpXsd = await findFileRecursive(
     bmpDir,
     (entryPath) => entryPath.endsWith(".xsd"),
@@ -450,6 +584,7 @@ export const ensureBmpAssets = async ({
   return {
     bmpDir,
     bmpXsd,
+    bmpExamplesDir,
   };
 };
 
@@ -491,6 +626,43 @@ const ensureFhirPackageCacheMetadata = async (cacheDir: string) => {
   }
 
   return packageCacheRoot;
+};
+
+const areFhirPrerequisitesInstalled = async (cacheDir: string) => {
+  const packageChecks = await Promise.all(
+    fhirValidatorPrerequisitePackages.map(async (externalPackage) => {
+      const installDir = getExternalFhirPackageInstallDir({
+        packageId: externalPackage.packageId,
+        version: externalPackage.version,
+        cacheDir,
+      });
+      const packageJsonPath = join(installDir, "package", "package.json");
+      return existsSync(packageJsonPath);
+    }),
+  );
+
+  return packageChecks.every(Boolean);
+};
+
+const writeFhirDependencyMarker = async (cacheDir: string) => {
+  const markerPath = getFhirDependencyMarkerPath(cacheDir);
+  await writeFile(
+    markerPath,
+    JSON.stringify(
+      {
+        writtenAt: new Date().toISOString(),
+        prerequisites: fhirValidatorPrerequisitePackages.map(
+          ({ packageId, version }) => ({
+            packageId,
+            version,
+          }),
+        ),
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
 };
 
 const downloadExternalFhirPackage = async ({
@@ -545,14 +717,15 @@ export const ensureExternalFhirPackageInstalled = async ({
 }: ExternalFhirPackage & {
   cacheDir?: string;
 }) => {
+  const resolvedCacheDir = resolve(cacheDir);
   const installDir = getExternalFhirPackageInstallDir({
     packageId,
     version,
-    cacheDir,
+    cacheDir: resolvedCacheDir,
   });
   const packageJsonPath = join(installDir, "package", "package.json");
 
-  await ensureFhirPackageCacheMetadata(cacheDir);
+  await ensureFhirPackageCacheMetadata(resolvedCacheDir);
 
   if (!existsSync(packageJsonPath)) {
     const archivePath = await downloadExternalFhirPackage({
@@ -560,10 +733,10 @@ export const ensureExternalFhirPackageInstalled = async ({
       version,
       url,
       sha256,
-      cacheDir,
+      cacheDir: resolvedCacheDir,
     });
     const extractDir = join(
-      cacheDir,
+      resolvedCacheDir,
       "fhir-package-cache",
       "extract",
       `${sanitizePackageId(packageId)}-${version}`,
@@ -593,7 +766,7 @@ export const ensureExternalFhirPackageInstalled = async ({
     await ensureExternalFhirPackageInstalled({
       packageId: dependencyId,
       version: dependencyVersion,
-      cacheDir,
+      cacheDir: resolvedCacheDir,
     });
   }
 
@@ -605,21 +778,47 @@ export const ensureFhirValidatorDependencyCache = async ({
 }: {
   cacheDir?: string;
 }) => {
-  const installedPackages = [];
-
-  for (const externalPackage of fhirValidatorPrerequisitePackages) {
-    const installDir = await ensureExternalFhirPackageInstalled({
-      ...externalPackage,
-      cacheDir,
-    });
-    installedPackages.push({
-      packageId: externalPackage.packageId,
-      version: externalPackage.version,
-      installDir,
-    });
+  const resolvedCacheDir = resolve(cacheDir);
+  const cached = fhirValidatorDependencyCache.get(resolvedCacheDir);
+  if (cached) {
+    return cached;
   }
 
-  return installedPackages;
+  const pending = (async () => {
+    await ensureFhirPackageCacheMetadata(resolvedCacheDir);
+    if (await areFhirPrerequisitesInstalled(resolvedCacheDir)) {
+      await writeFhirDependencyMarker(resolvedCacheDir);
+      return fhirValidatorPrerequisitePackages.map((externalPackage) => ({
+        packageId: externalPackage.packageId,
+        version: externalPackage.version,
+        installDir: getExternalFhirPackageInstallDir({
+          packageId: externalPackage.packageId,
+          version: externalPackage.version,
+          cacheDir: resolvedCacheDir,
+        }),
+      }));
+    }
+
+    const installedPackages = [];
+
+    for (const externalPackage of fhirValidatorPrerequisitePackages) {
+      const installDir = await ensureExternalFhirPackageInstalled({
+        ...externalPackage,
+        cacheDir: resolvedCacheDir,
+      });
+      installedPackages.push({
+        packageId: externalPackage.packageId,
+        version: externalPackage.version,
+        installDir,
+      });
+    }
+
+    await writeFhirDependencyMarker(resolvedCacheDir);
+    return installedPackages;
+  })();
+
+  fhirValidatorDependencyCache.set(resolvedCacheDir, pending);
+  return pending;
 };
 
 export const prefetchKbvOracleAssets = async ({
@@ -629,6 +828,7 @@ export const prefetchKbvOracleAssets = async ({
   assetIds?: ReadonlyArray<keyof typeof kbvOracleAssets>;
   cacheDir?: string;
 }) => {
+  const resolvedCacheDir = resolve(cacheDir);
   const selectedAssetIds =
     assetIds ?? (Object.keys(kbvOracleAssets) as Array<keyof typeof kbvOracleAssets>);
   const results = [];
@@ -636,8 +836,8 @@ export const prefetchKbvOracleAssets = async ({
   for (const assetId of selectedAssetIds) {
     const asset = kbvOracleAssets[assetId];
     const path = "extract" in asset && asset.extract === true
-      ? await ensureExtractedAsset(asset, cacheDir)
-      : await downloadManagedAsset(asset, cacheDir);
+      ? await ensureExtractedAsset(asset, resolvedCacheDir)
+      : await downloadManagedAsset(asset, resolvedCacheDir);
     results.push({
       assetId,
       path,

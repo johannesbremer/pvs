@@ -1,6 +1,6 @@
 import type { OracleExecutionResult } from "../types";
 import { cloneAssetWorkspace, ensureKvdtAssets, findFileRecursive } from "../assets";
-import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { execFile } from "node:child_process";
@@ -15,6 +15,7 @@ const KVDT_CLASSPATH =
   "Bin/jasperreports-fonts-6.12.2.jar:Bin/xpm-kvdt-praxis-2026.2.1.jar:Bin/xpm-core-4.2.39.jar";
 const XKM_CLASSPATH =
   "Bin/jasperreports-fonts-6.12.2.jar:Bin/bcprov-jdk18on-1.81.jar:Bin/xkm-1.44.0.jar";
+const KVDT_CONFIG_PATH = "Konfig/konfigAusgaben.xml";
 
 const parseLogFindings = (output: string) => {
   const findings: Array<OracleExecutionResult["findings"][number]> = [];
@@ -24,6 +25,14 @@ const parseLogFindings = (output: string) => {
       code: "KVDT_VALIDATION_OK",
       severity: "info",
       message: "KVDT XPM reported status Ok.",
+    });
+  }
+
+  if (/Status:\s*Fehlerhaft/i.test(output)) {
+    findings.push({
+      code: "KVDT_VALIDATION_FAILED",
+      severity: "error",
+      message: "KVDT XPM reported status Fehlerhaft.",
     });
   }
 
@@ -55,14 +64,26 @@ const listWorkspaceFiles = async (directory: string) => {
     .map((entry) => join(directory, entry.name));
 };
 
+const resetWorkspaceDirectory = async (directory: string) => {
+  await rm(directory, { recursive: true, force: true });
+  await mkdir(directory, { recursive: true });
+};
+
 export const runKvdtOracle = ({
   payloadPreview,
+  payloadBytes,
 }: {
   payloadPreview?: string;
+  payloadBytes?: Uint8Array;
 }): OracleExecutionResult => {
   const findings = [];
 
-  if (!payloadPreview || payloadPreview.trim().length === 0) {
+  const hasStringPayload =
+    typeof payloadPreview === "string" && payloadPreview.trim().length > 0;
+  const hasBytePayload =
+    payloadBytes instanceof Uint8Array && payloadBytes.byteLength > 0;
+
+  if (!hasStringPayload && !hasBytePayload) {
     findings.push({
       code: "KVDT_PAYLOAD_PREVIEW_MISSING",
       severity: "error" as const,
@@ -83,16 +104,27 @@ export const runKvdtOracle = ({
 
 export const runExecutableKvdtOracle = async ({
   payloadPreview,
+  payloadBytes,
+  payloadFileName,
   cacheDir,
 }: {
   payloadPreview?: string;
+  payloadBytes?: Uint8Array;
+  payloadFileName?: string;
   cacheDir?: string;
 }): Promise<OracleExecutionResult> => {
-  const localResult = runKvdtOracle({ payloadPreview });
+  const localResult = runKvdtOracle({ payloadPreview, payloadBytes });
   if (!localResult.passed) {
     return localResult;
   }
-  const validatedPayloadPreview = payloadPreview as string;
+  const validatedPayloadBytes =
+    payloadBytes instanceof Uint8Array
+      ? payloadBytes
+      : Buffer.from(payloadPreview as string, "utf8");
+  const effectiveFileName =
+    payloadFileName && payloadFileName.trim().length > 0
+      ? basename(payloadFileName)
+      : "input.con";
 
   const tempRoot = await mkdtemp(join(tmpdir(), "kbv-kvdt-oracle-"));
 
@@ -112,8 +144,15 @@ export const runExecutableKvdtOracle = async ({
       targetDir: join(tempRoot, "XKM"),
     });
 
-    const kvdtInputPath = join(xpmWorkspace, "Temp", "input.con");
-    await writeFile(kvdtInputPath, validatedPayloadPreview, "utf8");
+    await resetWorkspaceDirectory(join(xpmWorkspace, "Listen"));
+    await resetWorkspaceDirectory(join(xpmWorkspace, "Temp"));
+    await resetWorkspaceDirectory(join(xkmWorkspace, "Quelle"));
+    await resetWorkspaceDirectory(join(xkmWorkspace, "Verschluesselt"));
+    await resetWorkspaceDirectory(join(xkmWorkspace, "Bearbeitet"));
+
+    const kvdtInputRelativePath = join("Daten", effectiveFileName);
+    const kvdtInputPath = join(xpmWorkspace, kvdtInputRelativePath);
+    await writeFile(kvdtInputPath, validatedPayloadBytes);
 
     const xpmRun = await execFileAsync(
       javaCommand,
@@ -126,9 +165,9 @@ export const runExecutableKvdtOracle = async ({
         KVDT_CLASSPATH,
         KVDT_HEADLESS_CLASS,
         "-c",
-        "Konfig/konfig.xml",
+        KVDT_CONFIG_PATH,
         "-f",
-        "Temp/input.con",
+        kvdtInputRelativePath,
       ],
       {
         cwd: xpmWorkspace,
@@ -167,8 +206,8 @@ export const runExecutableKvdtOracle = async ({
     }
 
     await cp(publicKeyPath, join(xkmWorkspace, "System", "keys", basename(publicKeyPath)));
-    const sourcePayloadPath = join(xkmWorkspace, "Quelle", "input.con");
-    await writeFile(sourcePayloadPath, validatedPayloadPreview, "utf8");
+    const sourcePayloadPath = join(xkmWorkspace, "Quelle", effectiveFileName);
+    await writeFile(sourcePayloadPath, validatedPayloadBytes);
 
     const xkmRun = await execFileAsync(
       javaCommand,
@@ -210,11 +249,27 @@ export const runExecutableKvdtOracle = async ({
         severity: "info" as const,
         message: `KBV-Pruefassistent installer is cached at ${assets.pruefassistentJar}.`,
       },
+      {
+        code: "KVDT_XPM_ARTIFACT_COUNT",
+        severity: "info" as const,
+        message: `KVDT XPM produced ${xpmArtifacts.length} file(s) in Listen/: ${xpmArtifacts.map((path) => basename(path)).join(", ") || "(none)"}.`,
+      },
+      {
+        code: "KVDT_XKM_ARTIFACT_COUNT",
+        severity: "info" as const,
+        message: `XKM produced ${encryptedArtifacts.length} file(s) in Verschluesselt/: ${encryptedArtifacts.map((path) => basename(path)).join(", ") || "(none)"}.`,
+      },
     ];
 
+    if (!encryptedArtifacts.some((path) => path.endsWith(".XKM"))) {
+      findings.push({
+        code: "KVDT_XKM_OUTPUT_MISSING",
+        severity: "error",
+        message: "XKM did not produce an encrypted .XKM output artifact.",
+      });
+    }
+
     const passed =
-      xpmArtifacts.some((path) => path.endsWith("Pruefprotokoll.pdf")) &&
-      encryptedArtifacts.some((path) => path.endsWith(".XKM")) &&
       findings.every((finding) => finding.severity !== "error");
 
     return {
@@ -248,7 +303,7 @@ export const runExecutableKvdtOracle = async ({
               {
                 code: "KVDT_EXECUTION_FAILED",
                 severity: "error",
-                message: errorOutput.slice(0, 500),
+                message: errorOutput.slice(0, 4000),
               },
             ],
       summary: "KVDT executable-backed validation failed.",

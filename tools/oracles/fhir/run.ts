@@ -11,6 +11,26 @@ import { promisify } from "node:util";
 import { resolveJavaCommand } from "../system";
 
 const execFileAsync = promisify(execFile);
+const debugTimingsEnabled =
+  process.env.KBV_ORACLE_DEBUG === "1" ||
+  process.env.KBV_ORACLE_DEBUG === "true";
+
+const logDebug = (message: string) => {
+  if (!debugTimingsEnabled) {
+    return;
+  }
+
+  console.error(`[kbv-oracle] ${message}`);
+};
+
+const logTiming = (label: string, startTime: number) => {
+  if (!debugTimingsEnabled) {
+    return;
+  }
+
+  const elapsedMs = Date.now() - startTime;
+  console.error(`[kbv-oracle] ${label}: ${elapsedMs}ms`);
+};
 
 const missingTagFinding = (tagName: string) => ({
   code: `FHIR_TAG_${tagName.toUpperCase()}_MISSING`,
@@ -61,6 +81,32 @@ const parseFhirValidatorFindings = (output: string) => {
 
   return findings;
 };
+
+const extractOfflineLanguageCodes = (xml: string) => {
+  const matches = xml.matchAll(
+    /<extension\s+url="language">\s*<valueCode\s+value="([A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*)"\s*\/>\s*<\/extension>/g,
+  );
+  return [...new Set([...matches].map((match) => match[1]))].sort();
+};
+
+const buildOfflineLanguageCodeSystem = (codes: ReadonlyArray<string>) => ({
+  resourceType: "CodeSystem",
+  id: "kbv-offline-ietf-bcp-47",
+  url: "urn:ietf:bcp:47",
+  version: "0.0.1-kbv-offline",
+  name: "KbvOfflineIetfBcp47",
+  title: "Offline BCP-47 Language Codes",
+  status: "active",
+  experimental: true,
+  description:
+    "Minimal offline code system generated at validation time so validator_cli can resolve language-tag codes without a terminology server.",
+  caseSensitive: true,
+  content: "complete",
+  concept: codes.map((code) => ({
+    code,
+    display: code,
+  })),
+});
 
 export const runFhirOracle = ({
   family,
@@ -128,10 +174,6 @@ export const runExecutableFhirOracle = async ({
     return runFhirOracle({ family, xml });
   }
 
-  const { validatorJar, igPaths } = await ensureFhirValidatorAssets({
-    family,
-    ...(cacheDir ? { cacheDir } : {}),
-  });
   const effectiveCacheDir = cacheDir ?? process.env.KBV_UPDATE_CACHE_DIR;
   const userHomeOverride = join(
     effectiveCacheDir ?? join(process.cwd(), ".cache", "kbv-oracles"),
@@ -140,18 +182,52 @@ export const runExecutableFhirOracle = async ({
 
   const tempDir = await mkdtemp(join(tmpdir(), "kbv-fhir-oracle-"));
   const xmlPath = join(tempDir, `${family}.xml`);
+  const supportDir = join(tempDir, "support");
 
   try {
+    const assetsStart = Date.now();
+    logDebug(`starting ensureFhirValidatorAssets(${family})`);
+    const assets = await ensureFhirValidatorAssets({
+      family,
+      ...(cacheDir ? { cacheDir } : {}),
+    });
+    logTiming(`ensureFhirValidatorAssets(${family})`, assetsStart);
+
+    const dependencyStart = Date.now();
+    logDebug(`starting ensureFhirValidatorDependencyCache(${family})`);
     await ensureFhirValidatorDependencyCache({
       ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
     });
+    logTiming(`ensureFhirValidatorDependencyCache(${family})`, dependencyStart);
+
+    const writeStart = Date.now();
+    logDebug(`starting writeInputXml(${family})`);
     await mkdir(userHomeOverride, { recursive: true });
     await writeFile(xmlPath, xml, "utf8");
-    const igArgs = igPaths.flatMap((igPath) => ["-ig", igPath]);
+    const offlineLanguageCodes = extractOfflineLanguageCodes(xml);
+    if (offlineLanguageCodes.length > 0) {
+      await mkdir(supportDir, { recursive: true });
+      await writeFile(
+        join(supportDir, "CodeSystem-kbv-offline-ietf-bcp-47.json"),
+        JSON.stringify(
+          buildOfflineLanguageCodeSystem(offlineLanguageCodes),
+          null,
+          2,
+        ),
+        "utf8",
+      );
+    }
+    logTiming(`writeInputXml(${family})`, writeStart);
+
+    const mountedIgPaths =
+      offlineLanguageCodes.length > 0 ? [supportDir, ...assets.igPaths] : assets.igPaths;
+    const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
+    const execStart = Date.now();
+    logDebug(`starting validatorCli(${family})`);
     const { stdout, stderr } = await execFileAsync(resolveJavaCommand(), [
       `-Duser.home=${userHomeOverride}`,
       "-jar",
-      validatorJar,
+      assets.validatorJar,
       "-version",
       "4.0.1",
       xmlPath,
@@ -161,6 +237,7 @@ export const runExecutableFhirOracle = async ({
     ], {
       maxBuffer: 10 * 1024 * 1024,
     });
+    logTiming(`validatorCli(${family})`, execStart);
 
     const combined = `${stdout}\n${stderr}`;
     const findings = parseFhirValidatorFindings(combined);

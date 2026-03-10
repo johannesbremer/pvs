@@ -1,13 +1,42 @@
 import type { OracleExecutionResult } from "../types";
 import { ensureBmpAssets } from "../assets";
-import { resolveXmllintCommand } from "../system";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { resolveJavaCommand, resolveJavacCommand } from "../system";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const bmpValidatorSourcePath = fileURLToPath(
+  new URL("../java/BmpSchemaValidator.java", import.meta.url),
+);
+
+const ensureBmpJavaValidator = async (cacheDir?: string) => {
+  const resolvedCacheDir = resolve(cacheDir ?? process.cwd());
+  const buildDir = join(resolvedCacheDir, "java-tools", "bmp");
+  const classFile = join(buildDir, "BmpSchemaValidator.class");
+
+  if (existsSync(classFile)) {
+    return {
+      buildDir,
+      className: "BmpSchemaValidator",
+    };
+  }
+
+  await mkdir(buildDir, { recursive: true });
+  await execFileAsync(resolveJavacCommand(), ["-d", buildDir, bmpValidatorSourcePath], {
+    cwd: dirname(bmpValidatorSourcePath),
+    maxBuffer: 5 * 1024 * 1024,
+  });
+
+  return {
+    buildDir,
+    className: "BmpSchemaValidator",
+  };
+};
 
 const parseBmpFindings = (output: string) => {
   const findings: Array<OracleExecutionResult["findings"][number]> = [];
@@ -38,12 +67,17 @@ const parseBmpFindings = (output: string) => {
 
 export const runBmpOracle = ({
   xml,
+  xmlBytes,
 }: {
   xml?: string;
+  xmlBytes?: Uint8Array;
 }): OracleExecutionResult => {
   const findings = [];
+  const hasStringXml = typeof xml === "string" && xml.includes("<?xml");
+  const hasByteXml =
+    xmlBytes instanceof Uint8Array && xmlBytes.byteLength > 0;
 
-  if (!xml || !xml.includes("<?xml")) {
+  if (!hasStringXml && !hasByteXml) {
     findings.push({
       code: "BMP_XML_MISSING",
       severity: "error" as const,
@@ -64,28 +98,35 @@ export const runBmpOracle = ({
 
 export const runExecutableBmpOracle = async ({
   xml,
+  xmlBytes,
   cacheDir,
 }: {
   xml?: string;
+  xmlBytes?: Uint8Array;
   cacheDir?: string;
 }): Promise<OracleExecutionResult> => {
-  const localResult = runBmpOracle({ xml });
+  const localResult = runBmpOracle({ xml, xmlBytes });
   if (!localResult.passed) {
     return localResult;
   }
-  const validatedXml = xml as string;
+  const validatedXmlBytes =
+    xmlBytes instanceof Uint8Array
+      ? xmlBytes
+      : Buffer.from(xml as string, "utf8");
 
   try {
     const assets = await ensureBmpAssets({
       ...(cacheDir ? { cacheDir } : {}),
     });
+    const validator = await ensureBmpJavaValidator(cacheDir);
     const tempDir = await mkdtemp(join(tmpdir(), "kbv-bmp-oracle-"));
     const xmlPath = join(tempDir, "payload.xml");
     try {
-      await writeFile(xmlPath, validatedXml, "utf8");
-      await execFileAsync(resolveXmllintCommand(), [
-        "--noout",
-        "--schema",
+      await writeFile(xmlPath, validatedXmlBytes);
+      await execFileAsync(resolveJavaCommand(), [
+        "-cp",
+        validator.buildDir,
+        validator.className,
         assets.bmpXsd,
         xmlPath,
       ], {

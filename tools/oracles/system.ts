@@ -16,6 +16,22 @@ export const resolveJavaCommand = () => {
   return "java";
 };
 
+export const resolveJavacCommand = () => {
+  const candidates = [
+    process.env.JAVAC_BIN,
+    "/opt/homebrew/opt/openjdk/bin/javac",
+    "javac",
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidates) {
+    if (candidate === "javac" || existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return "javac";
+};
+
 export const resolveXmllintCommand = () => {
   const candidates = [process.env.XMLLINT_BIN, "/usr/bin/xmllint", "xmllint"].filter(
     (candidate): candidate is string => Boolean(candidate),
