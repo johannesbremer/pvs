@@ -20,3 +20,28 @@ export const OraclePluginFields = Schema.Struct({
 });
 
 export type OraclePlugin = Schema.Schema.Type<typeof OraclePluginFields>;
+
+export const OraclePlanFields = Schema.Struct({
+  family: Schema.String,
+  pluginKind: OraclePluginKind,
+  inputKind: Schema.String,
+  fixtureRoot: Schema.String,
+  command: Schema.optional(Schema.String),
+  workingDirectory: Schema.optional(Schema.String),
+  expectedOutputs: Schema.Array(Schema.String),
+  passFailRule: Schema.String,
+  artifactId: Schema.optional(Schema.String),
+  documentId: Schema.optional(Schema.String),
+  profileVersion: Schema.optional(Schema.String),
+});
+
+export type OraclePlan = Schema.Schema.Type<typeof OraclePlanFields>;
+
+export const OracleReportFields = Schema.Struct({
+  family: Schema.String,
+  passed: Schema.Boolean,
+  severity: Schema.Literal("info", "warning", "error"),
+  summary: Schema.String,
+});
+
+export type OracleReport = Schema.Schema.Type<typeof OracleReportFields>;

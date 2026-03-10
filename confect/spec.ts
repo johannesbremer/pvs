@@ -40,6 +40,70 @@ import {
   RegisterMasterDataPackageResult,
 } from "../src/domain/billing-coding";
 import {
+  AddMedicationPlanEntryArgs,
+  AddMedicationPlanEntryResult,
+  CreateHeilmittelApprovalArgs,
+  CreateHeilmittelApprovalResult,
+  CreateHeilmittelOrderArgs,
+  CreateHeilmittelOrderResult,
+  CreateMedicationOrderArgs,
+  CreateMedicationOrderResult,
+  CreateMedicationPlanArgs,
+  CreateMedicationPlanResult,
+  FinalizeHeilmittelOrderArgs,
+  FinalizeHeilmittelOrderResult,
+  FinalizeMedicationOrderArgs,
+  FinalizeMedicationOrderResult,
+  GetCurrentMedicationPlanArgs,
+  GetCurrentMedicationPlanResult,
+  GetDocumentArgs,
+  GetDocumentResult,
+  GetDraftWorkspaceArgs,
+  GetDraftWorkspaceResult,
+  GetHeilmittelOrderArgs,
+  GetHeilmittelOrderResult,
+  GetMedicationOrderArgs,
+  GetMedicationOrderResult,
+  ImportHeilmittelCatalogRefsArgs,
+  ImportHeilmittelCatalogRefsResult,
+  ImportMedicationCatalogRefsArgs,
+  ImportMedicationCatalogRefsResult,
+  ListDocumentsByPatientArgs,
+  ListDocumentsByPatientResult,
+  ListFormDefinitionsArgs,
+  ListFormDefinitionsResult,
+  ListFormInstancesByPatientArgs,
+  ListFormInstancesByPatientResult,
+  ListHeilmittelOrdersArgs,
+  ListHeilmittelOrdersResult,
+  ListMedicationOrdersArgs,
+  ListMedicationOrdersResult,
+  LookupHeilmittelByKeyArgs,
+  LookupHeilmittelByKeyResult,
+  LookupMedicationByPznArgs,
+  LookupMedicationByPznResult,
+  PromoteDraftWorkspaceArgs,
+  PromoteDraftWorkspaceResult,
+  RegisterFormDefinitionArgs,
+  RegisterFormDefinitionResult,
+  SaveDraftWorkspaceArgs,
+  SaveDraftWorkspaceResult,
+} from "../src/domain/prescribing-documents";
+import {
+  BuildValidationPlanArgs,
+  BuildValidationPlanResult,
+  CreateEauDocumentArgs,
+  CreateEauDocumentResult,
+  ListOraclePluginsArgs,
+  ListOraclePluginsResult,
+  RenderEauDocumentArgs,
+  RenderEauDocumentResult,
+  RenderErpBundleArgs,
+  RenderErpBundleResult,
+  ValidationSummaryArgs,
+  ValidationSummaryResult,
+} from "../src/domain/emission";
+import {
   internalConfectModules,
   publicConfectModules,
 } from "./modules";
@@ -184,12 +248,240 @@ export const BillingGroup = GroupSpec.make("billing")
     }),
   );
 
+export const CatalogGroup = GroupSpec.make("catalog")
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "importMedicationCatalogRefs",
+      args: ImportMedicationCatalogRefsArgs,
+      returns: ImportMedicationCatalogRefsResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "lookupMedicationByPzn",
+      args: LookupMedicationByPznArgs,
+      returns: LookupMedicationByPznResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "importHeilmittelCatalogRefs",
+      args: ImportHeilmittelCatalogRefsArgs,
+      returns: ImportHeilmittelCatalogRefsResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "lookupHeilmittelByKey",
+      args: LookupHeilmittelByKeyArgs,
+      returns: LookupHeilmittelByKeyResult,
+    }),
+  );
+
+export const PrescriptionsGroup = GroupSpec.make("prescriptions")
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "createOrder",
+      args: CreateMedicationOrderArgs,
+      returns: CreateMedicationOrderResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "getOrder",
+      args: GetMedicationOrderArgs,
+      returns: GetMedicationOrderResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "listOrdersByPatient",
+      args: ListMedicationOrdersArgs,
+      returns: ListMedicationOrdersResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "finalizeOrder",
+      args: FinalizeMedicationOrderArgs,
+      returns: FinalizeMedicationOrderResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "renderErpBundle",
+      args: RenderErpBundleArgs,
+      returns: RenderErpBundleResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "createMedicationPlan",
+      args: CreateMedicationPlanArgs,
+      returns: CreateMedicationPlanResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "addPlanEntry",
+      args: AddMedicationPlanEntryArgs,
+      returns: AddMedicationPlanEntryResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "getCurrentPlan",
+      args: GetCurrentMedicationPlanArgs,
+      returns: GetCurrentMedicationPlanResult,
+    }),
+  );
+
+export const HeilmittelGroup = GroupSpec.make("heilmittel")
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "createApproval",
+      args: CreateHeilmittelApprovalArgs,
+      returns: CreateHeilmittelApprovalResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "createOrder",
+      args: CreateHeilmittelOrderArgs,
+      returns: CreateHeilmittelOrderResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "getOrder",
+      args: GetHeilmittelOrderArgs,
+      returns: GetHeilmittelOrderResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "listOrdersByPatient",
+      args: ListHeilmittelOrdersArgs,
+      returns: ListHeilmittelOrdersResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "finalizeOrder",
+      args: FinalizeHeilmittelOrderArgs,
+      returns: FinalizeHeilmittelOrderResult,
+    }),
+  );
+
+export const DocumentsGroup = GroupSpec.make("documents")
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "registerFormDefinition",
+      args: RegisterFormDefinitionArgs,
+      returns: RegisterFormDefinitionResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "listFormDefinitions",
+      args: ListFormDefinitionsArgs,
+      returns: ListFormDefinitionsResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "listFormInstancesByPatient",
+      args: ListFormInstancesByPatientArgs,
+      returns: ListFormInstancesByPatientResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "createEauDocument",
+      args: CreateEauDocumentArgs,
+      returns: CreateEauDocumentResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "renderEauDocument",
+      args: RenderEauDocumentArgs,
+      returns: RenderEauDocumentResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "getDocument",
+      args: GetDocumentArgs,
+      returns: GetDocumentResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "listByPatient",
+      args: ListDocumentsByPatientArgs,
+      returns: ListDocumentsByPatientResult,
+    }),
+  );
+
+export const DraftsGroup = GroupSpec.make("drafts")
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "saveWorkspace",
+      args: SaveDraftWorkspaceArgs,
+      returns: SaveDraftWorkspaceResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "getWorkspace",
+      args: GetDraftWorkspaceArgs,
+      returns: GetDraftWorkspaceResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "promoteWorkspace",
+      args: PromoteDraftWorkspaceArgs,
+      returns: PromoteDraftWorkspaceResult,
+    }),
+  );
+
+export const IntegrationGroup = GroupSpec.make("integration")
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "listOraclePlugins",
+      args: ListOraclePluginsArgs,
+      returns: ListOraclePluginsResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "buildValidationPlan",
+      args: BuildValidationPlanArgs,
+      returns: BuildValidationPlanResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "getValidationSummary",
+      args: ValidationSummaryArgs,
+      returns: ValidationSummaryResult,
+    }),
+  );
+
 const spec = Spec.make()
   .add(PatientsGroup)
   .add(CoveragesGroup)
   .add(VsdGroup)
   .add(CodingGroup)
-  .add(BillingGroup);
+  .add(BillingGroup)
+  .add(CatalogGroup)
+  .add(PrescriptionsGroup)
+  .add(HeilmittelGroup)
+  .add(DocumentsGroup)
+  .add(DraftsGroup)
+  .add(IntegrationGroup);
 
 export default spec;
 
