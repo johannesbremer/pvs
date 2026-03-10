@@ -3046,6 +3046,7 @@ const runValidation = ({
   family,
   documentId,
   profileVersion,
+  executionMode,
   payloadPreviewXml,
   payloadPreview,
 }: typeof RunValidationArgs.Type) =>
@@ -3067,14 +3068,17 @@ const runValidation = ({
       return { outcome: "no-oracle-plan" as const };
     }
 
-    const executed = buildAndExecuteOraclePlan({
-      family: resolvedFamily,
-      artifactId: String(artifactId),
-      ...(documentId ? { documentId: String(documentId) } : {}),
-      ...(profileVersion ? { profileVersion } : {}),
-      ...(payloadPreviewXml ? { payloadPreviewXml } : {}),
-      ...(payloadPreview ? { payloadPreview } : {}),
-    });
+    const executed = yield* Effect.promise(() =>
+      buildAndExecuteOraclePlan({
+        family: resolvedFamily,
+        artifactId: String(artifactId),
+        ...(documentId ? { documentId: String(documentId) } : {}),
+        ...(profileVersion ? { profileVersion } : {}),
+        executionMode: executionMode ?? "local",
+        ...(payloadPreviewXml ? { payloadPreviewXml } : {}),
+        ...(payloadPreview ? { payloadPreview } : {}),
+      }),
+    );
 
     if (!executed) {
       return { outcome: "no-oracle-plan" as const };

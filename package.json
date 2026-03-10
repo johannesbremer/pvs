@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "codegen": "confect codegen",
+    "oracle:prefetch": "node --experimental-strip-types tools/oracles/prefetch.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

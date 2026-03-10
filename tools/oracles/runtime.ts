@@ -1,6 +1,9 @@
 import { runBmpOracle } from "./bmp/run";
-import { runFhirOracle } from "./fhir/run";
-import { runKvdtOracle } from "./kvdt/run";
+import { runBfbOracle } from "./bfb/run";
+import { runExecutableFhirOracle, runFhirOracle } from "./fhir/run";
+import { runHeilmittelOracle } from "./heilmittel/run";
+import { runExecutableBmpOracle } from "./bmp/run";
+import { runExecutableKvdtOracle, runKvdtOracle } from "./kvdt/run";
 import { buildOraclePlan } from "./framework";
 import type { OracleExecutionResult, OraclePlan } from "./types";
 
@@ -41,32 +44,58 @@ const fallbackResult = (
 
 export const executeOraclePlan = ({
   plan,
+  executionMode = "local",
   payloadPreviewXml,
   payloadPreview,
 }: {
   plan: OraclePlan;
+  executionMode?: "local" | "executable";
   payloadPreviewXml?: string;
   payloadPreview?: string;
-}): OracleExecutionResult => {
+}): Promise<OracleExecutionResult> => {
   switch (plan.family) {
     case "eRezept":
-      return runFhirOracle({
-        family: "eRezept",
-        xml: payloadPreviewXml,
-      });
+      return executionMode === "executable"
+        ? runExecutableFhirOracle({
+            family: "eRezept",
+            xml: payloadPreviewXml,
+          })
+        : Promise.resolve(
+            runFhirOracle({
+              family: "eRezept",
+              xml: payloadPreviewXml,
+            }),
+          );
     case "eAU":
-      return runFhirOracle({
-        family: "eAU",
-        xml: payloadPreviewXml,
-      });
+      return executionMode === "executable"
+        ? runExecutableFhirOracle({
+            family: "eAU",
+            xml: payloadPreviewXml,
+          })
+        : Promise.resolve(
+            runFhirOracle({
+              family: "eAU",
+              xml: payloadPreviewXml,
+            }),
+          );
     case "KVDT":
-      return runKvdtOracle({ payloadPreview });
+      return executionMode === "executable"
+        ? runExecutableKvdtOracle({ payloadPreview })
+        : Promise.resolve(runKvdtOracle({ payloadPreview }));
     case "BMP":
-      return runBmpOracle({ xml: payloadPreviewXml });
+      return executionMode === "executable"
+        ? runExecutableBmpOracle({ xml: payloadPreviewXml })
+        : Promise.resolve(runBmpOracle({ xml: payloadPreviewXml }));
+    case "BFB":
+      return Promise.resolve(runBfbOracle({ payloadPreview }));
+    case "Heilmittel":
+      return Promise.resolve(runHeilmittelOracle({ payloadPreview }));
     default:
-      return fallbackResult(
-        plan.family,
-        `No local oracle executor is implemented for ${plan.family}.`,
+      return Promise.resolve(
+        fallbackResult(
+          plan.family,
+          `No local oracle executor is implemented for ${plan.family}.`,
+        ),
       );
   }
 };
@@ -76,6 +105,7 @@ export const buildAndExecuteOraclePlan = ({
   artifactId,
   documentId,
   profileVersion,
+  executionMode = "local",
   payloadPreviewXml,
   payloadPreview,
 }: {
@@ -83,6 +113,7 @@ export const buildAndExecuteOraclePlan = ({
   artifactId?: string;
   documentId?: string;
   profileVersion?: string;
+  executionMode?: "local" | "executable";
   payloadPreviewXml?: string;
   payloadPreview?: string;
 }) => {
@@ -94,15 +125,16 @@ export const buildAndExecuteOraclePlan = ({
   });
 
   if (!plan) {
-    return undefined;
+    return Promise.resolve(undefined);
   }
 
-  return {
+  return executeOraclePlan({
     plan,
-    report: executeOraclePlan({
-      plan,
-      payloadPreviewXml,
-      payloadPreview,
-    }),
-  };
+    executionMode,
+    payloadPreviewXml,
+    payloadPreview,
+  }).then((report) => ({
+    plan,
+    report,
+  }));
 };

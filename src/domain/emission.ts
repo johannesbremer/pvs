@@ -146,6 +146,7 @@ export const RunValidationArgs = Schema.Struct({
   family: Schema.optional(Schema.String),
   documentId: Schema.optional(GenericId.GenericId("clinicalDocuments")),
   profileVersion: Schema.optional(Schema.String),
+  executionMode: Schema.optional(Schema.Literal("local", "executable")),
   payloadPreviewXml: Schema.optional(Schema.String),
   payloadPreview: Schema.optional(Schema.String),
 });
