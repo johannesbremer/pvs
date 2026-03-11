@@ -11,10 +11,10 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 | VSD / eGK / eEB adoption | Yes | Yes | None | Yes | Patient, identifier, coverage, and VSD snapshot workflows are covered by unit-style integration tests. |
 | ICD / coding | Yes | Yes | Local only | Yes | Diagnosis lifecycle and persisted coding evaluations exist; no SDICD/SDKH/SDKRW executable oracle yet. |
 | KVDT billing seam | Yes | Partial | Executable XPM + XKM | Yes | Official `.con` fixtures from the XPM package are covered in automated cold-start and warm-cache tests, including both positive and negative validator cases. |
-| Arzneimittel / eRezept canonical order | Yes | Yes | Executable FHIR | Partial | The full official Q3_2026 ERP XML archive now runs through the real validator. A substantial subset passes cleanly; the remaining examples cluster around a reproducible offline `renderedDosageInstruction` + `de-DE` limitation and are tracked explicitly in tests. |
+| Arzneimittel / eRezept canonical order | Yes | Yes | Executable FHIR | Yes | The full official Q3_2026 ERP XML archive now runs through the real validator and completes without error findings in the automated suite. |
 | eAU canonical documents | Yes | Yes | Executable FHIR | Yes | Official eAU examples validate via the executable FHIR path from an empty cache. |
 | BMP | Yes | Partial | Executable XSD | Yes | Official BMP example XMLs are covered through the downloaded KBV XSD package and example archive. |
-| Heilmittel canonical orders | Yes | Yes | Fixture-backed local | Yes | Domain workflows exist, but no executable KBV oracle family yet. |
+| Heilmittel canonical orders | Yes | Yes | Official fixture-backed | Yes | Local oracle checks now run official KBV Heilmittel Prüfpaket-derived fixtures for blanko handling, approvals, and quantity limits. |
 | BFB / form rendering | Schema only | Partial | Fixture-backed local | Minimal | Registry and form instances exist, but there is no real BFB renderer/barcode oracle yet. |
 | Documents / revisions / artifacts | Yes | Yes | Indirect | Yes | Immutability and issuance flows are tested through medication/eAU/heilmittel flows. |
 | Ti / KIM / mailboxes | Yes | Minimal | None | No | Schema is present; production workflows are largely unimplemented. |
@@ -48,22 +48,33 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 - `eRezept`
   - official `Q3_2026/eRP_Beispiele_V1.4.zip`
   - the full archive of 62 XML examples is executed through the real `validator_cli`
-  - many examples validate cleanly
-  - the remaining examples currently fail only with one reproducible offline limitation class
-  - shared failure pattern:
-    - `renderedDosageInstruction` plus `language = de-DE`
-    - validator reports `all-languages` / `urn:ietf:bcp:47` resolution failure and a downstream `KBV_PR_ERP_Prescription` profile-match error
+  - the archive now validates without error findings in the automated suite
+  - the previous offline `GeneratedDosageInstructionsMeta.language` / `de-DE` limitation is covered by an injected offline `ValueSet` plus `CodeSystem` support payload
 - `KVDT`
   - official `.con` fixtures shipped inside `xpm-kvdt-praxis-2026.2.1.zip`
   - cold-start executable validation downloads XPM/XKM/public keys and validates/packages the official positive example `Z30123456699_27.04.2026_12.00.con`
   - warm-cache sweep covers all shipped `.con` examples and distinguishes positive from negative validator cases
 - `BMP`
   - official `BMP_Beispieldateien_V2.8.zip`
-  - cold-start executable validation downloads the BMP XSD package and example archive and validates one official XML example with `xmllint`
+  - cold-start executable validation downloads the BMP XSD package and example archive and validates one official XML example with the local Java XSD helper
   - warm-cache sweep validates all official BMP XML examples from the archive against the downloaded XSD
+- `Heilmittel`
+  - official `KBV_ITA_AHEX_Pruefpaket_Heilmittel.pdf` provides the source cases
+  - local oracle fixtures encode named official Prüffälle for:
+    - regular physiotherapy orders
+    - standard combinations
+    - patient-specific long-term approval handling
+    - blanko orders
+    - quantity-limit failures
+    - nutrition therapy
 
 ## Highest-Value Remaining Gaps
 
-1. Replace fixture-backed BFB and Heilmittel placeholders with real oracle checks.
-2. Reduce the `renderedDosageInstruction` + `de-DE` offline validator limitation for ERP examples.
-3. Add a machine-readable coverage inventory so CI can report progress by family and quarter.
+1. Replace the BFB placeholder with real renderer/barcode oracle checks.
+2. Replace the BFB placeholder with real renderer/barcode oracle checks.
+3. Add executable or official-fixture coverage for SDICD/SDKH/SDKRW coding master-data validation.
+
+## Machine-Readable Inventory
+
+- checked-in JSON inventory: [tools/oracles/coverage-inventory.json](/Users/johannes/Code/pvs/tools/oracles/coverage-inventory.json)
+- stdout helper for CI: `pnpm oracle:coverage-inventory`

@@ -47,4 +47,32 @@ describe("executable FHIR oracle", () => {
     },
     420_000,
   );
+
+  it(
+    "validates an official KBV eRezept rendered-dosage example with the warmed validator cache",
+    async () => {
+      const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
+
+      const examplesDir = await ensureExtractedAsset(
+        kbvOracleAssets.kbvErpExamples_1_4,
+        cacheDir,
+      );
+      const exampleXml = await readFile(
+        join(examplesDir, "Beispiel_19.xml"),
+        "utf8",
+      );
+
+      const result = await runExecutableFhirOracle({
+        family: "eRezept",
+        xml: exampleXml,
+        cacheDir,
+      });
+
+      expect(result.passed).toBe(true);
+      expect(
+        result.findings.filter((finding) => finding.severity === "error"),
+      ).toHaveLength(0);
+    },
+    120_000,
+  );
 });

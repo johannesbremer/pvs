@@ -1,0 +1,141 @@
+{
+  "asOf": "2026-03-11",
+  "inventoryVersion": 1,
+  "families": [
+    {
+      "family": "VSD",
+      "sourceQuarterOrVersion": "n/a",
+      "canonicalModel": true,
+      "runtimeWorkflow": true,
+      "oracleStatus": "none",
+      "testStatus": "covered",
+      "currentNote": "Patient, identifier, coverage, and VSD snapshot workflows are covered by unit-style integration tests."
+    },
+    {
+      "family": "ICD",
+      "sourceQuarterOrVersion": "n/a",
+      "canonicalModel": true,
+      "runtimeWorkflow": true,
+      "oracleStatus": "local-only",
+      "testStatus": "covered",
+      "currentNote": "Diagnosis lifecycle and persisted coding evaluations exist; no SDICD/SDKH/SDKRW executable oracle yet."
+    },
+    {
+      "family": "KVDT",
+      "sourceQuarterOrVersion": "2026.2.1",
+      "canonicalModel": true,
+      "runtimeWorkflow": "partial",
+      "oracleStatus": "executable-xpm-xkm",
+      "testStatus": "covered",
+      "currentNote": "Official .con fixtures from the XPM package are covered in automated cold-start and warm-cache tests, including positive and negative validator cases."
+    },
+    {
+      "family": "eRezept",
+      "sourceQuarterOrVersion": "Q3_2026 / V1.4.1",
+      "canonicalModel": true,
+      "runtimeWorkflow": true,
+      "oracleStatus": "executable-fhir",
+      "testStatus": "covered",
+      "currentNote": "The full official Q3_2026 ERP XML archive runs through the real validator and now completes without error findings in the automated suite."
+    },
+    {
+      "family": "eAU",
+      "sourceQuarterOrVersion": "V1.2.1",
+      "canonicalModel": true,
+      "runtimeWorkflow": true,
+      "oracleStatus": "executable-fhir",
+      "testStatus": "covered",
+      "currentNote": "Official eAU examples validate via the executable FHIR path from an empty cache."
+    },
+    {
+      "family": "BMP",
+      "sourceQuarterOrVersion": "Q3_2026 / V2.8",
+      "canonicalModel": true,
+      "runtimeWorkflow": "partial",
+      "oracleStatus": "executable-xsd",
+      "testStatus": "covered",
+      "currentNote": "Official BMP example XMLs are covered through the downloaded KBV XSD package and example archive."
+    },
+    {
+      "family": "Heilmittel",
+      "sourceQuarterOrVersion": "Pruefpaket v2.4",
+      "canonicalModel": true,
+      "runtimeWorkflow": true,
+      "oracleStatus": "official-fixture-backed",
+      "testStatus": "covered",
+      "currentNote": "Local oracle checks now run official KBV Heilmittel Pruefpaket-derived fixtures for blanko handling, approvals, and quantity limits."
+    },
+    {
+      "family": "BFB",
+      "sourceQuarterOrVersion": "n/a",
+      "canonicalModel": "schema-only",
+      "runtimeWorkflow": "partial",
+      "oracleStatus": "fixture-backed-local",
+      "testStatus": "minimal",
+      "currentNote": "Registry and form instances exist, but there is no real BFB renderer or barcode oracle yet."
+    },
+    {
+      "family": "Documents",
+      "sourceQuarterOrVersion": "n/a",
+      "canonicalModel": true,
+      "runtimeWorkflow": true,
+      "oracleStatus": "indirect",
+      "testStatus": "covered",
+      "currentNote": "Immutability and issuance flows are tested through medication, eAU, and Heilmittel workflows."
+    },
+    {
+      "family": "TI/KIM",
+      "sourceQuarterOrVersion": "n/a",
+      "canonicalModel": true,
+      "runtimeWorkflow": "minimal",
+      "oracleStatus": "none",
+      "testStatus": "not-covered",
+      "currentNote": "Schema is present; production workflows are largely unimplemented."
+    },
+    {
+      "family": "eVDGA",
+      "sourceQuarterOrVersion": "Q3_2026",
+      "canonicalModel": true,
+      "runtimeWorkflow": "minimal",
+      "oracleStatus": "none",
+      "testStatus": "not-covered",
+      "currentNote": "Schema is present; emitter and oracle work are not implemented."
+    },
+    {
+      "family": "VoS",
+      "sourceQuarterOrVersion": "n/a",
+      "canonicalModel": true,
+      "runtimeWorkflow": "minimal",
+      "oracleStatus": "none",
+      "testStatus": "not-covered",
+      "currentNote": "Schema is present; transport and runtime behavior are not implemented."
+    },
+    {
+      "family": "TSS",
+      "sourceQuarterOrVersion": "3.0.0",
+      "canonicalModel": true,
+      "runtimeWorkflow": "minimal",
+      "oracleStatus": "none",
+      "testStatus": "not-covered",
+      "currentNote": "Appointments and billing seam exist, but no TSS adapter or oracle implementation exists."
+    },
+    {
+      "family": "AW-SST",
+      "sourceQuarterOrVersion": "n/a",
+      "canonicalModel": true,
+      "runtimeWorkflow": "minimal",
+      "oracleStatus": "none",
+      "testStatus": "not-covered",
+      "currentNote": "Historical import and export architecture is modeled, but no validator or import implementation exists."
+    },
+    {
+      "family": "LDT/eArztbrief/1-Click-KIM",
+      "sourceQuarterOrVersion": "n/a",
+      "canonicalModel": "minimal",
+      "runtimeWorkflow": false,
+      "oracleStatus": "none",
+      "testStatus": "not-covered",
+      "currentNote": "Out of current implementation scope."
+    }
+  ]
+}

@@ -69,7 +69,7 @@ export const oraclePluginRegistry = {
       workingDirectory: ".",
       expectedOutputs: ["comparison.json"],
       normalizationRules: ["normalizePaths", "normalizeRenderTimestamps"],
-      passFailRule: "Order evaluation and output match approved regression fixtures.",
+      passFailRule: "Order evaluation matches official KBV Heilmittel prueffall fixtures and rule outcomes.",
     },
   ],
 } as const;

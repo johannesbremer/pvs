@@ -32,7 +32,23 @@ describe("oracle runtime", () => {
       }),
       executeOraclePlan({
         plan: heilmittelPlan,
-        payloadPreview: "{\"heilmittelCode\":\"X100\"}",
+        payloadPreview: JSON.stringify({
+          caseId: "PF06-A1",
+          heilmittelbereich: "Physiotherapie",
+          diagnosegruppe: "WS",
+          diagnosisCodes: ["M54.0", "Z98.8"],
+          blankoFlag: true,
+          items: [],
+          catalogEntries: [
+            {
+              code: "X0501",
+              heilmittelbereich: "Physiotherapie",
+              diagnosegruppe: "WS",
+              kind: "vorrangig",
+              blankoEligible: true,
+            },
+          ],
+        }),
       }),
     ]);
 

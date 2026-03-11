@@ -52,6 +52,41 @@ const buildOfflineLanguageCodeSystem = (codes) => ({
   })),
 });
 
+const buildOfflineAllLanguagesValueSet = (codes) => ({
+  resourceType: "ValueSet",
+  id: "all-languages",
+  url: "http://hl7.org/fhir/ValueSet/all-languages",
+  version: "4.0.1",
+  name: "AllLanguages",
+  title: "All Languages",
+  status: "active",
+  experimental: true,
+  description:
+    "Minimal offline ValueSet generated at validation time so validator_cli can validate GeneratedDosageInstructionsMeta.language without a terminology server.",
+  compose: {
+    include: [
+      {
+        system: "urn:ietf:bcp:47",
+        concept: codes.map((code) => ({
+          code,
+          display: code,
+        })),
+      },
+    ],
+  },
+  expansion: {
+    identifier: "urn:uuid:kbv-offline-all-languages",
+    timestamp: "2026-03-11T00:00:00Z",
+    total: codes.length,
+    offset: 0,
+    contains: codes.map((code) => ({
+      system: "urn:ietf:bcp:47",
+      code,
+      display: code,
+    })),
+  },
+});
+
 const resolveJavaCommand = () => {
   const candidates = [
     process.env.JAVA_BIN,
@@ -187,6 +222,11 @@ if (offlineLanguageCodes.length > 0) {
   await fs.writeFile(
     join(supportDir, "CodeSystem-kbv-offline-ietf-bcp-47.json"),
     JSON.stringify(buildOfflineLanguageCodeSystem(offlineLanguageCodes), null, 2),
+    "utf8",
+  );
+  await fs.writeFile(
+    join(supportDir, "ValueSet-all-languages.json"),
+    JSON.stringify(buildOfflineAllLanguagesValueSet(offlineLanguageCodes), null, 2),
     "utf8",
   );
 }

@@ -1,0 +1,134 @@
+[
+  {
+    "caseId": "PF01-A1",
+    "sourceReference": "KBV Heilmittel Pruefpaket v2.4 p.11 lines 258-301",
+    "issueDate": "2025-03-11",
+    "heilmittelbereich": "Physiotherapie",
+    "diagnosegruppe": "EX",
+    "diagnosisCodes": ["S82.21"],
+    "blankoFlag": false,
+    "items": [
+      { "code": "X0106", "units": 6, "kind": "vorrangig" },
+      { "code": "X1530", "units": 6, "kind": "ergaenzend" }
+    ],
+    "catalogEntries": [
+      { "code": "X0106", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "EX", "kind": "vorrangig" },
+      { "code": "X1530", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "EX", "kind": "ergaenzend" }
+    ],
+    "expectedPassed": true
+  },
+  {
+    "caseId": "PF01-A3",
+    "sourceReference": "KBV Heilmittel Pruefpaket v2.4 p.12 lines 321-332",
+    "issueDate": "2025-03-11",
+    "heilmittelbereich": "Physiotherapie",
+    "diagnosegruppe": "EX",
+    "diagnosisCodes": ["S82.21"],
+    "blankoFlag": false,
+    "items": [
+      { "code": "X2001", "units": 6, "kind": "standardkombination" }
+    ],
+    "catalogEntries": [
+      { "code": "X2001", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "EX", "kind": "standardkombination" }
+    ],
+    "expectedPassed": true
+  },
+  {
+    "caseId": "PF03-A2",
+    "sourceReference": "KBV Heilmittel Pruefpaket v2.4 p.17 lines 518-545",
+    "issueDate": "2025-03-11",
+    "heilmittelbereich": "Stimm-, Sprech-, Sprach- und Schlucktherapie",
+    "diagnosegruppe": "ST3",
+    "diagnosisCodes": ["F44.4"],
+    "blankoFlag": false,
+    "requiresLongTermApproval": true,
+    "approval": {
+      "validUntil": "2025-12-31",
+      "diagnosegruppen": ["ST3"],
+      "heilmittelCodes": ["X3102", "X3103"]
+    },
+    "items": [
+      { "code": "X3102", "units": 5, "kind": "vorrangig" },
+      { "code": "X3103", "units": 5, "kind": "vorrangig" }
+    ],
+    "catalogEntries": [
+      { "code": "X3102", "heilmittelbereich": "Stimm-, Sprech-, Sprach- und Schlucktherapie", "diagnosegruppe": "ST3", "kind": "vorrangig" },
+      { "code": "X3103", "heilmittelbereich": "Stimm-, Sprech-, Sprach- und Schlucktherapie", "diagnosegruppe": "ST3", "kind": "vorrangig" }
+    ],
+    "expectedPassed": true
+  },
+  {
+    "caseId": "PF06-A1",
+    "sourceReference": "KBV Heilmittel Pruefpaket v2.4 p.20-21 lines 630-668",
+    "issueDate": "2025-03-11",
+    "heilmittelbereich": "Physiotherapie",
+    "diagnosegruppe": "WS",
+    "diagnosisCodes": ["M54.0", "Z98.8"],
+    "blankoFlag": true,
+    "items": [],
+    "catalogEntries": [
+      { "code": "X0501", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "vorrangig", "blankoEligible": true },
+      { "code": "X1201", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "vorrangig", "blankoEligible": true },
+      { "code": "X1530", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "ergaenzend", "blankoEligible": true }
+    ],
+    "expectedPassed": true
+  },
+  {
+    "caseId": "PF06-A3",
+    "sourceReference": "KBV Heilmittel Pruefpaket v2.4 p.21 lines 685-700",
+    "issueDate": "2025-03-11",
+    "heilmittelbereich": "Physiotherapie",
+    "diagnosegruppe": "WS",
+    "diagnosisCodes": ["M54.0", "Z98.8"],
+    "blankoFlag": false,
+    "maxTotalUnits": 12,
+    "items": [
+      { "code": "X0501", "units": 4, "kind": "vorrangig" },
+      { "code": "X1201", "units": 4, "kind": "vorrangig" },
+      { "code": "X1530", "units": 8, "kind": "ergaenzend" }
+    ],
+    "catalogEntries": [
+      { "code": "X0501", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "vorrangig", "blankoEligible": true },
+      { "code": "X1201", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "vorrangig", "blankoEligible": true },
+      { "code": "X1530", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "ergaenzend", "blankoEligible": true }
+    ],
+    "expectedPassed": false,
+    "expectedErrorCodes": ["HEILMITTEL_MAX_TOTAL_UNITS_EXCEEDED"]
+  },
+  {
+    "caseId": "PF06-A4",
+    "sourceReference": "KBV Heilmittel Pruefpaket v2.4 p.22 lines 701-715",
+    "issueDate": "2025-03-11",
+    "heilmittelbereich": "Physiotherapie",
+    "diagnosegruppe": "WS",
+    "diagnosisCodes": ["M54.0", "Z98.8"],
+    "blankoFlag": false,
+    "maxTotalUnits": 12,
+    "items": [
+      { "code": "X0501", "units": 7, "kind": "vorrangig" },
+      { "code": "X1530", "units": 7, "kind": "ergaenzend" }
+    ],
+    "catalogEntries": [
+      { "code": "X0501", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "vorrangig", "blankoEligible": true },
+      { "code": "X1530", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "ergaenzend", "blankoEligible": true }
+    ],
+    "expectedPassed": false,
+    "expectedErrorCodes": ["HEILMITTEL_MAX_TOTAL_UNITS_EXCEEDED"]
+  },
+  {
+    "caseId": "PF07-A1",
+    "sourceReference": "KBV Heilmittel Pruefpaket v2.4 p.22-23 lines 717-756",
+    "issueDate": "2025-03-11",
+    "heilmittelbereich": "Massnahmen der Ernaehrungstherapie",
+    "diagnosegruppe": "SAS",
+    "diagnosisCodes": ["E71.0"],
+    "blankoFlag": false,
+    "items": [
+      { "code": "A5003", "units": 100, "kind": "vorrangig" }
+    ],
+    "catalogEntries": [
+      { "code": "A5003", "heilmittelbereich": "Massnahmen der Ernaehrungstherapie", "diagnosegruppe": "SAS", "kind": "vorrangig" }
+    ],
+    "expectedPassed": true
+  }
+]

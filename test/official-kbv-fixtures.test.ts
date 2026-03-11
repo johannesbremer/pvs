@@ -81,12 +81,6 @@ const parseValidatorErrorLines = (stdout: string) =>
     .map((line) => line.replace(/\x1B\[[0-9;]*m/g, "").trim())
     .filter((line) => line.startsWith("Error @"));
 
-const isKnownRenderedDosageInstructionLimitation = (line: string) =>
-  (line.includes("Unable to find a profile match for") &&
-    line.includes("KBV_PR_ERP_Prescription")) ||
-  line.includes("The System URI could not be determined for the code 'de-DE'") ||
-  line.includes("The value provided ('de-DE') was not found in the value set 'All Languages'");
-
 describe("official KBV fixture sweeps", () => {
   it(
     "validates all official non-error eAU XML examples with the executable oracle",
@@ -152,17 +146,13 @@ describe("official KBV fixture sweeps", () => {
         });
         const validatorErrors = parseValidatorErrorLines(result.stdout);
 
-        if (validatorErrors.length === 0 && result.stdout.includes("Success: 0 errors")) {
-          continue;
-        }
-
         expect(
-          validatorErrors.length,
-          `eRezept example ${exampleName} should either validate cleanly or fail only with the known renderedDosageInstruction limitation.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
-        ).toBeGreaterThan(0);
+          validatorErrors,
+          `eRezept example ${exampleName} should validate without error findings.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+        ).toHaveLength(0);
         expect(
-          validatorErrors.every(isKnownRenderedDosageInstructionLimitation),
-          `eRezept example ${exampleName} reported unexpected validator errors.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+          result.stdout.includes("Success: 0 errors"),
+          `eRezept example ${exampleName} should complete with Success: 0 errors.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
         ).toBe(true);
       }
     },
