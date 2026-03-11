@@ -45,7 +45,6 @@ import {
   RunValidationArgs,
   ValidationSummaryArgs,
 } from "../src/domain/emission";
-import { VosPayload } from "../src/fhir-r4-effect/resources/vos";
 import {
   ManualPatientSeedFields,
   PatientIdentifierSystem,
@@ -85,6 +84,7 @@ import {
   SearchVosResourcesArgs,
   WorkflowIssue,
 } from "../src/domain/prescribing-documents";
+import { VosPayload } from "../src/fhir-r4-effect/resources/vos";
 import {
   buildOraclePlan,
   listOraclePlugins as listRegisteredOraclePlugins,
