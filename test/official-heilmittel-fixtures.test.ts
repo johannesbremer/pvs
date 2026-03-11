@@ -1,15 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import { runHeilmittelOracle } from "../tools/oracles/heilmittel/run";
 
-type HeilmittelFixture = {
+interface HeilmittelFixture {
   readonly caseId: string;
+  readonly expectedErrorCodes?: readonly string[];
   readonly expectedPassed: boolean;
-  readonly expectedErrorCodes?: ReadonlyArray<string>;
-};
+}
 
 describe("official Heilmittel fixture sweeps", () => {
   it("validates official KBV Heilmittel prueffall fixtures", async () => {
@@ -22,7 +21,7 @@ describe("official Heilmittel fixture sweeps", () => {
     );
     const fixtures = JSON.parse(
       await readFile(fixturePath, "utf8"),
-    ) as ReadonlyArray<HeilmittelFixture>;
+    ) as readonly HeilmittelFixture[];
 
     expect(fixtures.length).toBeGreaterThanOrEqual(6);
 

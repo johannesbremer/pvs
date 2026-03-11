@@ -33,9 +33,11 @@ export const resolveJavacCommand = () => {
 };
 
 export const resolveXmllintCommand = () => {
-  const candidates = [process.env.XMLLINT_BIN, "/usr/bin/xmllint", "xmllint"].filter(
-    (candidate): candidate is string => Boolean(candidate),
-  );
+  const candidates = [
+    process.env.XMLLINT_BIN,
+    "/usr/bin/xmllint",
+    "xmllint",
+  ].filter((candidate): candidate is string => Boolean(candidate));
 
   for (const candidate of candidates) {
     if (candidate === "xmllint" || existsSync(candidate)) {

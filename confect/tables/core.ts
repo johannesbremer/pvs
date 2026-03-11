@@ -1,4 +1,13 @@
 export {
+  Appointments,
+  AppointmentsFields,
+  Encounters,
+  EncountersFields,
+  Referrals,
+  ReferralsFields,
+} from "./core-encounters";
+
+export {
   InterfaceProfiles,
   InterfaceProfilesFields,
   KimMailboxes,
@@ -29,12 +38,3 @@ export {
   VsdSnapshots,
   VsdSnapshotsFields,
 } from "./core-patients";
-
-export {
-  Appointments,
-  AppointmentsFields,
-  Encounters,
-  EncountersFields,
-  Referrals,
-  ReferralsFields,
-} from "./core-encounters";

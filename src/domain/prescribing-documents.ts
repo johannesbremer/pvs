@@ -2,12 +2,15 @@ import { GenericId } from "@confect/core";
 import { Schema } from "effect";
 
 import {
-  FormDefinitionsFields,
-  FormInstancesFields,
   ClinicalDocumentsFields,
   DocumentRevisionsFields,
+  FormDefinitionsFields,
+  FormInstancesFields,
 } from "../../confect/tables/forms";
-import { ArtifactsFields, DraftWorkspacesFields } from "../../confect/tables/integration";
+import {
+  ArtifactsFields,
+  DraftWorkspacesFields,
+} from "../../confect/tables/integration";
 import {
   HeilmittelApprovalsFields,
   HeilmittelCatalogRefsFields,
@@ -17,7 +20,11 @@ import {
   MedicationPlanEntriesFields,
   MedicationPlansFields,
 } from "../../confect/tables/prescribing";
-import { AttachmentRefValue, IsoDate, IsoDateTime } from "../../confect/tables/primitives";
+import {
+  AttachmentRefValue,
+  IsoDate,
+  IsoDateTime,
+} from "../../confect/tables/primitives";
 import { withSystemFields } from "./shared";
 
 export const MedicationCatalogRefDocument = withSystemFields(
@@ -71,28 +78,26 @@ export const DraftWorkspaceDocument = withSystemFields(
 );
 
 export const WorkflowIssue = Schema.Struct({
+  blocking: Schema.Boolean,
   code: Schema.String,
   message: Schema.String,
-  blocking: Schema.Boolean,
 });
 
 export const ImportMedicationCatalogRefsArgs = Schema.Struct({
+  entries: Schema.Array(MedicationCatalogRefsFields.omit("sourcePackageId")),
   sourcePackageId: GenericId.GenericId("masterDataPackages"),
-  entries: Schema.Array(
-    MedicationCatalogRefsFields.omit("sourcePackageId"),
-  ),
 });
 export const ImportMedicationCatalogRefsResult = Schema.Struct({
-  importedCount: Schema.Number,
   entryIds: Schema.Array(GenericId.GenericId("medicationCatalogRefs")),
+  importedCount: Schema.Number,
 });
 
 export const LookupMedicationByPznArgs = Schema.Struct({
   pzn: Schema.String,
 });
 export const LookupMedicationByPznFound = Schema.Struct({
-  found: Schema.Literal(true),
   entry: MedicationCatalogRefDocument,
+  found: Schema.Literal(true),
 });
 export const LookupMedicationByPznMissing = Schema.Struct({
   found: Schema.Literal(false),
@@ -103,14 +108,12 @@ export const LookupMedicationByPznResult = Schema.Union(
 );
 
 export const ImportHeilmittelCatalogRefsArgs = Schema.Struct({
+  entries: Schema.Array(HeilmittelCatalogRefsFields.omit("sourcePackageId")),
   sourcePackageId: GenericId.GenericId("masterDataPackages"),
-  entries: Schema.Array(
-    HeilmittelCatalogRefsFields.omit("sourcePackageId"),
-  ),
 });
 export const ImportHeilmittelCatalogRefsResult = Schema.Struct({
-  importedCount: Schema.Number,
   entryIds: Schema.Array(GenericId.GenericId("heilmittelCatalogRefs")),
+  importedCount: Schema.Number,
 });
 
 export const LookupHeilmittelByKeyArgs = Schema.Struct({
@@ -118,8 +121,8 @@ export const LookupHeilmittelByKeyArgs = Schema.Struct({
   heilmittelCode: Schema.String,
 });
 export const LookupHeilmittelByKeyFound = Schema.Struct({
-  found: Schema.Literal(true),
   entry: HeilmittelCatalogRefDocument,
+  found: Schema.Literal(true),
 });
 export const LookupHeilmittelByKeyMissing = Schema.Struct({
   found: Schema.Literal(false),
@@ -169,36 +172,36 @@ export const FinalizePrintFormInput = Schema.Struct({
     GenericId.GenericId("practitionerRoles"),
   ),
   issuingOrganizationId: Schema.optional(GenericId.GenericId("organizations")),
-  renderContextAttachment: Schema.optional(AttachmentRefValue),
   outputAttachment: Schema.optional(AttachmentRefValue),
+  renderContextAttachment: Schema.optional(AttachmentRefValue),
 });
 
 export const FinalizeMedicationOrderArgs = Schema.Struct({
-  medicationOrderId: GenericId.GenericId("medicationOrders"),
-  finalizedAt: IsoDateTime,
-  profileVersion: Schema.optional(Schema.String),
   artifact: FinalizeDocumentArtifactInput,
+  finalizedAt: IsoDateTime,
+  medicationOrderId: GenericId.GenericId("medicationOrders"),
   patientPrint: Schema.optional(FinalizeDocumentArtifactInput),
   printForm: Schema.optional(FinalizePrintFormInput),
+  profileVersion: Schema.optional(Schema.String),
 });
 
 export const FinalizeMedicationOrderFinalized = Schema.Struct({
-  outcome: Schema.Literal("finalized"),
-  medicationOrderId: GenericId.GenericId("medicationOrders"),
-  documentId: GenericId.GenericId("clinicalDocuments"),
-  revisionId: GenericId.GenericId("documentRevisions"),
   artifactId: GenericId.GenericId("artifacts"),
-  patientPrintArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  documentId: GenericId.GenericId("clinicalDocuments"),
   formInstanceId: Schema.optional(GenericId.GenericId("formInstances")),
+  medicationOrderId: GenericId.GenericId("medicationOrders"),
+  outcome: Schema.Literal("finalized"),
+  patientPrintArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  revisionId: GenericId.GenericId("documentRevisions"),
 });
 export const FinalizeMedicationOrderBlocked = Schema.Struct({
-  outcome: Schema.Literal("blocked"),
-  medicationOrderId: GenericId.GenericId("medicationOrders"),
   issues: Schema.Array(WorkflowIssue),
+  medicationOrderId: GenericId.GenericId("medicationOrders"),
+  outcome: Schema.Literal("blocked"),
 });
 export const FinalizeMedicationOrderNotDraft = Schema.Struct({
-  outcome: Schema.Literal("not-draft"),
   medicationOrderId: GenericId.GenericId("medicationOrders"),
+  outcome: Schema.Literal("not-draft"),
 });
 export const FinalizeMedicationOrderMissing = Schema.Struct({
   outcome: Schema.Literal("order-not-found"),
@@ -224,9 +227,9 @@ export const GetCurrentMedicationPlanArgs = Schema.Struct({
   patientId: GenericId.GenericId("patients"),
 });
 export const GetCurrentMedicationPlanFound = Schema.Struct({
+  entries: Schema.Array(MedicationPlanEntryDocument),
   found: Schema.Literal(true),
   plan: MedicationPlanDocument,
-  entries: Schema.Array(MedicationPlanEntryDocument),
 });
 export const GetCurrentMedicationPlanMissing = Schema.Struct({
   found: Schema.Literal(false),
@@ -270,29 +273,29 @@ export const ListHeilmittelOrdersArgs = Schema.Struct({
 export const ListHeilmittelOrdersResult = Schema.Array(HeilmittelOrderDocument);
 
 export const FinalizeHeilmittelOrderArgs = Schema.Struct({
-  heilmittelOrderId: GenericId.GenericId("heilmittelOrders"),
-  finalizedAt: IsoDateTime,
-  profileVersion: Schema.optional(Schema.String),
   artifact: FinalizeDocumentArtifactInput,
+  finalizedAt: IsoDateTime,
+  heilmittelOrderId: GenericId.GenericId("heilmittelOrders"),
   printForm: Schema.optional(FinalizePrintFormInput),
+  profileVersion: Schema.optional(Schema.String),
 });
 
 export const FinalizeHeilmittelOrderFinalized = Schema.Struct({
-  outcome: Schema.Literal("finalized"),
-  heilmittelOrderId: GenericId.GenericId("heilmittelOrders"),
-  documentId: GenericId.GenericId("clinicalDocuments"),
-  revisionId: GenericId.GenericId("documentRevisions"),
   artifactId: GenericId.GenericId("artifacts"),
+  documentId: GenericId.GenericId("clinicalDocuments"),
   formInstanceId: Schema.optional(GenericId.GenericId("formInstances")),
+  heilmittelOrderId: GenericId.GenericId("heilmittelOrders"),
+  outcome: Schema.Literal("finalized"),
+  revisionId: GenericId.GenericId("documentRevisions"),
 });
 export const FinalizeHeilmittelOrderBlocked = Schema.Struct({
-  outcome: Schema.Literal("blocked"),
   heilmittelOrderId: GenericId.GenericId("heilmittelOrders"),
   issues: Schema.Array(WorkflowIssue),
+  outcome: Schema.Literal("blocked"),
 });
 export const FinalizeHeilmittelOrderNotDraft = Schema.Struct({
-  outcome: Schema.Literal("not-draft"),
   heilmittelOrderId: GenericId.GenericId("heilmittelOrders"),
+  outcome: Schema.Literal("not-draft"),
 });
 export const FinalizeHeilmittelOrderMissing = Schema.Struct({
   outcome: Schema.Literal("order-not-found"),
@@ -310,10 +313,10 @@ export const RegisterFormDefinitionResult = Schema.Struct({
 });
 
 export const ListFormDefinitionsArgs = Schema.Struct({
+  activeOnly: Schema.optional(Schema.Boolean),
   theme: Schema.optional(
     Schema.Literal("bfb", "dimus", "heilmittel", "billing", "other"),
   ),
-  activeOnly: Schema.optional(Schema.Boolean),
 });
 export const ListFormDefinitionsResult = Schema.Array(FormDefinitionDocument);
 
@@ -330,18 +333,17 @@ export const ListFormInstancesByPatientArgs = Schema.Struct({
     ),
   ),
 });
-export const ListFormInstancesByPatientResult = Schema.Array(
-  FormInstanceDocument,
-);
+export const ListFormInstancesByPatientResult =
+  Schema.Array(FormInstanceDocument);
 
 export const GetDocumentArgs = Schema.Struct({
   documentId: GenericId.GenericId("clinicalDocuments"),
 });
 export const GetDocumentFound = Schema.Struct({
-  found: Schema.Literal(true),
-  document: ClinicalDocumentDocument,
-  revisions: Schema.Array(DocumentRevisionDocument),
   artifacts: Schema.Array(ArtifactDocument),
+  document: ClinicalDocumentDocument,
+  found: Schema.Literal(true),
+  revisions: Schema.Array(DocumentRevisionDocument),
 });
 export const GetDocumentMissing = Schema.Struct({
   found: Schema.Literal(false),
@@ -352,7 +354,6 @@ export const GetDocumentResult = Schema.Union(
 );
 
 export const ListDocumentsByPatientArgs = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
   kind: Schema.optional(
     Schema.Literal(
       "erp",
@@ -367,34 +368,35 @@ export const ListDocumentsByPatientArgs = Schema.Struct({
       "other",
     ),
   ),
+  patientId: GenericId.GenericId("patients"),
 });
 export const ListDocumentsByPatientResult = Schema.Array(
   ClinicalDocumentDocument,
 );
 
 export const SaveDraftWorkspaceArgs = Schema.Struct({
-  ownerKind: Schema.String,
-  ownerId: Schema.String,
-  workflowKind: Schema.String,
-  snapshot: Schema.Unknown,
-  schemaVersion: Schema.Number,
   lastTouchedAt: IsoDateTime,
   lastTouchedBy: Schema.String,
+  ownerId: Schema.String,
+  ownerKind: Schema.String,
+  schemaVersion: Schema.Number,
+  snapshot: Schema.Unknown,
   status: Schema.optional(Schema.Literal("open", "abandoned")),
+  workflowKind: Schema.String,
 });
 export const SaveDraftWorkspaceResult = Schema.Struct({
-  draftWorkspaceId: GenericId.GenericId("draftWorkspaces"),
   created: Schema.Boolean,
+  draftWorkspaceId: GenericId.GenericId("draftWorkspaces"),
 });
 
 export const GetDraftWorkspaceArgs = Schema.Struct({
-  ownerKind: Schema.String,
   ownerId: Schema.String,
+  ownerKind: Schema.String,
   workflowKind: Schema.String,
 });
 export const GetDraftWorkspaceFound = Schema.Struct({
-  found: Schema.Literal(true),
   draftWorkspace: DraftWorkspaceDocument,
+  found: Schema.Literal(true),
 });
 export const GetDraftWorkspaceMissing = Schema.Struct({
   found: Schema.Literal(false),
@@ -410,8 +412,8 @@ export const PromoteDraftWorkspaceArgs = Schema.Struct({
   promotedBy: Schema.String,
 });
 export const PromoteDraftWorkspacePromoted = Schema.Struct({
-  outcome: Schema.Literal("promoted"),
   draftWorkspaceId: GenericId.GenericId("draftWorkspaces"),
+  outcome: Schema.Literal("promoted"),
 });
 export const PromoteDraftWorkspaceMissing = Schema.Struct({
   outcome: Schema.Literal("draft-workspace-not-found"),

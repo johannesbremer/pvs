@@ -1,6 +1,13 @@
 import { DatabaseSchema } from "@confect/server";
 
 import {
+  BillingCases,
+  BillingLineItems,
+  CodingEvaluations,
+  Diagnoses,
+  IcdCatalogEntries,
+} from "./tables/billing";
+import {
   Appointments,
   Coverages,
   EebInboxItems,
@@ -19,12 +26,17 @@ import {
   VsdSnapshots,
 } from "./tables/core";
 import {
-  BillingCases,
-  BillingLineItems,
-  CodingEvaluations,
-  Diagnoses,
-  IcdCatalogEntries,
-} from "./tables/billing";
+  ClinicalDocuments,
+  DocumentRevisions,
+  FormDefinitions,
+  FormInstances,
+} from "./tables/forms";
+import {
+  Artifacts,
+  DraftWorkspaces,
+  IntegrationEvents,
+  IntegrationJobs,
+} from "./tables/integration";
 import {
   DigaCatalogRefs,
   DigaOrders,
@@ -37,18 +49,6 @@ import {
   MedicationPlanEntries,
   MedicationPlans,
 } from "./tables/prescribing";
-import {
-  ClinicalDocuments,
-  DocumentRevisions,
-  FormDefinitions,
-  FormInstances,
-} from "./tables/forms";
-import {
-  Artifacts,
-  DraftWorkspaces,
-  IntegrationEvents,
-  IntegrationJobs,
-} from "./tables/integration";
 
 export default DatabaseSchema.make()
   .addTable(InterfaceProfiles)

@@ -6,6 +6,6 @@ export const withSystemFields = <const TableName extends string>(
   fields: Schema.Schema.AnyNoContext,
 ) =>
   Schema.Struct({
-    _id: GenericId.GenericId(tableName),
     _creationTime: Schema.Number,
+    _id: GenericId.GenericId(tableName),
   }).pipe(Schema.extend(fields));

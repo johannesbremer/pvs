@@ -12,26 +12,26 @@ import {
 } from "./common";
 
 export const EauBundleResource = Schema.Struct({
-  resourceType: Schema.Literal("Bundle"),
-  type: Schema.Literal("document"),
+  entry: Schema.Array(FhirBundleEntry),
   identifier: Schema.optional(
     Schema.Struct({
       system: Schema.String,
       value: Schema.String,
     }),
   ),
+  resourceType: Schema.Literal("Bundle"),
   timestamp: Schema.String,
-  entry: Schema.Array(FhirBundleEntry),
+  type: Schema.Literal("document"),
 });
 
 export const EauPayload = Schema.Struct({
-  profileVersion: Schema.String,
+  bundle: EauBundleResource,
   composition: FhirCompositionResource,
-  patient: FhirPatientResource,
-  practitioner: FhirPractitionerResource,
-  organization: FhirOrganizationResource,
+  conditions: Schema.Array(FhirConditionResource),
   coverage: FhirCoverageResource,
   encounter: FhirEncounterResource,
-  conditions: Schema.Array(FhirConditionResource),
-  bundle: EauBundleResource,
+  organization: FhirOrganizationResource,
+  patient: FhirPatientResource,
+  practitioner: FhirPractitionerResource,
+  profileVersion: Schema.String,
 });

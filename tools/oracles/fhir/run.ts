@@ -1,13 +1,15 @@
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+
 import type { OracleExecutionResult } from "../types";
+
 import {
   ensureFhirValidatorAssets,
   ensureFhirValidatorDependencyCache,
 } from "../assets";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { resolveJavaCommand } from "../system";
 
 const execFileAsync = promisify(execFile);
@@ -34,48 +36,48 @@ const logTiming = (label: string, startTime: number) => {
 
 const missingTagFinding = (tagName: string) => ({
   code: `FHIR_TAG_${tagName.toUpperCase()}_MISSING`,
-  severity: "error" as const,
   message: `Expected <${tagName}> in rendered FHIR XML.`,
+  severity: "error" as const,
 });
 
 const parseFhirValidatorFindings = (output: string) => {
-  const findings: Array<OracleExecutionResult["findings"][number]> = [];
+  const findings: OracleExecutionResult["findings"][number][] = [];
   const trimmedOutput = output.trim();
 
   const missingPackageMatches = trimmedOutput.matchAll(
-    /Unable to resolve package id ([^\s]+)/g,
+    /Unable to resolve package id (\S+)/g,
   );
   for (const match of missingPackageMatches) {
     findings.push({
       code: "FHIR_VALIDATOR_MISSING_PACKAGE",
-      severity: "error",
       message: `Validator could not resolve package ${match[1]}.`,
+      severity: "error",
     });
   }
 
   if (/Error fetching /i.test(trimmedOutput)) {
     findings.push({
       code: "FHIR_VALIDATOR_NETWORK_DEPENDENCY",
-      severity: "warning",
       message:
         "Validator attempted to fetch additional packages from remote package servers.",
+      severity: "warning",
     });
   }
 
-  if (/Exception in thread \"main\"/i.test(trimmedOutput)) {
+  if (/Exception in thread "main"/i.test(trimmedOutput)) {
     findings.push({
       code: "FHIR_VALIDATOR_EXECUTION_FAILED",
-      severity: "error",
       message: trimmedOutput.slice(0, 500),
+      severity: "error",
     });
   }
 
-  const failureMatch = trimmedOutput.match(/\*FAILURE\*:\s*([^\n]+)/);
+  const failureMatch = /\*FAILURE\*:\s*([^\n]+)/.exec(trimmedOutput);
   if (failureMatch) {
     findings.push({
       code: "FHIR_VALIDATION_FAILED",
-      severity: "error",
       message: failureMatch[1],
+      severity: "error",
     });
   }
 
@@ -89,65 +91,65 @@ const extractOfflineLanguageCodes = (xml: string) => {
   return [...new Set([...matches].map((match) => match[1]))].sort();
 };
 
-const buildOfflineLanguageCodeSystem = (codes: ReadonlyArray<string>) => ({
-  resourceType: "CodeSystem",
-  id: "kbv-offline-ietf-bcp-47",
-  url: "urn:ietf:bcp:47",
-  version: "0.0.1-kbv-offline",
-  name: "KbvOfflineIetfBcp47",
-  title: "Offline BCP-47 Language Codes",
-  status: "active",
-  experimental: true,
-  description:
-    "Minimal offline code system generated at validation time so validator_cli can resolve language-tag codes without a terminology server.",
+const buildOfflineLanguageCodeSystem = (codes: readonly string[]) => ({
   caseSensitive: true,
-  content: "complete",
   concept: codes.map((code) => ({
     code,
     display: code,
   })),
+  content: "complete",
+  description:
+    "Minimal offline code system generated at validation time so validator_cli can resolve language-tag codes without a terminology server.",
+  experimental: true,
+  id: "kbv-offline-ietf-bcp-47",
+  name: "KbvOfflineIetfBcp47",
+  resourceType: "CodeSystem",
+  status: "active",
+  title: "Offline BCP-47 Language Codes",
+  url: "urn:ietf:bcp:47",
+  version: "0.0.1-kbv-offline",
 });
 
-const buildOfflineAllLanguagesValueSet = (codes: ReadonlyArray<string>) => ({
-  resourceType: "ValueSet",
-  id: "all-languages",
-  url: "http://hl7.org/fhir/ValueSet/all-languages",
-  version: "4.0.1",
-  name: "AllLanguages",
-  title: "All Languages",
-  status: "active",
-  experimental: true,
-  description:
-    "Minimal offline ValueSet generated at validation time so validator_cli can validate GeneratedDosageInstructionsMeta.language without a terminology server.",
+const buildOfflineAllLanguagesValueSet = (codes: readonly string[]) => ({
   compose: {
     include: [
       {
-        system: "urn:ietf:bcp:47",
         concept: codes.map((code) => ({
           code,
           display: code,
         })),
+        system: "urn:ietf:bcp:47",
       },
     ],
   },
+  description:
+    "Minimal offline ValueSet generated at validation time so validator_cli can validate GeneratedDosageInstructionsMeta.language without a terminology server.",
   expansion: {
-    identifier: "urn:uuid:kbv-offline-all-languages",
-    timestamp: "2026-03-11T00:00:00Z",
-    total: codes.length,
-    offset: 0,
     contains: codes.map((code) => ({
-      system: "urn:ietf:bcp:47",
       code,
       display: code,
+      system: "urn:ietf:bcp:47",
     })),
+    identifier: "urn:uuid:kbv-offline-all-languages",
+    offset: 0,
+    timestamp: "2026-03-11T00:00:00Z",
+    total: codes.length,
   },
+  experimental: true,
+  id: "all-languages",
+  name: "AllLanguages",
+  resourceType: "ValueSet",
+  status: "active",
+  title: "All Languages",
+  url: "http://hl7.org/fhir/ValueSet/all-languages",
+  version: "4.0.1",
 });
 
 export const runFhirOracle = ({
   family,
   xml,
 }: {
-  family: "eRezept" | "eAU";
+  family: "eAU" | "eRezept";
   xml?: string;
 }): OracleExecutionResult => {
   const findings = [];
@@ -155,8 +157,8 @@ export const runFhirOracle = ({
   if (!xml || xml.trim().length === 0) {
     findings.push({
       code: "FHIR_XML_MISSING",
-      severity: "error" as const,
       message: "No rendered FHIR XML was provided to the oracle runner.",
+      severity: "error" as const,
     });
   } else {
     if (!xml.includes("<Bundle")) {
@@ -187,8 +189,8 @@ export const runFhirOracle = ({
 
   return {
     family,
-    passed: findings.length === 0,
     findings,
+    passed: findings.length === 0,
     summary:
       findings.length === 0
         ? `${family} XML satisfied the local FHIR oracle checks.`
@@ -197,13 +199,13 @@ export const runFhirOracle = ({
 };
 
 export const runExecutableFhirOracle = async ({
+  cacheDir,
   family,
   xml,
-  cacheDir,
 }: {
-  family: "eRezept" | "eAU";
-  xml?: string;
   cacheDir?: string;
+  family: "eAU" | "eRezept";
+  xml?: string;
 }): Promise<OracleExecutionResult> => {
   if (!xml || xml.trim().length === 0) {
     return runFhirOracle({ family, xml });
@@ -264,23 +266,29 @@ export const runExecutableFhirOracle = async ({
     logTiming(`writeInputXml(${family})`, writeStart);
 
     const mountedIgPaths =
-      offlineLanguageCodes.length > 0 ? [supportDir, ...assets.igPaths] : assets.igPaths;
+      offlineLanguageCodes.length > 0
+        ? [supportDir, ...assets.igPaths]
+        : assets.igPaths;
     const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
     const execStart = Date.now();
     logDebug(`starting validatorCli(${family})`);
-    const { stdout, stderr } = await execFileAsync(resolveJavaCommand(), [
-      `-Duser.home=${userHomeOverride}`,
-      "-jar",
-      assets.validatorJar,
-      "-version",
-      "4.0.1",
-      xmlPath,
-      ...igArgs,
-      "-tx",
-      "n/a",
-    ], {
-      maxBuffer: 10 * 1024 * 1024,
-    });
+    const { stderr, stdout } = await execFileAsync(
+      resolveJavaCommand(),
+      [
+        `-Duser.home=${userHomeOverride}`,
+        "-jar",
+        assets.validatorJar,
+        "-version",
+        "4.0.1",
+        xmlPath,
+        ...igArgs,
+        "-tx",
+        "n/a",
+      ],
+      {
+        maxBuffer: 10 * 1024 * 1024,
+      },
+    );
     logTiming(`validatorCli(${family})`, execStart);
 
     const combined = `${stdout}\n${stderr}`;
@@ -290,12 +298,11 @@ export const runExecutableFhirOracle = async ({
 
     return {
       family,
-      passed,
       findings,
-      summary:
-        passed
-          ? `${family} executable validator completed without error findings.`
-          : `${family} executable validator reported errors.`,
+      passed,
+      summary: passed
+        ? `${family} executable validator completed without error findings.`
+        : `${family} executable validator reported errors.`,
     };
   } catch (error) {
     const errorOutput =
@@ -310,20 +317,20 @@ export const runExecutableFhirOracle = async ({
     const findings = parseFhirValidatorFindings(errorOutput);
     return {
       family,
-      passed: false,
       findings:
         findings.length > 0
           ? findings
           : [
               {
                 code: "FHIR_VALIDATOR_EXECUTION_FAILED",
-                severity: "error",
                 message: errorOutput.slice(0, 500),
+                severity: "error",
               },
             ],
+      passed: false,
       summary: `${family} executable validator failed to run.`,
     };
   } finally {
-    await rm(tempDir, { recursive: true, force: true });
+    await rm(tempDir, { force: true, recursive: true });
   }
 };

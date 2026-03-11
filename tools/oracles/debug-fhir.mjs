@@ -187,7 +187,8 @@ log(`starting validator jar discovery`);
 const jarStart = Date.now();
 const validatorJar = await findFileRecursive(
   serviceDir,
-  (entryPath) => entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
+  (entryPath) =>
+    entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
 );
 if (!validatorJar) {
   throw new Error("validator_cli jar not found");
@@ -221,12 +222,20 @@ if (offlineLanguageCodes.length > 0) {
   await fs.mkdir(supportDir, { recursive: true });
   await fs.writeFile(
     join(supportDir, "CodeSystem-kbv-offline-ietf-bcp-47.json"),
-    JSON.stringify(buildOfflineLanguageCodeSystem(offlineLanguageCodes), null, 2),
+    JSON.stringify(
+      buildOfflineLanguageCodeSystem(offlineLanguageCodes),
+      null,
+      2,
+    ),
     "utf8",
   );
   await fs.writeFile(
     join(supportDir, "ValueSet-all-languages.json"),
-    JSON.stringify(buildOfflineAllLanguagesValueSet(offlineLanguageCodes), null, 2),
+    JSON.stringify(
+      buildOfflineAllLanguagesValueSet(offlineLanguageCodes),
+      null,
+      2,
+    ),
     "utf8",
   );
 }

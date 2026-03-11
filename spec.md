@@ -372,8 +372,10 @@ export const ExampleFields = Schema.Struct({
   /* fields */
 });
 
-export const Example = Table.make("example", ExampleFields)
-  .index("by_some_field", ["someField"]);
+export const Example = Table.make("example", ExampleFields).index(
+  "by_some_field",
+  ["someField"],
+);
 ```
 
 Use exported `Fields` schemas as the source for:
@@ -386,11 +388,13 @@ Use exported `Fields` schemas as the source for:
 ### 6.1 `interfaceProfiles`
 
 Sources:
+
 - `Allgemein/KBV_ITA_SIEX_Inhalt_Update.pdf.md`
 - `DigitaleMuster/eVDGA/Q3_2026/KBV_ITA_VGEX_Technische_Anlage_eVDGA.pdf.md`
 - `DigitaleMuster/FOR/KBV_FHIR_FOR_V1.2.1.zip.extracted/KBV_PR_FOR_Patient.xml`
 
 Purpose:
+
 - version registry for profile-family selection by effective date
 
 Fields:
@@ -429,12 +433,14 @@ export const InterfaceProfilesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_artifactFamily_and_effectiveFrom`
 - `by_artifactFamily_and_profileVersion`
 
 ### 6.2 `masterDataPackages`
 
 Sources:
+
 - `Stammdateien/SDICD/SDICD_V2.4.0.zip.extracted/Dokumentation/KBV_ITA_VGEX_Schnittstelle_SDICD.pdf.md`
 - `Stammdateien/SDKH/SDKH_V1.01.zip.extracted/Dokumentation/KBV_ITA_VGEX_Schnittstelle_SDKH.pdf.md`
 - `Stammdateien/SDKRW/SDKRW_V1.40.zip.extracted/Dokumentation/KBV_ITA_VGEX_Schnittstelle_SDKRW.pdf.md`
@@ -447,6 +453,7 @@ Sources:
 - `Verordnungen/VDGA/KBV_ITA_VGEX_Anforderungskatalog_VDGA.pdf.md`
 
 Purpose:
+
 - metadata and provenance for imported KBV/GKV/BfArM data packages
 
 Fields:
@@ -479,18 +486,21 @@ export const MasterDataPackagesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_family_and_version`
 - `by_family_and_effectiveFrom`
 
 ### 6.3 `organizations`
 
 Sources:
+
 - `DigitaleMuster/FOR/KBV_FHIR_FOR_V1.2.1.zip.extracted/KBV_PR_FOR_Organization.xml`
 - `Service-Informationen/Feldkatalog/KBV_ITA_SIEX_Feld_und_Regelkatalog.pdf.md`
 - `DigitaleMuster/KBV_ITA_VGEX_Technisches_Handbuch_DiMus.pdf.md`
 - `Abrechnung/KBV_ITA_VGEX_Mapping_KVK.pdf.md`
 
 Purpose:
+
 - legal and billing-relevant organizations, mainly practices and payors
 
 Fields:
@@ -513,6 +523,7 @@ export const OrganizationsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_bsnr`
 - `by_iknr`
 - `by_telematikId`
@@ -521,11 +532,13 @@ Indexes:
 ### 6.4 `practiceLocations`
 
 Sources:
+
 - `DigitaleMuster/KBV_ITA_VGEX_Technisches_Handbuch_DiMus.pdf.md`
 - `371-Schnittstellen/PVS-Archivierungs-Wechsel-Schnittstelle/KBV_FHIR_AW.zip.extracted/Profile/KBV_PR_AW_Unfall_Ort.xml`
 - `Service-Informationen/Feldkatalog/KBV_ITA_SIEX_Feld_und_Regelkatalog.pdf.md`
 
 Purpose:
+
 - operational locations under an organization; needed for BSNR/NBSNR, ASV, form output, and billing
 
 Fields:
@@ -544,6 +557,7 @@ export const PracticeLocationsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_organizationId`
 - `by_bsnrOrNbsnr`
 - `by_asvTeamNumber`
@@ -551,11 +565,13 @@ Indexes:
 ### 6.5 `practitioners`
 
 Sources:
+
 - `DigitaleMuster/FOR/KBV_FHIR_FOR_V1.2.1.zip.extracted/KBV_PR_FOR_Practitioner.xml`
 - `DigitaleMuster/eVDGA/eVDGA_Beispieldaten_V1.2.zip.extracted/EVDGA_Bundle.xml`
 - `Service-Informationen/Feldkatalog/KBV_ITA_SIEX_Feld_und_Regelkatalog.pdf.md`
 
 Purpose:
+
 - human prescribers / behandelnde persons
 
 Fields:
@@ -575,6 +591,7 @@ export const PractitionersFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_lanr`
 - `by_telematikId`
 - `by_nameSortKey`
@@ -582,11 +599,13 @@ Indexes:
 ### 6.6 `practitionerRoles`
 
 Sources:
+
 - `DigitaleMuster/FOR/KBV_FHIR_FOR_V1.2.1.zip.extracted/KBV_PR_FOR_PractitionerRole.xml`
 - `DigitaleMuster/eAU/eAU_Beispiele_V1.2.zip.extracted/EEAU0_3f6e664d-2bfc-4eb7-9dc1-29ab73259e92.xml`
 - `DigitaleMuster/KBV_ITA_VGEX_Technisches_Handbuch_DiMus.pdf.md`
 
 Purpose:
+
 - role of a practitioner in a specific practice/location context
 
 Fields:
@@ -605,6 +624,7 @@ export const PractitionerRolesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_practitionerId_and_organizationId`
 - `by_asvTeamNumber`
 - `by_locationId`
@@ -612,11 +632,13 @@ Indexes:
 ### 6.7 `tiIdentities`
 
 Sources:
+
 - `SMCB/KBV_ITA_FMEX_AAZ_SMCB.pdf.md`
 - `Abrechnung/eArztbrief/KBV_ITA_VGEX_Anforderungskatalog_eArztbrief.pdf.md`
 - `Abrechnung/eEB/KBV_ITA_VGEX_Technische_Anlage_eEB.pdf.md`
 
 Purpose:
+
 - track SMC-B, HSM-B, eHBA, Telematik-ID, and certificate lifecycle needed for KIM/TI workflows
 
 Fields:
@@ -636,6 +658,7 @@ export const TiIdentitiesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_holderKind_and_holderId`
 - `by_identityType_and_status`
 - `by_directoryEntryId`
@@ -643,11 +666,13 @@ Indexes:
 ### 6.8 `kimMailboxes`
 
 Sources:
+
 - `Abrechnung/eEB/KBV_ITA_VGEX_Technische_Anlage_eEB.pdf.md`
 - `Abrechnung/eArztbrief/KBV_ITA_VGEX_Anforderungskatalog_eArztbrief.pdf.md`
 - `Abrechnung/1-Click-Abrechnung/KIM/Begleitdatei_V1.0.3.pdf.md`
 
 Purpose:
+
 - inbound/outbound KIM addresses and routing metadata
 
 Fields:
@@ -659,9 +684,7 @@ export const KimMailboxesFields = Schema.Struct({
   address: Schema.String,
   identityId: Schema.optional(GenericId.GenericId("tiIdentities")),
   isDefaultInbound: Schema.Boolean,
-  identityPreference: Schema.optional(
-    Schema.Literal("auto", "smc-b", "ehba"),
-  ),
+  identityPreference: Schema.optional(Schema.Literal("auto", "smc-b", "ehba")),
   pollingMode: Schema.optional(
     Schema.Literal("manual", "scheduled", "event-driven"),
   ),
@@ -672,18 +695,21 @@ export const KimMailboxesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_address`
 - `by_ownerKind_and_ownerId`
 
 ### 6.9 `patients`
 
 Sources:
+
 - `Abrechnung/KBV_ITA_VGEX_Mapping_KVK.pdf.md`
 - `DigitaleMuster/FOR/KBV_FHIR_FOR_V1.2.1.zip.extracted/KBV_PR_FOR_Patient.xml`
 - `371-Schnittstellen/PVS-Archivierungs-Wechsel-Schnittstelle/KBV_FHIR_AW.zip.extracted/Profile/KBV_PR_AW_Patient.xml`
 - `Abrechnung/eEB/KBV_ITA_VGEX_Technische_Anlage_eEB.pdf.md`
 
 Purpose:
+
 - patient chart root
 
 Fields:
@@ -708,6 +734,7 @@ export const PatientsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_displayName`
 - `by_birthDate`
 - `by_generalPractitionerRoleId`
@@ -715,11 +742,13 @@ Indexes:
 ### 6.10 `patientIdentifiers`
 
 Sources:
+
 - `Abrechnung/KBV_ITA_VGEX_Mapping_KVK.pdf.md`
 - `DigitaleMuster/FOR/KBV_FHIR_FOR_V1.2.1.zip.extracted/KBV_PR_FOR_Patient.xml`
 - `Service-Informationen/Feldkatalog/KBV_ITA_SIEX_Feld_und_Regelkatalog.pdf.md`
 
 Purpose:
+
 - multiple identifiers per patient without bloating the patient document
 
 Fields:
@@ -737,18 +766,21 @@ export const PatientIdentifiersFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_isPrimary`
 - `by_system_and_value`
 
 ### 6.11 `coverages`
 
 Sources:
+
 - `Abrechnung/KBV_ITA_VGEX_Mapping_KVK.pdf.md`
 - `DigitaleMuster/FOR/KBV_FHIR_FOR_V1.2.1.zip.extracted/KBV_PR_FOR_Coverage.xml`
 - `DigitaleMuster/eVDGA/eVDGA_Beispieldaten_V1.2.zip.extracted/EVDGA_Bundle.xml`
 - `Abrechnung/eEB/KBV_ITA_VGEX_Technische_Anlage_eEB.pdf.md`
 
 Purpose:
+
 - current insurance / payor relationship for treatment and prescribing
 
 Fields:
@@ -783,6 +815,7 @@ export const CoveragesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId`
 - `by_kvid10`
 - `by_kostentraegerkennung`
@@ -790,11 +823,13 @@ Indexes:
 ### 6.12 `vsdSnapshots`
 
 Sources:
+
 - `Abrechnung/KBV_ITA_VGEX_Mapping_KVK.pdf.md`
 - `Service-Informationen/Feldkatalog/KBV_ITA_SIEX_Feld_und_Regelkatalog.pdf.md`
 - `Abrechnung/eEB/KBV_ITA_VGEX_Technische_Anlage_eEB.pdf.md`
 
 Purpose:
+
 - immutable snapshots of insured master data read from eGK/KVK/eEB
 
 Fields:
@@ -828,6 +863,7 @@ export const VsdSnapshotsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_readAt`
 - `by_readSource_and_readAt`
 - `by_versichertenId3119`
@@ -835,9 +871,11 @@ Indexes:
 ### 6.13 `eebInboxItems`
 
 Sources:
+
 - `Abrechnung/eEB/KBV_ITA_VGEX_Technische_Anlage_eEB.pdf.md`
 
 Purpose:
+
 - track inbound eEB KIM messages and adoption workflow
 
 Fields:
@@ -865,6 +903,7 @@ export const EebInboxItemsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_kimMessageId`
 - `by_matchState_and_receivedAt`
 - `by_matchedPatientId`
@@ -872,11 +911,13 @@ Indexes:
 ### 6.14 `appointments`
 
 Sources:
+
 - `TSS/3_0_0/KBV_ITA_VGEX_Anforderungskatalog_TSS.pdf.md`
 - `TSS/3_0_0/KBV_ITA_AHEX_Pruefpaket_116117_Terminservice_Abr.pdf.md`
 - `371-Schnittstellen/PVS-Archivierungs-Wechsel-Schnittstelle/KBV_FHIR_AW.zip.extracted/Terminologie/KBV_CS_AW_Ressourcentyp.xml`
 
 Purpose:
+
 - internal and TSS-linked appointments
 
 Fields:
@@ -888,7 +929,13 @@ export const AppointmentsFields = Schema.Struct({
   locationId: Schema.optional(GenericId.GenericId("practiceLocations")),
   start: IsoDateTime,
   end: Schema.optional(IsoDateTime),
-  status: Schema.Literal("proposed", "booked", "fulfilled", "cancelled", "noshow"),
+  status: Schema.Literal(
+    "proposed",
+    "booked",
+    "fulfilled",
+    "cancelled",
+    "noshow",
+  ),
   source: Schema.Literal("internal", "tss"),
   externalAppointmentId: Schema.optional(Schema.String),
   vermittlungscode: Schema.optional(Schema.String),
@@ -898,6 +945,7 @@ export const AppointmentsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_start`
 - `by_source_and_externalAppointmentId`
 - `by_organizationId_and_start`
@@ -905,11 +953,13 @@ Indexes:
 ### 6.15 `encounters`
 
 Sources:
+
 - `Abrechnung/KBV_ITA_VGEX_Datensatzbeschreibung_KVDT.pdf.md`
 - `371-Schnittstellen/PVS-Archivierungs-Wechsel-Schnittstelle/KBV_FHIR_AW.zip.extracted/Profile/KBV_EX_AW_Begegnung_Spezielle_Begegnungsinformationen.xml`
 - `TSS/3_0_0/KBV_ITA_VGEX_Anforderungskatalog_TSS.pdf.md`
 
 Purpose:
+
 - treatment context bridging clinical, billing, and form workflows
 
 Fields:
@@ -939,6 +989,7 @@ export const EncountersFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_start`
 - `by_billingCaseId`
 - `by_quarter_and_organizationId`
@@ -946,11 +997,13 @@ Indexes:
 ### 6.16 `referrals`
 
 Sources:
+
 - `TSS/3_0_0/Spezifikation 116117 Terminservice - Vermittlungscode_V1.0.2.pdf.md`
 - `Service-Informationen/Feldkatalog/KBV_ITA_SIEX_Feld_und_Regelkatalog.pdf.md`
 - `DigitaleMuster/KBV_ITA_VGEX_Technisches_Handbuch_DiMus.pdf.md`
 
 Purpose:
+
 - referrals and first-referrer data required for forms and TSS
 
 Fields:
@@ -959,8 +1012,12 @@ Fields:
 export const ReferralsFields = Schema.Struct({
   patientId: GenericId.GenericId("patients"),
   requesterRoleId: GenericId.GenericId("practitionerRoles"),
-  recipientOrganizationId: Schema.optional(GenericId.GenericId("organizations")),
-  recipientPractitionerId: Schema.optional(GenericId.GenericId("practitioners")),
+  recipientOrganizationId: Schema.optional(
+    GenericId.GenericId("organizations"),
+  ),
+  recipientPractitionerId: Schema.optional(
+    GenericId.GenericId("practitioners"),
+  ),
   issueDate: IsoDate,
   reasonCodes: Schema.Array(CodingValue),
   vermittlungscode: Schema.optional(Schema.String),
@@ -971,18 +1028,21 @@ export const ReferralsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_issueDate`
 - `by_vermittlungscode`
 
 ### 6.17 `diagnoses`
 
 Sources:
+
 - `Abrechnung/KBV_ITA_VGEX_Anforderungskatalog_ICD-10.pdf.md`
 - `Stammdateien/SDICD/SDICD_V2.4.0.zip.extracted/Dokumentation/KBV_ITA_VGEX_Schnittstelle_SDICD.pdf.md`
 - `Abrechnung/KBV_ITA_VGEX_Datensatzbeschreibung_KVDT.pdf.md`
 - `DigitaleMuster/eAU/eAU_Beispiele_V1.2.zip.extracted/EEAU0_3f6e664d-2bfc-4eb7-9dc1-29ab73259e92.xml`
 
 Purpose:
+
 - coded diagnoses with billing and form semantics
 
 Fields:
@@ -1006,6 +1066,7 @@ export const DiagnosesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_recordStatus`
 - `by_encounterId`
 - `by_icdCode`
@@ -1013,10 +1074,12 @@ Indexes:
 ### 6.18 `icdCatalogEntries`
 
 Sources:
+
 - `Stammdateien/SDICD/SDICD_V2.4.0.zip.extracted/Dokumentation/KBV_ITA_VGEX_Schnittstelle_SDICD.pdf.md`
 - `Abrechnung/KBV_ITA_VGEX_Anforderungskatalog_ICD-10.pdf.md`
 
 Purpose:
+
 - normalized SDICD entries
 
 Fields:
@@ -1038,17 +1101,20 @@ export const IcdCatalogEntriesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_code`
 - `by_sourcePackageId_and_code`
 
 ### 6.19 `codingEvaluations`
 
 Sources:
+
 - `Abrechnung/KBV_ITA_VGEX_Anforderungskatalog_ICD-10.pdf.md`
 - `Stammdateien/SDKH/SDKH_V1.01.zip.extracted/Dokumentation/KBV_ITA_VGEX_Schnittstelle_SDKH.pdf.md`
 - `Stammdateien/SDKRW/SDKRW_V1.40.zip.extracted/Dokumentation/KBV_ITA_VGEX_Schnittstelle_SDKRW.pdf.md`
 
 Purpose:
+
 - persisted coding checks, hints, and rule outcomes
 
 Fields:
@@ -1068,18 +1134,21 @@ export const CodingEvaluationsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_diagnosisId`
 - `by_billingCaseId_and_ruleFamily`
 
 ### 6.20 `billingCases`
 
 Sources:
+
 - `Abrechnung/KBV_ITA_VGEX_Datensatzbeschreibung_KVDT.pdf.md`
 - `Service-Informationen/Feldkatalog/KBV_ITA_SIEX_Feld_und_Regelkatalog.pdf.md`
 - `TSS/3_0_0/Spezifikation 116117 Terminservice - Abrechnungsinformation_V1.0.2.pdf.md`
 - `TSS/3_0_0/KBV_ITA_VGEX_Anforderungskatalog_TSS.pdf.md`
 
 Purpose:
+
 - root aggregate for quarterly billing/export
 
 Fields:
@@ -1104,6 +1173,7 @@ export const BillingCasesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_quarter`
 - `by_organizationId_and_quarter`
 - `by_status_and_quarter`
@@ -1111,10 +1181,12 @@ Indexes:
 ### 6.21 `billingLineItems`
 
 Sources:
+
 - `Abrechnung/KBV_ITA_VGEX_Datensatzbeschreibung_KVDT.pdf.md`
 - `DigitaleMuster/ERP/Q3_2026/KBV_FHIR_eRP_V1.4.1_zur_Validierung.zip.extracted/_Basis_R4/StructureDefinition-chargeitem-de-ebm.json`
 
 Purpose:
+
 - billable units that later map into KVDT / charge export
 
 Fields:
@@ -1133,16 +1205,19 @@ export const BillingLineItemsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_billingCaseId`
 - `by_chargeCodeSystem_and_chargeCode`
 
 ### 6.22 `medicationCatalogRefs`
 
 Sources:
+
 - `Verordnungen/Arzneimittel/EXT_ITA_VGEX_Anforderungskatalog_AVWG.pdf.md`
 - `DigitaleMuster/ERP/Q3_2026/eRP_Beispiele_V1.4.zip.extracted/Beispiel_10_1.xml`
 
 Purpose:
+
 - normalized medication/product catalog at PZN level
 
 Fields:
@@ -1171,16 +1246,19 @@ export const MedicationCatalogRefsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_pzn`
 - `by_atcCode`
 
 ### 6.23 `housePharmacyItems`
 
 Sources:
+
 - `Verordnungen/Arzneimittel/EXT_ITA_VGEX_Anforderungskatalog_AVWG.pdf.md`
 - `371-Schnittstellen/Verordnungssoftware-Schnittstelle/KBV_ITA_VGEX_Anforderungskatalog_SST_VoS.pdf.md`
 
 Purpose:
+
 - local house-pharmacy favorites used by optional AVWG/VoS functions
 
 Fields:
@@ -1196,11 +1274,13 @@ export const HousePharmacyItemsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_organizationId_and_pzn`
 
 ### 6.24 `medicationOrders`
 
 Sources:
+
 - `Verordnungen/Arzneimittel/EXT_ITA_VGEX_Anforderungskatalog_AVWG.pdf.md`
 - `371-Schnittstellen/Verordnungssoftware-Schnittstelle/KBV_ITA_VGEX_Anforderungskatalog_SST_VoS.pdf.md`
 - `DigitaleMuster/ERP/Q3_2026/eRP_Beispiele_V1.4.zip.extracted/Beispiel_10_1.xml`
@@ -1210,6 +1290,7 @@ Sources:
 - `DigitaleMuster/KBV_ITA_VGEX_Technisches_Handbuch_DiMus.pdf.md`
 
 Purpose:
+
 - canonical medication prescription order, independent of paper or electronic output
 
 Fields:
@@ -1235,7 +1316,9 @@ export const MedicationOrdersFields = Schema.Struct({
   ),
   status: Schema.Literal("draft", "final", "cancelled", "superseded"),
   authoredOn: IsoDateTime,
-  medicationCatalogRefId: Schema.optional(GenericId.GenericId("medicationCatalogRefs")),
+  medicationCatalogRefId: Schema.optional(
+    GenericId.GenericId("medicationCatalogRefs"),
+  ),
   freeTextMedication: Schema.optional(Schema.String),
   dosageText: Schema.optional(Schema.String),
   quantity: Schema.optional(QuantityValue),
@@ -1273,6 +1356,7 @@ export const MedicationOrdersFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_authoredOn`
 - `by_orderKind_and_status`
 - `by_medicationCatalogRefId`
@@ -1280,11 +1364,13 @@ Indexes:
 ### 6.25 `medicationPlans`
 
 Sources:
+
 - `371-Schnittstellen/Verordnungssoftware-Schnittstelle/KBV_ITA_VGEX_Anforderungskatalog_SST_VoS.pdf.md`
 - `Verordnungen/Arzneimittel/BMP/EXT_ITA_VGEX_BMP_Anlage3.pdf.md`
 - `Verordnungen/Arzneimittel/BMP/KBV_ITA_AHEX_BMP_FAQs_PVS.pdf.md`
 
 Purpose:
+
 - current structured medication plan and BMP/eMP handoff data
 
 Fields:
@@ -1307,15 +1393,18 @@ export const MedicationPlansFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_status`
 
 ### 6.26 `medicationPlanEntries`
 
 Sources:
+
 - `Verordnungen/Arzneimittel/BMP/EXT_ITA_VGEX_BMP_Anlage3.pdf.md`
 - `Verordnungen/Arzneimittel/BMP/KBV_ITA_AHEX_BMP_FAQs_PVS.pdf.md`
 
 Purpose:
+
 - structured entries of a medication plan so the plan is not only a barcode or raw XML blob
 
 Fields:
@@ -1330,7 +1419,9 @@ export const MedicationPlanEntriesFields = Schema.Struct({
     "self-medication",
     "imported-plan",
   ),
-  basedOnMedicationOrderId: Schema.optional(GenericId.GenericId("medicationOrders")),
+  basedOnMedicationOrderId: Schema.optional(
+    GenericId.GenericId("medicationOrders"),
+  ),
   productCode: Schema.optional(Schema.String),
   displayName: Schema.String,
   activeIngredientText: Schema.optional(Schema.String),
@@ -1346,15 +1437,18 @@ export const MedicationPlanEntriesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_planId_and_sortOrder`
 
 ### 6.27 `digaCatalogRefs`
 
 Sources:
+
 - `Verordnungen/VDGA/KBV_ITA_VGEX_Anforderungskatalog_VDGA.pdf.md`
 - `DigitaleMuster/eVDGA/Q3_2026/KBV_ITA_VGEX_Technische_Anlage_eVDGA.pdf.md`
 
 Purpose:
+
 - normalized DiGA product directory records
 
 Fields:
@@ -1379,16 +1473,19 @@ export const DigaCatalogRefsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_pzn`
 
 ### 6.28 `digaOrders`
 
 Sources:
+
 - `Verordnungen/VDGA/KBV_ITA_VGEX_Anforderungskatalog_VDGA.pdf.md`
 - `DigitaleMuster/eVDGA/eVDGA_Beispieldaten_V1.2.zip.extracted/EVDGA_Bundle.xml`
 - `DigitaleMuster/eVDGA/Q3_2026/KBV_ITA_VGEX_Technische_Anlage_eVDGA.pdf.md`
 
 Purpose:
+
 - canonical DiGA prescription order
 
 Fields:
@@ -1409,17 +1506,20 @@ export const DigaOrdersFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_authoredOn`
 - `by_digaCatalogRefId`
 
 ### 6.29 `heilmittelCatalogRefs`
 
 Sources:
+
 - `Verordnungen/Heilmittel/EXT_ITA_VGEX_Anforderungskatalog_Heilmittel.pdf.md`
 - `Stammdateien/SDHM/SDHM_V2.10.zip.extracted/Dokumentation/KBV_ITA_VGEX_Schnittstelle_SDHM.pdf.md`
 - `Stammdateien/SDHMA/SDHMA_V1.30.zip.extracted/Dokumentation/KBV_ITA_VGEX_Schnittstelle_SDHMA.pdf.md`
 
 Purpose:
+
 - normalized Heilmittel catalog and BVB/LHM metadata
 
 Fields:
@@ -1442,15 +1542,18 @@ export const HeilmittelCatalogRefsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_heilmittelbereich_and_heilmittelCode`
 - `by_diagnosegruppe`
 
 ### 6.30 `heilmittelApprovals`
 
 Sources:
+
 - `Verordnungen/Heilmittel/EXT_ITA_VGEX_Anforderungskatalog_Heilmittel.pdf.md`
 
 Purpose:
+
 - patient-specific long-term approvals and similar authorization documents
 
 Fields:
@@ -1470,15 +1573,18 @@ export const HeilmittelApprovalsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_validTo`
 
 ### 6.31 `heilmittelOrders`
 
 Sources:
+
 - `Verordnungen/Heilmittel/EXT_ITA_VGEX_Anforderungskatalog_Heilmittel.pdf.md`
 - `DigitaleMuster/KBV_ITA_VGEX_Technisches_Handbuch_DiMus.pdf.md`
 
 Purpose:
+
 - canonical Heilmittel prescription
 
 Fields:
@@ -1511,12 +1617,14 @@ export const HeilmittelOrdersFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_issueDate`
 - `by_diagnosegruppe`
 
 ### 6.32 `formDefinitions`
 
 Sources:
+
 - `Blankoformulare/KBV_ITA_VGEX_Technisches_Handbuch_BFB.pdf.md`
 - `Abrechnung/KBV_ITA_VGEX_Anforderungskatalog_Formularbedruckung.pdf.md`
 - `DigitaleMuster/KBV_ITA_VGEX_Technisches_Handbuch_DiMus.pdf.md`
@@ -1524,6 +1632,7 @@ Sources:
 - `Service-Informationen/Zulassungsverzeichnisse/KBV_ITA_SIEX_Verzeichnis_DiMus.pdf.md`
 
 Purpose:
+
 - registry of supported KBV forms and their paper / blanko / digital realization mode
 
 Fields:
@@ -1548,17 +1657,20 @@ export const FormDefinitionsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_formCode`
 - `by_theme_and_active`
 
 ### 6.33 `formInstances`
 
 Sources:
+
 - `Blankoformulare/KBV_ITA_VGEX_Technisches_Handbuch_BFB.pdf.md`
 - `DigitaleMuster/KBV_ITA_VGEX_Technisches_Handbuch_DiMus.pdf.md`
 - `Service-Informationen/Zulassungsverzeichnisse/KBV_ITA_SIEX_Verzeichnis_BFB.pdf.md`
 
 Purpose:
+
 - issued or draft form business root for BFB and digitale/paper form workflows
 
 Fields:
@@ -1590,12 +1702,14 @@ export const FormInstancesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_issueDate`
 - `by_formDefinitionId_and_status`
 
 ### 6.34 `clinicalDocuments`
 
 Sources:
+
 - `371-Schnittstellen/Verordnungssoftware-Schnittstelle/KBV_ITA_VGEX_Anforderungskatalog_SST_VoS.pdf.md`
 - `DigitaleMuster/KBV_ITA_VGEX_Technisches_Handbuch_DiMus.pdf.md`
 - `Blankoformulare/KBV_ITA_VGEX_Technisches_Handbuch_BFB.pdf.md`
@@ -1603,6 +1717,7 @@ Sources:
 - `371-Schnittstellen/PVS-Archivierungs-Wechsel-Schnittstelle/KBV_ITA_VGEX_Anforderungskatalog_AW_SST.pdf.md`
 
 Purpose:
+
 - logical document root for any issued or imported business document
 
 Fields:
@@ -1635,16 +1750,19 @@ export const ClinicalDocumentsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_patientId_and_kind`
 
 ### 6.35 `documentRevisions`
 
 Sources:
+
 - `DigitaleMuster/ERP/Q3_2026/eRP_Beispiele_V1.4.zip.extracted/Beispiel_10_1.xml`
 - `DigitaleMuster/eAU/eAU_Beispiele_V1.2.zip.extracted/EEAU0_3f6e664d-2bfc-4eb7-9dc1-29ab73259e92.xml`
 - `371-Schnittstellen/PVS-Archivierungs-Wechsel-Schnittstelle/KBV_ITA_VGEX_Anforderungskatalog_AW_SST.pdf.md`
 
 Purpose:
+
 - immutable revisions belonging to a logical document
 
 Fields:
@@ -1673,17 +1791,20 @@ export const DocumentRevisionsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_documentId_and_revisionNo`
 
 ### 6.36 `artifacts`
 
 Sources:
+
 - `371-Schnittstellen/Verordnungssoftware-Schnittstelle/KBV_ITA_VGEX_FAQ_SST_VoS.pdf.md`
 - `371-Schnittstellen/PVS-Archivierungs-Wechsel-Schnittstelle/KBV_ITA_VGEX_Anforderungskatalog_AW_SST.pdf.md`
 - `Abrechnung/eEB/KBV_ITA_VGEX_Technische_Anlage_eEB.pdf.md`
 - `TSS/3_0_0/KBV_ITA_AHEX_Pruefpaket_116117_Terminservice_Abr.pdf.md`
 
 Purpose:
+
 - exact immutable payloads for inbound and outbound exchange
 
 Fields:
@@ -1713,6 +1834,7 @@ export const ArtifactsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_ownerKind_and_ownerId`
 - `by_artifactFamily_and_validationStatus`
 - `by_externalIdentifier`
@@ -1720,11 +1842,13 @@ Indexes:
 ### 6.37 `integrationJobs`
 
 Sources:
+
 - `371-Schnittstellen/Verordnungssoftware-Schnittstelle/KBV_ITA_VGEX_Anforderungskatalog_SST_VoS.pdf.md`
 - `Abrechnung/eEB/KBV_ITA_VGEX_Technische_Anlage_eEB.pdf.md`
 - `TSS/3_0_0/Spezifikation 116117 Terminservice - Abrechnungsinformation_V1.0.2.pdf.md`
 
 Purpose:
+
 - outbox/inbox workflow state for every integration
 
 Fields:
@@ -1746,6 +1870,7 @@ export const IntegrationJobsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_jobType_and_status`
 - `by_ownerKind_and_ownerId`
 - `by_idempotencyKey`
@@ -1753,9 +1878,11 @@ Indexes:
 ### 6.38 `integrationEvents`
 
 Sources:
+
 - same as `integrationJobs`
 
 Purpose:
+
 - immutable workflow event log
 
 Fields:
@@ -1772,14 +1899,17 @@ export const IntegrationEventsFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_jobId_and_occurredAt`
 
 ### 6.39 `draftWorkspaces`
 
 Sources:
+
 - indirect from all mutable document workflows; required platform table, not a KBV wire format
 
 Purpose:
+
 - user-editable draft state isolated from immutable issued records
 
 Fields:
@@ -1798,6 +1928,7 @@ export const DraftWorkspacesFields = Schema.Struct({
 ```
 
 Indexes:
+
 - `by_ownerKind_and_ownerId`
 - `by_workflowKind_and_status`
 
@@ -1926,7 +2057,7 @@ Implementation:
 3. Generate immutable export artifacts and validate them headlessly first with the `KVDT` XPM console wrapper.
 4. Use `KBV-Pruefassistent` and `XKM` as the packaging and encryption acceptance layer for `.con.xkm` and handoff-ready outputs.
 5. Store the exact `.con` or `.con.xkm` file in `artifacts`.
-5. Never compute KVDT field values only at export time if the business meaning is known earlier; store them in canonical form.
+6. Never compute KVDT field values only at export time if the business meaning is known earlier; store them in canonical form.
 
 ### 8.4 VoS
 
@@ -2351,4 +2482,3 @@ The system to build is:
 - a repo-backed oracle and property-testing workflow
 
 This is the shape most likely to stay compatible with the repo’s KBV obligations while fitting a modern Confect, Effect Schema, and TypeScript implementation style.
-

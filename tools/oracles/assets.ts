@@ -1,164 +1,172 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const fhirValidatorAssetsCache = new Map<
   string,
   Promise<{
-    validatorJar: string;
+    igPaths: string[];
     packageRoot: string;
-    igPaths: Array<string>;
+    validatorJar: string;
   }>
 >();
 const fhirValidatorDependencyCache = new Map<
   string,
   Promise<
-    Array<{
+    {
+      installDir: string;
       packageId: string;
       version: string;
-      installDir: string;
-    }>
+    }[]
   >
 >();
 
+export interface ExternalFhirPackage {
+  readonly packageId: string;
+  readonly sha256?: string;
+  readonly url?: string;
+  readonly version: string;
+}
+
 export interface KbvOracleAsset {
   readonly assetId: string;
-  readonly url: string;
+  readonly extract?: boolean;
   readonly fileName: string;
   readonly sha256?: string;
-  readonly extract?: boolean;
+  readonly url: string;
 }
 
 export interface KbvOracleAssetCacheEntry {
   readonly assetId: string;
-  readonly url: string;
-  readonly fileName: string;
-  readonly downloadPath: string;
-  readonly sha256?: string;
   readonly downloadedAt: string;
+  readonly downloadPath: string;
   readonly extractedPath?: string;
-}
-
-export interface ExternalFhirPackage {
-  readonly packageId: string;
-  readonly version: string;
-  readonly url?: string;
+  readonly fileName: string;
   readonly sha256?: string;
+  readonly url: string;
 }
 
 export const kbvOracleAssets = {
-  fhirValidatorService_2_2_0: {
-    assetId: "fhirValidatorService_2_2_0",
-    url: "https://update.kbv.de/ita-update/371-Schnittstellen/Verordnungssoftware-Schnittstelle/Service_zur_Validierung_2.2.0.zip",
-    fileName: "Service_zur_Validierung_2.2.0.zip",
-    sha256: "43ab705304df7ecab6cafdcf1f42cb62da3138f7177dac0c6a1ba19469276487",
-    extract: true,
-  },
-  kbvFhirEau_1_2_1: {
-    assetId: "kbvFhirEau_1_2_1",
-    url: "https://update.kbv.de/ita-update/DigitaleMuster/eAU/KBV_FHIR_eAU_V1.2.1_zur_Validierung.zip",
-    fileName: "KBV_FHIR_eAU_V1.2.1_zur_Validierung.zip",
-    sha256: "b3ceb402ca661c9c441a1cc0dbfc7fb0509bdf4466c7eeeca49c91c014b0c975",
-    extract: true,
-  },
-  kbvEauExamples_1_2: {
-    assetId: "kbvEauExamples_1_2",
-    url: "https://update.kbv.de/ita-update/DigitaleMuster/eAU/eAU_Beispiele_V1.2.zip",
-    fileName: "eAU_Beispiele_V1.2.zip",
-    sha256: "aa17891cd9ac6b0959cc99f8276df835f7b8c6e14cd418d053f68f4c39490f49",
-    extract: true,
-  },
-  kbvFhirErp_1_4_1: {
-    assetId: "kbvFhirErp_1_4_1",
-    url: "https://update.kbv.de/ita-update/DigitaleMuster/ERP/Q3_2026/KBV_FHIR_eRP_V1.4.1_zur_Validierung.zip",
-    fileName: "KBV_FHIR_eRP_V1.4.1_zur_Validierung.zip",
-    sha256: "cd61993d705cb538072f46a53eaa5545afd97bc4f48845ef953d19564914500d",
-    extract: true,
-  },
-  kbvErpExamples_1_4: {
-    assetId: "kbvErpExamples_1_4",
-    url: "https://update.kbv.de/ita-update/DigitaleMuster/ERP/Q3_2026/eRP_Beispiele_V1.4.zip",
-    fileName: "eRP_Beispiele_V1.4.zip",
-    sha256: "1f63589313841a9f7735b0ba28f861a8e9a97014f8e6a062ca50611ff89dfe62",
-    extract: true,
-  },
-  xpmKvdtPraxis_2026_2_1: {
-    assetId: "xpmKvdtPraxis_2026_2_1",
-    url: "https://update.kbv.de/ita-update/Abrechnung/xpm-kvdt-praxis-2026.2.1.zip",
-    fileName: "xpm-kvdt-praxis-2026.2.1.zip",
-    sha256: "593f32b39f017cf5d6d71488134139e0668ad6a3ba2b7f0323fd1433a7789b9f",
-    extract: true,
-  },
-  kbvPruefassistent_2026_2_1: {
-    assetId: "kbvPruefassistent_2026_2_1",
-    url: "https://update.kbv.de/ita-update/KBV-Software/Pruefassistent/KBV-Pruefassistent_V2026.2.1.jar",
-    fileName: "KBV-Pruefassistent_V2026.2.1.jar",
-    sha256: "24242cc761b02929ba9092d420aa6c74decf840985cbc7bd3f0419cdff068c8a",
-  },
-  xkm_1_44_0: {
-    assetId: "xkm_1_44_0",
-    url: "https://update.kbv.de/ita-update/KBV-Software/Kryptomodul/xkm-1.44.0.zip",
-    fileName: "xkm-1.44.0.zip",
-    sha256: "5570ef3b2077a125dfe1ce544b7fd79eca71f5781c02eb6d16b4e60fac2f2b6b",
-    extract: true,
-  },
-  xkmPublicKeys_2026_02: {
-    assetId: "xkmPublicKeys_2026_02",
-    url: "https://update.kbv.de/ita-update/KBV-Software/Kryptomodul/Oeffentliche_Schluessel.zip",
-    fileName: "Oeffentliche_Schluessel.zip",
-    sha256: "27b81833fd854ff17ee4ef92017008f65678da018b8bacaff2302fe8b4bd99d6",
-    extract: true,
-  },
-  xkmTestKeys_2026_02: {
-    assetId: "xkmTestKeys_2026_02",
-    url: "https://update.kbv.de/ita-update/KBV-Software/Kryptomodul/Testschluessel.zip",
-    fileName: "Testschluessel.zip",
-    sha256: "472a507c0b98646b5f3286b2a4e6aad5ba9cd85944d7dd057a1cc15bbc1124ce",
-    extract: true,
-  },
-  bmp_2_8_q3_2026: {
-    assetId: "bmp_2_8_q3_2026",
-    url: "https://update.kbv.de/ita-update/Verordnungen/Arzneimittel/BMP/BMP_2.8_Q3_2026/BMP_V2.8.zip",
-    fileName: "BMP_V2.8.zip",
-    sha256: "fa47de8307a463e7737ded00559191b8deb9380dda4eabb2718ec1161880a6b3",
-    extract: true,
-  },
-  bmpExamples_2_8_q3_2026: {
-    assetId: "bmpExamples_2_8_q3_2026",
-    url: "https://update.kbv.de/ita-update/Verordnungen/Arzneimittel/BMP/BMP_2.8_Q3_2026/BMP_Beispieldateien_V2.8.zip",
-    fileName: "BMP_Beispieldateien_V2.8.zip",
-    sha256: "32e7234426a6c3ab941e4cded67e9a8886aa530061ab8cfdcaa79777ac6429a0",
-    extract: true,
+  bfbDirectory_2026_03_10: {
+    assetId: "bfbDirectory_2026_03_10",
+    fileName: "KBV_ITA_SIEX_Verzeichnis_BFB.pdf",
+    sha256: "abe78e966631460291f9f40f919a24b4dd6590c4768cb8d42b7e3e9e3888ce0b",
+    url: "https://update.kbv.de/ita-update/Service-Informationen/Zulassungsverzeichnisse/KBV_ITA_SIEX_Verzeichnis_BFB.pdf",
   },
   bfbMuster_2025_11_14: {
     assetId: "bfbMuster_2025_11_14",
-    url: "https://update.kbv.de/ita-update/Blankoformulare/Muster.zip",
+    extract: true,
     fileName: "Muster.zip",
     sha256: "cb96dc1d13f4c85dd19c6731e911d1054ece4480c670272236ed5ba78631032b",
-    extract: true,
-  },
-  bfbTechnicalHandbook_2025_11_14: {
-    assetId: "bfbTechnicalHandbook_2025_11_14",
-    url: "https://update.kbv.de/ita-update/Blankoformulare/KBV_ITA_VGEX_Technisches_Handbuch_BFB.pdf",
-    fileName: "KBV_ITA_VGEX_Technisches_Handbuch_BFB.pdf",
-    sha256: "239ceab2bece174bdc30cf90e706ea4448b01fbabb45c2d62adbd6c5a65c3458",
+    url: "https://update.kbv.de/ita-update/Blankoformulare/Muster.zip",
   },
   bfbPruefpaket_2024_10_04: {
     assetId: "bfbPruefpaket_2024_10_04",
-    url: "https://update.kbv.de/ita-update/Blankoformulare/KBV_ITA_AHEX_Pruefpaket_BFB.pdf",
     fileName: "KBV_ITA_AHEX_Pruefpaket_BFB.pdf",
     sha256: "4e19ee866da0e2983c443bd8b5f4cb0ed1ed5ee3c64dbdff0efd787704d0ff2a",
+    url: "https://update.kbv.de/ita-update/Blankoformulare/KBV_ITA_AHEX_Pruefpaket_BFB.pdf",
   },
-  bfbDirectory_2026_03_10: {
-    assetId: "bfbDirectory_2026_03_10",
-    url: "https://update.kbv.de/ita-update/Service-Informationen/Zulassungsverzeichnisse/KBV_ITA_SIEX_Verzeichnis_BFB.pdf",
-    fileName: "KBV_ITA_SIEX_Verzeichnis_BFB.pdf",
-    sha256: "abe78e966631460291f9f40f919a24b4dd6590c4768cb8d42b7e3e9e3888ce0b",
+  bfbTechnicalHandbook_2025_11_14: {
+    assetId: "bfbTechnicalHandbook_2025_11_14",
+    fileName: "KBV_ITA_VGEX_Technisches_Handbuch_BFB.pdf",
+    sha256: "239ceab2bece174bdc30cf90e706ea4448b01fbabb45c2d62adbd6c5a65c3458",
+    url: "https://update.kbv.de/ita-update/Blankoformulare/KBV_ITA_VGEX_Technisches_Handbuch_BFB.pdf",
+  },
+  bmp_2_8_q3_2026: {
+    assetId: "bmp_2_8_q3_2026",
+    extract: true,
+    fileName: "BMP_V2.8.zip",
+    sha256: "fa47de8307a463e7737ded00559191b8deb9380dda4eabb2718ec1161880a6b3",
+    url: "https://update.kbv.de/ita-update/Verordnungen/Arzneimittel/BMP/BMP_2.8_Q3_2026/BMP_V2.8.zip",
+  },
+  bmpExamples_2_8_q3_2026: {
+    assetId: "bmpExamples_2_8_q3_2026",
+    extract: true,
+    fileName: "BMP_Beispieldateien_V2.8.zip",
+    sha256: "32e7234426a6c3ab941e4cded67e9a8886aa530061ab8cfdcaa79777ac6429a0",
+    url: "https://update.kbv.de/ita-update/Verordnungen/Arzneimittel/BMP/BMP_2.8_Q3_2026/BMP_Beispieldateien_V2.8.zip",
+  },
+  fhirValidatorService_2_2_0: {
+    assetId: "fhirValidatorService_2_2_0",
+    extract: true,
+    fileName: "Service_zur_Validierung_2.2.0.zip",
+    sha256: "43ab705304df7ecab6cafdcf1f42cb62da3138f7177dac0c6a1ba19469276487",
+    url: "https://update.kbv.de/ita-update/371-Schnittstellen/Verordnungssoftware-Schnittstelle/Service_zur_Validierung_2.2.0.zip",
+  },
+  kbvEauExamples_1_2: {
+    assetId: "kbvEauExamples_1_2",
+    extract: true,
+    fileName: "eAU_Beispiele_V1.2.zip",
+    sha256: "aa17891cd9ac6b0959cc99f8276df835f7b8c6e14cd418d053f68f4c39490f49",
+    url: "https://update.kbv.de/ita-update/DigitaleMuster/eAU/eAU_Beispiele_V1.2.zip",
+  },
+  kbvErpExamples_1_4: {
+    assetId: "kbvErpExamples_1_4",
+    extract: true,
+    fileName: "eRP_Beispiele_V1.4.zip",
+    sha256: "1f63589313841a9f7735b0ba28f861a8e9a97014f8e6a062ca50611ff89dfe62",
+    url: "https://update.kbv.de/ita-update/DigitaleMuster/ERP/Q3_2026/eRP_Beispiele_V1.4.zip",
+  },
+  kbvFhirEau_1_2_1: {
+    assetId: "kbvFhirEau_1_2_1",
+    extract: true,
+    fileName: "KBV_FHIR_eAU_V1.2.1_zur_Validierung.zip",
+    sha256: "b3ceb402ca661c9c441a1cc0dbfc7fb0509bdf4466c7eeeca49c91c014b0c975",
+    url: "https://update.kbv.de/ita-update/DigitaleMuster/eAU/KBV_FHIR_eAU_V1.2.1_zur_Validierung.zip",
+  },
+  kbvFhirErp_1_4_1: {
+    assetId: "kbvFhirErp_1_4_1",
+    extract: true,
+    fileName: "KBV_FHIR_eRP_V1.4.1_zur_Validierung.zip",
+    sha256: "cd61993d705cb538072f46a53eaa5545afd97bc4f48845ef953d19564914500d",
+    url: "https://update.kbv.de/ita-update/DigitaleMuster/ERP/Q3_2026/KBV_FHIR_eRP_V1.4.1_zur_Validierung.zip",
+  },
+  kbvPruefassistent_2026_2_1: {
+    assetId: "kbvPruefassistent_2026_2_1",
+    fileName: "KBV-Pruefassistent_V2026.2.1.jar",
+    sha256: "24242cc761b02929ba9092d420aa6c74decf840985cbc7bd3f0419cdff068c8a",
+    url: "https://update.kbv.de/ita-update/KBV-Software/Pruefassistent/KBV-Pruefassistent_V2026.2.1.jar",
+  },
+  xkm_1_44_0: {
+    assetId: "xkm_1_44_0",
+    extract: true,
+    fileName: "xkm-1.44.0.zip",
+    sha256: "5570ef3b2077a125dfe1ce544b7fd79eca71f5781c02eb6d16b4e60fac2f2b6b",
+    url: "https://update.kbv.de/ita-update/KBV-Software/Kryptomodul/xkm-1.44.0.zip",
+  },
+  xkmPublicKeys_2026_02: {
+    assetId: "xkmPublicKeys_2026_02",
+    extract: true,
+    fileName: "Oeffentliche_Schluessel.zip",
+    sha256: "27b81833fd854ff17ee4ef92017008f65678da018b8bacaff2302fe8b4bd99d6",
+    url: "https://update.kbv.de/ita-update/KBV-Software/Kryptomodul/Oeffentliche_Schluessel.zip",
+  },
+  xkmTestKeys_2026_02: {
+    assetId: "xkmTestKeys_2026_02",
+    extract: true,
+    fileName: "Testschluessel.zip",
+    sha256: "472a507c0b98646b5f3286b2a4e6aad5ba9cd85944d7dd057a1cc15bbc1124ce",
+    url: "https://update.kbv.de/ita-update/KBV-Software/Kryptomodul/Testschluessel.zip",
+  },
+  xpmKvdtPraxis_2026_2_1: {
+    assetId: "xpmKvdtPraxis_2026_2_1",
+    extract: true,
+    fileName: "xpm-kvdt-praxis-2026.2.1.zip",
+    sha256: "593f32b39f017cf5d6d71488134139e0668ad6a3ba2b7f0323fd1433a7789b9f",
+    url: "https://update.kbv.de/ita-update/Abrechnung/xpm-kvdt-praxis-2026.2.1.zip",
   },
 } as const satisfies Record<string, KbvOracleAsset>;
 
@@ -211,19 +219,17 @@ export const fhirValidatorPrerequisitePackages = [
     packageId: "hl7.fhir.uv.extensions.r5",
     version: "5.2.0",
   },
-] as const satisfies ReadonlyArray<ExternalFhirPackage>;
+] as const satisfies readonly ExternalFhirPackage[];
 
 export const getKbvOracleCacheDir = () =>
   process.env.KBV_UPDATE_CACHE_DIR ??
   join(process.cwd(), ".cache", "kbv-oracles");
 
-export const getFhirPackageCacheRoot = (
-  cacheDir = getKbvOracleCacheDir(),
-) => join(resolve(cacheDir), "fhir-home", ".fhir", "packages");
+export const getFhirPackageCacheRoot = (cacheDir = getKbvOracleCacheDir()) =>
+  join(resolve(cacheDir), "fhir-home", ".fhir", "packages");
 
-const getFhirDependencyMarkerPath = (
-  cacheDir = getKbvOracleCacheDir(),
-) => join(getFhirPackageCacheRoot(cacheDir), ".kbv-prerequisites.json");
+const getFhirDependencyMarkerPath = (cacheDir = getKbvOracleCacheDir()) =>
+  join(getFhirPackageCacheRoot(cacheDir), ".kbv-prerequisites.json");
 
 export const getKbvOracleCacheManifestPath = (
   cacheDir = getKbvOracleCacheDir(),
@@ -275,31 +281,27 @@ const writeAssetCacheManifest = async ({
   await mkdir(cacheDir, { recursive: true });
   const manifestPath = getKbvOracleCacheManifestPath(cacheDir);
   const tempPath = `${manifestPath}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(
-    tempPath,
-    JSON.stringify(manifest, null, 2),
-    "utf8",
-  );
+  await writeFile(tempPath, JSON.stringify(manifest, null, 2), "utf8");
   await rename(tempPath, manifestPath);
 };
 
 const updateAssetCacheManifest = async ({
-  cacheDir,
   asset,
+  cacheDir,
   downloadPath,
   extractedPath,
 }: {
-  cacheDir: string;
   asset: KbvOracleAsset;
+  cacheDir: string;
   downloadPath: string;
   extractedPath?: string;
 }) => {
   const manifest = await readAssetCacheManifest(cacheDir);
   manifest[asset.assetId] = {
     assetId: asset.assetId,
-    url: asset.url,
-    fileName: asset.fileName,
     downloadPath,
+    fileName: asset.fileName,
+    url: asset.url,
     ...(asset.sha256 ? { sha256: asset.sha256 } : {}),
     downloadedAt: new Date().toISOString(),
     ...(extractedPath ? { extractedPath } : {}),
@@ -335,8 +337,8 @@ export const downloadManagedAsset = async (
     try {
       await verifyFileHash(downloadPath, asset.sha256);
       await updateAssetCacheManifest({
-        cacheDir: resolvedCacheDir,
         asset,
+        cacheDir: resolvedCacheDir,
         downloadPath,
       });
       return downloadPath;
@@ -370,8 +372,8 @@ export const downloadManagedAsset = async (
   await writeFile(downloadPath, content);
   await rm(tempPath, { force: true });
   await updateAssetCacheManifest({
-    cacheDir: resolvedCacheDir,
     asset,
+    cacheDir: resolvedCacheDir,
     downloadPath,
   });
   return downloadPath;
@@ -392,8 +394,8 @@ export const ensureExtractedAsset = async (
   const markerPath = join(extractDir, ".ok");
   if (existsSync(markerPath)) {
     await updateAssetCacheManifest({
-      cacheDir: resolvedCacheDir,
       asset,
+      cacheDir: resolvedCacheDir,
       downloadPath: archivePath,
       extractedPath: extractDir,
     });
@@ -406,8 +408,8 @@ export const ensureExtractedAsset = async (
     if (hasExtractedContent) {
       await writeFile(markerPath, "ok");
       await updateAssetCacheManifest({
-        cacheDir: resolvedCacheDir,
         asset,
+        cacheDir: resolvedCacheDir,
         downloadPath: archivePath,
         extractedPath: extractDir,
       });
@@ -415,7 +417,7 @@ export const ensureExtractedAsset = async (
     }
   }
 
-  await rm(extractDir, { recursive: true, force: true });
+  await rm(extractDir, { force: true, recursive: true });
   await mkdir(extractDir, { recursive: true });
 
   await execFileAsync("unzip", ["-oq", archivePath, "-d", extractDir], {
@@ -423,8 +425,8 @@ export const ensureExtractedAsset = async (
   });
   await writeFile(markerPath, "ok");
   await updateAssetCacheManifest({
-    cacheDir: resolvedCacheDir,
     asset,
+    cacheDir: resolvedCacheDir,
     downloadPath: archivePath,
     extractedPath: extractDir,
   });
@@ -458,7 +460,7 @@ export const findFileRecursive = async (
   return undefined;
 };
 
-const collectIgDirectories = async (rootDir: string): Promise<Array<string>> => {
+const collectIgDirectories = async (rootDir: string): Promise<string[]> => {
   const directories = new Set<string>();
 
   const visit = async (currentDir: string) => {
@@ -509,11 +511,11 @@ const collectIgDirectories = async (rootDir: string): Promise<Array<string>> => 
 };
 
 export const ensureFhirValidatorAssets = async ({
-  family,
   cacheDir = getKbvOracleCacheDir(),
+  family,
 }: {
-  family: "eRezept" | "eAU";
   cacheDir?: string;
+  family: "eAU" | "eRezept";
 }) => {
   const resolvedCacheDir = resolve(cacheDir);
   const cacheKey = `${family}:${resolvedCacheDir}`;
@@ -529,25 +531,34 @@ export const ensureFhirValidatorAssets = async ({
     );
     const validatorJar = await findFileRecursive(
       serviceDir,
-      (entryPath) => entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
+      (entryPath) =>
+        entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
     );
     if (!validatorJar) {
-      throw new Error("validator_cli jar not found in extracted KBV validator service");
+      throw new Error(
+        "validator_cli jar not found in extracted KBV validator service",
+      );
     }
 
     const packageRoot =
       family === "eAU"
-        ? await ensureExtractedAsset(kbvOracleAssets.kbvFhirEau_1_2_1, resolvedCacheDir)
-        : await ensureExtractedAsset(kbvOracleAssets.kbvFhirErp_1_4_1, resolvedCacheDir);
+        ? await ensureExtractedAsset(
+            kbvOracleAssets.kbvFhirEau_1_2_1,
+            resolvedCacheDir,
+          )
+        : await ensureExtractedAsset(
+            kbvOracleAssets.kbvFhirErp_1_4_1,
+            resolvedCacheDir,
+          );
 
     const nestedIgPaths = (await collectIgDirectories(packageRoot)).filter(
       (entryPath) => entryPath !== packageRoot,
     );
 
     return {
-      validatorJar,
-      packageRoot,
       igPaths: [...nestedIgPaths, packageRoot],
+      packageRoot,
+      validatorJar,
     };
   })();
 
@@ -565,7 +576,10 @@ export const ensureKvdtAssets = async ({
     kbvOracleAssets.xpmKvdtPraxis_2026_2_1,
     resolvedCacheDir,
   );
-  const xkmDir = await ensureExtractedAsset(kbvOracleAssets.xkm_1_44_0, resolvedCacheDir);
+  const xkmDir = await ensureExtractedAsset(
+    kbvOracleAssets.xkm_1_44_0,
+    resolvedCacheDir,
+  );
   const xkmPublicKeysDir = await ensureExtractedAsset(
     kbvOracleAssets.xkmPublicKeys_2026_02,
     resolvedCacheDir,
@@ -579,13 +593,11 @@ export const ensureKvdtAssets = async ({
     resolvedCacheDir,
   );
 
-  const xpmStartScript = await findFileRecursive(
-    xpmDir,
-    (entryPath) => entryPath.endsWith("StartPruefung.sh"),
+  const xpmStartScript = await findFileRecursive(xpmDir, (entryPath) =>
+    entryPath.endsWith("StartPruefung.sh"),
   );
-  const xkmStartScript = await findFileRecursive(
-    xkmDir,
-    (entryPath) => entryPath.endsWith("StartKryptomodul.sh"),
+  const xkmStartScript = await findFileRecursive(xkmDir, (entryPath) =>
+    entryPath.endsWith("StartKryptomodul.sh"),
   );
 
   if (!xpmStartScript) {
@@ -596,13 +608,13 @@ export const ensureKvdtAssets = async ({
   }
 
   return {
-    xpmDir,
-    xpmStartScript,
     pruefassistentJar,
     xkmDir,
-    xkmStartScript,
     xkmPublicKeysDir,
+    xkmStartScript,
     xkmTestKeysDir,
+    xpmDir,
+    xpmStartScript,
   };
 };
 
@@ -620,9 +632,8 @@ export const ensureBmpAssets = async ({
     kbvOracleAssets.bmpExamples_2_8_q3_2026,
     resolvedCacheDir,
   );
-  const bmpXsd = await findFileRecursive(
-    bmpDir,
-    (entryPath) => entryPath.endsWith(".xsd"),
+  const bmpXsd = await findFileRecursive(bmpDir, (entryPath) =>
+    entryPath.endsWith(".xsd"),
   );
 
   if (!bmpXsd) {
@@ -631,22 +642,21 @@ export const ensureBmpAssets = async ({
 
   return {
     bmpDir,
-    bmpXsd,
     bmpExamplesDir,
+    bmpXsd,
   };
 };
 
-const sanitizePackageId = (packageId: string) =>
-  packageId.replaceAll("/", "_");
+const sanitizePackageId = (packageId: string) => packageId.replaceAll("/", "_");
 
 const getExternalFhirPackageArchivePath = ({
+  cacheDir,
   packageId,
   version,
-  cacheDir,
 }: {
+  cacheDir: string;
   packageId: string;
   version: string;
-  cacheDir: string;
 }) =>
   join(
     cacheDir,
@@ -655,13 +665,13 @@ const getExternalFhirPackageArchivePath = ({
   );
 
 const getExternalFhirPackageInstallDir = ({
+  cacheDir,
   packageId,
   version,
-  cacheDir,
 }: {
+  cacheDir: string;
   packageId: string;
   version: string;
-  cacheDir: string;
 }) => join(getFhirPackageCacheRoot(cacheDir), `${packageId}#${version}`);
 
 const ensureFhirPackageCacheMetadata = async (cacheDir: string) => {
@@ -680,9 +690,9 @@ const areFhirPrerequisitesInstalled = async (cacheDir: string) => {
   const packageChecks = await Promise.all(
     fhirValidatorPrerequisitePackages.map(async (externalPackage) => {
       const installDir = getExternalFhirPackageInstallDir({
+        cacheDir,
         packageId: externalPackage.packageId,
         version: externalPackage.version,
-        cacheDir,
       });
       const packageJsonPath = join(installDir, "package", "package.json");
       return existsSync(packageJsonPath);
@@ -698,13 +708,13 @@ const writeFhirDependencyMarker = async (cacheDir: string) => {
     markerPath,
     JSON.stringify(
       {
-        writtenAt: new Date().toISOString(),
         prerequisites: fhirValidatorPrerequisitePackages.map(
           ({ packageId, version }) => ({
             packageId,
             version,
           }),
         ),
+        writtenAt: new Date().toISOString(),
       },
       null,
       2,
@@ -714,18 +724,18 @@ const writeFhirDependencyMarker = async (cacheDir: string) => {
 };
 
 const downloadExternalFhirPackage = async ({
-  packageId,
-  version,
-  url,
-  sha256,
   cacheDir,
+  packageId,
+  sha256,
+  url,
+  version,
 }: ExternalFhirPackage & {
   cacheDir: string;
 }) => {
   const archivePath = getExternalFhirPackageArchivePath({
+    cacheDir,
     packageId,
     version,
-    cacheDir,
   });
 
   await mkdir(dirname(archivePath), { recursive: true });
@@ -761,19 +771,19 @@ const downloadExternalFhirPackage = async ({
 };
 
 export const ensureExternalFhirPackageInstalled = async ({
-  packageId,
-  version,
-  url,
-  sha256,
   cacheDir = getKbvOracleCacheDir(),
+  packageId,
+  sha256,
+  url,
+  version,
 }: ExternalFhirPackage & {
   cacheDir?: string;
 }) => {
   const resolvedCacheDir = resolve(cacheDir);
   const installDir = getExternalFhirPackageInstallDir({
+    cacheDir: resolvedCacheDir,
     packageId,
     version,
-    cacheDir: resolvedCacheDir,
   });
   const packageJsonPath = join(installDir, "package", "package.json");
 
@@ -781,11 +791,11 @@ export const ensureExternalFhirPackageInstalled = async ({
 
   if (!existsSync(packageJsonPath)) {
     const archivePath = await downloadExternalFhirPackage({
-      packageId,
-      version,
-      url,
-      sha256,
       cacheDir: resolvedCacheDir,
+      packageId,
+      sha256,
+      url,
+      version,
     });
     const extractDir = join(
       resolvedCacheDir,
@@ -793,22 +803,20 @@ export const ensureExternalFhirPackageInstalled = async ({
       "extract",
       `${sanitizePackageId(packageId)}-${version}`,
     );
-    await rm(extractDir, { recursive: true, force: true });
+    await rm(extractDir, { force: true, recursive: true });
     await mkdir(extractDir, { recursive: true });
     await execFileAsync("tar", ["-xzf", archivePath, "-C", extractDir], {
       cwd: tmpdir(),
     });
-    await rm(installDir, { recursive: true, force: true });
+    await rm(installDir, { force: true, recursive: true });
     await mkdir(dirname(installDir), { recursive: true });
     await cp(join(extractDir, "package"), join(installDir, "package"), {
-      recursive: true,
       force: true,
+      recursive: true,
     });
   }
 
-  const packageJson = JSON.parse(
-    await readFile(packageJsonPath, "utf8"),
-  ) as {
+  const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
     dependencies?: Record<string, string>;
   };
 
@@ -816,9 +824,9 @@ export const ensureExternalFhirPackageInstalled = async ({
     packageJson.dependencies ?? {},
   )) {
     await ensureExternalFhirPackageInstalled({
+      cacheDir: resolvedCacheDir,
       packageId: dependencyId,
       version: dependencyVersion,
-      cacheDir: resolvedCacheDir,
     });
   }
 
@@ -841,13 +849,13 @@ export const ensureFhirValidatorDependencyCache = async ({
     if (await areFhirPrerequisitesInstalled(resolvedCacheDir)) {
       await writeFhirDependencyMarker(resolvedCacheDir);
       return fhirValidatorPrerequisitePackages.map((externalPackage) => ({
-        packageId: externalPackage.packageId,
-        version: externalPackage.version,
         installDir: getExternalFhirPackageInstallDir({
+          cacheDir: resolvedCacheDir,
           packageId: externalPackage.packageId,
           version: externalPackage.version,
-          cacheDir: resolvedCacheDir,
         }),
+        packageId: externalPackage.packageId,
+        version: externalPackage.version,
       }));
     }
 
@@ -859,9 +867,9 @@ export const ensureFhirValidatorDependencyCache = async ({
         cacheDir: resolvedCacheDir,
       });
       installedPackages.push({
+        installDir,
         packageId: externalPackage.packageId,
         version: externalPackage.version,
-        installDir,
       });
     }
 
@@ -877,19 +885,21 @@ export const prefetchKbvOracleAssets = async ({
   assetIds,
   cacheDir = getKbvOracleCacheDir(),
 }: {
-  assetIds?: ReadonlyArray<keyof typeof kbvOracleAssets>;
+  assetIds?: readonly (keyof typeof kbvOracleAssets)[];
   cacheDir?: string;
 }) => {
   const resolvedCacheDir = resolve(cacheDir);
   const selectedAssetIds =
-    assetIds ?? (Object.keys(kbvOracleAssets) as Array<keyof typeof kbvOracleAssets>);
+    assetIds ??
+    (Object.keys(kbvOracleAssets) as (keyof typeof kbvOracleAssets)[]);
   const results = [];
 
   for (const assetId of selectedAssetIds) {
     const asset = kbvOracleAssets[assetId];
-    const path = "extract" in asset && asset.extract === true
-      ? await ensureExtractedAsset(asset, resolvedCacheDir)
-      : await downloadManagedAsset(asset, resolvedCacheDir);
+    const path =
+      "extract" in asset && asset.extract
+        ? await ensureExtractedAsset(asset, resolvedCacheDir)
+        : await downloadManagedAsset(asset, resolvedCacheDir);
     results.push({
       assetId,
       path,
@@ -906,11 +916,11 @@ export const cloneAssetWorkspace = async ({
   sourceDir: string;
   targetDir: string;
 }) => {
-  await rm(targetDir, { recursive: true, force: true });
+  await rm(targetDir, { force: true, recursive: true });
   await mkdir(dirname(targetDir), { recursive: true });
   await cp(sourceDir, targetDir, {
-    recursive: true,
     force: true,
+    recursive: true,
   });
   return targetDir;
 };

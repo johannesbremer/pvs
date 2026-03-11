@@ -1,10 +1,11 @@
-import { GenericId } from "@confect/core";
-import { Schema, Effect } from "effect";
 import type { GenericId as Id } from "convex/values";
+
+import { GenericId } from "@confect/core";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { refs } from "../confect/refs";
 import { DatabaseWriter } from "../confect/_generated/services";
+import { refs } from "../confect/refs";
 import { runWithTestConfect, TestConfect } from "./TestConfect";
 
 const seedOrganization = () =>
@@ -12,21 +13,21 @@ const seedOrganization = () =>
     const writer = yield* DatabaseWriter;
     const organizationId = yield* writer.table("organizations").insert({
       active: true,
-      kind: "practice",
-      name: "Praxis Test",
-      identifiers: [],
       addresses: [
         {
+          city: "Hamburg",
           line1: "Praxisweg 1",
           postalCode: "20095",
-          city: "Hamburg",
         },
       ],
-      telecom: [],
+      identifiers: [],
+      kind: "practice",
+      name: "Praxis Test",
       sourceStamp: {
-        sourceKind: "manual",
         capturedAt: "2026-03-10T08:00:00.000Z",
+        sourceKind: "manual",
       },
+      telecom: [],
     });
 
     return { organizationId };
@@ -47,91 +48,103 @@ describe("billing and coding workflows", () => {
           }),
         );
 
-        const patient = yield* test.mutation(refs.public.patients.createManual, {
-          patient: {
-            names: [
-              {
-                family: "Export",
-                prefixes: [],
-                given: ["Eva"],
+        const patient = yield* test.mutation(
+          refs.public.patients.createManual,
+          {
+            patient: {
+              addresses: [],
+              administrativeGender: {
+                code: "female",
+                system: "urn:gender",
               },
-            ],
-            birthDate: "1988-04-12",
-            administrativeGender: {
-              system: "urn:gender",
-              code: "female",
+              birthDate: "1988-04-12",
+              capturedAt: "2026-03-10T09:00:00.000Z",
+              names: [
+                {
+                  family: "Export",
+                  given: ["Eva"],
+                  prefixes: [],
+                },
+              ],
+              preferredLanguages: [],
+              telecom: [],
             },
-            addresses: [],
-            telecom: [],
-            preferredLanguages: [],
-            capturedAt: "2026-03-10T09:00:00.000Z",
           },
-        });
+        );
 
         const pkg = yield* test.mutation(
           refs.public.coding.registerMasterDataPackage,
           {
-            family: "SDICD",
-            version: "2026.1",
-            sourcePath: "fixtures/sdicd",
             artifact: {
-              storageId: seedStorageId,
-              contentType: "application/zip",
               byteSize: 1,
+              contentType: "application/zip",
               sha256: "deadbeef",
+              storageId: seedStorageId,
             },
+            family: "SDICD",
             importedAt: "2026-03-10T09:01:00.000Z",
+            sourcePath: "fixtures/sdicd",
             status: "active",
+            version: "2026.1",
           },
         );
 
         yield* test.mutation(refs.public.coding.importIcdCatalogEntries, {
-          sourcePackageId: pkg.packageId,
           entries: [
             {
               code: "A00.0",
-              text: "Cholera due to Vibrio cholerae 01, biovar cholerae",
               isBillable: true,
+              text: "Cholera due to Vibrio cholerae 01, biovar cholerae",
             },
           ],
+          sourcePackageId: pkg.packageId,
         });
 
-        const billingCase = yield* test.mutation(refs.public.billing.createCase, {
-          patientId: patient.patientId,
-          organizationId,
-          quarter: "2026Q1",
-          tssRelevant: false,
-          status: "open",
-        });
-
-        const diagnosis = yield* test.mutation(refs.public.coding.createDiagnosis, {
-          patientId: patient.patientId,
-          billingCaseId: billingCase.billingCaseId,
-          icdCode: "A00.0",
-          icd10gm: {
-            system: "urn:icd10gm",
-            code: "A00.0",
-            display: "Cholera",
+        const billingCase = yield* test.mutation(
+          refs.public.billing.createCase,
+          {
+            organizationId,
+            patientId: patient.patientId,
+            quarter: "2026Q1",
+            status: "open",
+            tssRelevant: false,
           },
-          category: "acute",
-          isPrimary: true,
-          createdAt: "2026-03-10T09:05:00.000Z",
-        });
+        );
+
+        const diagnosis = yield* test.mutation(
+          refs.public.coding.createDiagnosis,
+          {
+            billingCaseId: billingCase.billingCaseId,
+            category: "acute",
+            createdAt: "2026-03-10T09:05:00.000Z",
+            icd10gm: {
+              code: "A00.0",
+              display: "Cholera",
+              system: "urn:icd10gm",
+            },
+            icdCode: "A00.0",
+            isPrimary: true,
+            patientId: patient.patientId,
+          },
+        );
 
         yield* test.mutation(refs.public.billing.addLineItem, {
           billingCaseId: billingCase.billingCaseId,
-          chargeCodeSystem: "EBM",
           chargeCode: "03000",
-          serviceDate: "2026-03-10",
-          quantity: 1,
+          chargeCodeSystem: "EBM",
           diagnosisIds: [diagnosis.diagnosisId],
           modifierCodes: [],
           originKind: "manual",
+          quantity: 1,
+          serviceDate: "2026-03-10",
         });
 
-        const kvdtView = yield* test.query(refs.public.billing.getKvdtCaseView, {
-          billingCaseId: billingCase.billingCaseId,
-        });
+        const kvdtView = yield* test.query(
+          refs.public.billing.getKvdtCaseView,
+          {
+            billingCaseId: billingCase.billingCaseId,
+          },
+        );
 
         const prepared = yield* test.mutation(
           refs.public.billing.prepareKvdtExport,
@@ -146,21 +159,22 @@ describe("billing and coding workflows", () => {
         });
 
         return {
+          billingCases,
           diagnosis,
           kvdtView,
           prepared,
-          billingCases,
         };
       }),
     );
 
     expect(result.diagnosis.evaluationIds).toHaveLength(0);
     expect(result.kvdtView.found).toBe(true);
-    if (result.kvdtView.found) {
-      expect(result.kvdtView.exportReady).toBe(true);
-      expect(result.kvdtView.issues).toHaveLength(0);
-      expect(result.kvdtView.lineItems).toHaveLength(1);
+    if (!result.kvdtView.found) {
+      throw new Error("expected KVDT case view");
     }
+    expect(result.kvdtView.exportReady).toBe(true);
+    expect(result.kvdtView.issues).toHaveLength(0);
+    expect(result.kvdtView.lineItems).toHaveLength(1);
     expect(result.prepared.outcome).toBe("ready");
     expect(result.billingCases).toHaveLength(1);
     expect(result.billingCases[0]?.status).toBe("ready-for-export");
@@ -170,67 +184,73 @@ describe("billing and coding workflows", () => {
     const result = await runWithTestConfect(
       Effect.gen(function* () {
         const test = yield* TestConfect;
-        const patient = yield* test.mutation(refs.public.patients.createManual, {
-          patient: {
-            names: [
-              {
-                family: "Mismatch",
-                prefixes: [],
-                given: ["Max"],
+        const patient = yield* test.mutation(
+          refs.public.patients.createManual,
+          {
+            patient: {
+              addresses: [],
+              administrativeGender: {
+                code: "male",
+                system: "urn:gender",
               },
-            ],
-            birthDate: "1990-01-01",
-            administrativeGender: {
-              system: "urn:gender",
-              code: "male",
+              birthDate: "1990-01-01",
+              capturedAt: "2026-03-10T10:00:00.000Z",
+              names: [
+                {
+                  family: "Mismatch",
+                  given: ["Max"],
+                  prefixes: [],
+                },
+              ],
+              preferredLanguages: [],
+              telecom: [],
             },
-            addresses: [],
-            telecom: [],
-            preferredLanguages: [],
-            capturedAt: "2026-03-10T10:00:00.000Z",
           },
-        });
+        );
 
         const pkg = yield* test.mutation(
           refs.public.coding.registerMasterDataPackage,
           {
-            family: "SDICD",
-            version: "2026.2",
-            sourcePath: "fixtures/sdicd",
             artifact: {
-              storageId: seedStorageId,
-              contentType: "application/zip",
               byteSize: 1,
+              contentType: "application/zip",
               sha256: "feedface",
+              storageId: seedStorageId,
             },
+            family: "SDICD",
             importedAt: "2026-03-10T10:01:00.000Z",
+            sourcePath: "fixtures/sdicd",
             status: "active",
+            version: "2026.2",
           },
         );
 
         yield* test.mutation(refs.public.coding.importIcdCatalogEntries, {
-          sourcePackageId: pkg.packageId,
           entries: [
             {
               code: "B99.9",
-              text: "Test gender-bound diagnosis",
-              isBillable: true,
               genderConstraint: "female",
               genderErrorType: "error",
+              isBillable: true,
+              text: "Test gender-bound diagnosis",
             },
           ],
+          sourcePackageId: pkg.packageId,
         });
 
-        const diagnosis = yield* test.mutation(refs.public.coding.createDiagnosis, {
-          patientId: patient.patientId,
-          icdCode: "B99.9",
-          icd10gm: {
-            system: "urn:icd10gm",
-            code: "B99.9",
+        const diagnosis = yield* test.mutation(
+          refs.public.coding.createDiagnosis,
+          {
+            category: "acute",
+            createdAt: "2026-03-10T10:05:00.000Z",
+            icd10gm: {
+              code: "B99.9",
+              system: "urn:icd10gm",
+            },
+            icdCode: "B99.9",
+            patientId: patient.patientId,
           },
-          category: "acute",
-          createdAt: "2026-03-10T10:05:00.000Z",
-        });
+        );
 
         const evaluations = yield* test.query(
           refs.public.coding.listEvaluationsByDiagnosis,
@@ -247,8 +267,14 @@ describe("billing and coding workflows", () => {
     );
 
     expect(result.diagnosis.evaluationIds.length).toBeGreaterThan(0);
-    expect(result.evaluations.some((evaluation) => evaluation.ruleCode === "SDICD_GENDER_MISMATCH")).toBe(true);
-    expect(result.evaluations.some((evaluation) => evaluation.blocking)).toBe(true);
+    expect(
+      result.evaluations.some(
+        (evaluation) => evaluation.ruleCode === "SDICD_GENDER_MISMATCH",
+      ),
+    ).toBe(true);
+    expect(result.evaluations.some((evaluation) => evaluation.blocking)).toBe(
+      true,
+    );
   });
 
   it("blocks KVDT preparation when coding evaluations contain blocking errors", async () => {
@@ -262,51 +288,60 @@ describe("billing and coding workflows", () => {
           }),
         );
 
-        const patient = yield* test.mutation(refs.public.patients.createManual, {
-          patient: {
-            names: [
-              {
-                family: "Blocked",
-                prefixes: [],
-                given: ["Berta"],
-              },
-            ],
-            addresses: [],
-            telecom: [],
-            preferredLanguages: [],
-            capturedAt: "2026-03-10T11:00:00.000Z",
+        const patient = yield* test.mutation(
+          refs.public.patients.createManual,
+          {
+            patient: {
+              addresses: [],
+              capturedAt: "2026-03-10T11:00:00.000Z",
+              names: [
+                {
+                  family: "Blocked",
+                  given: ["Berta"],
+                  prefixes: [],
+                },
+              ],
+              preferredLanguages: [],
+              telecom: [],
+            },
           },
-        });
+        );
 
-        const billingCase = yield* test.mutation(refs.public.billing.createCase, {
-          patientId: patient.patientId,
-          organizationId,
-          quarter: "2026Q1",
-          tssRelevant: false,
-          status: "open",
-        });
-
-        const diagnosis = yield* test.mutation(refs.public.coding.createDiagnosis, {
-          patientId: patient.patientId,
-          billingCaseId: billingCase.billingCaseId,
-          icdCode: "UNKNOWN.CODE",
-          icd10gm: {
-            system: "urn:icd10gm",
-            code: "UNKNOWN.CODE",
+        const billingCase = yield* test.mutation(
+          refs.public.billing.createCase,
+          {
+            organizationId,
+            patientId: patient.patientId,
+            quarter: "2026Q1",
+            status: "open",
+            tssRelevant: false,
           },
-          category: "acute",
-          createdAt: "2026-03-10T11:05:00.000Z",
-        });
+        );
+
+        const diagnosis = yield* test.mutation(
+          refs.public.coding.createDiagnosis,
+          {
+            billingCaseId: billingCase.billingCaseId,
+            category: "acute",
+            createdAt: "2026-03-10T11:05:00.000Z",
+            icd10gm: {
+              code: "UNKNOWN.CODE",
+              system: "urn:icd10gm",
+            },
+            icdCode: "UNKNOWN.CODE",
+            patientId: patient.patientId,
+          },
+        );
 
         yield* test.mutation(refs.public.billing.addLineItem, {
           billingCaseId: billingCase.billingCaseId,
-          chargeCodeSystem: "EBM",
           chargeCode: "03000",
-          serviceDate: "2026-03-10",
-          quantity: 1,
+          chargeCodeSystem: "EBM",
           diagnosisIds: [diagnosis.diagnosisId],
           modifierCodes: [],
           originKind: "manual",
+          quantity: 1,
+          serviceDate: "2026-03-10",
         });
 
         const prepared = yield* test.mutation(
@@ -316,22 +351,30 @@ describe("billing and coding workflows", () => {
           },
         );
 
-        const kvdtView = yield* test.query(refs.public.billing.getKvdtCaseView, {
-          billingCaseId: billingCase.billingCaseId,
-        });
+        const kvdtView = yield* test.query(
+          refs.public.billing.getKvdtCaseView,
+          {
+            billingCaseId: billingCase.billingCaseId,
+          },
+        );
 
         return {
-          prepared,
           kvdtView,
+          prepared,
         };
       }),
     );
 
     expect(result.prepared.outcome).toBe("blocked");
     expect(result.kvdtView.found).toBe(true);
-    if (result.kvdtView.found) {
-      expect(result.kvdtView.exportReady).toBe(false);
-      expect(result.kvdtView.issues.some((issue) => issue.code === "SDICD_CODE_UNKNOWN")).toBe(true);
+    if (!result.kvdtView.found) {
+      throw new Error("expected KVDT case view");
     }
+    expect(result.kvdtView.exportReady).toBe(false);
+    expect(
+      result.kvdtView.issues.some(
+        (issue) => issue.code === "SDICD_CODE_UNKNOWN",
+      ),
+    ).toBe(true);
   });
 });

@@ -1,21 +1,20 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
-type CoverageInventory = {
+interface CoverageInventory {
   readonly asOf: string;
-  readonly inventoryVersion: number;
-  readonly families: ReadonlyArray<{
-    readonly family: string;
-    readonly sourceQuarterOrVersion: string;
+  readonly families: readonly {
     readonly canonicalModel: boolean | string;
-    readonly runtimeWorkflow: boolean | string;
-    readonly oracleStatus: string;
-    readonly testStatus: string;
     readonly currentNote: string;
-  }>;
-};
+    readonly family: string;
+    readonly oracleStatus: string;
+    readonly runtimeWorkflow: boolean | string;
+    readonly sourceQuarterOrVersion: string;
+    readonly testStatus: string;
+  }[];
+  readonly inventoryVersion: number;
+}
 
 describe("validation coverage inventory", () => {
   it("tracks the validated KBV families in machine-readable form", async () => {
@@ -36,7 +35,9 @@ describe("validation coverage inventory", () => {
     expect(inventory.inventoryVersion).toBe(1);
     expect(inventory.families.length).toBeGreaterThanOrEqual(12);
 
-    const eRezept = inventory.families.find((entry) => entry.family === "eRezept");
+    const eRezept = inventory.families.find(
+      (entry) => entry.family === "eRezept",
+    );
     const eAU = inventory.families.find((entry) => entry.family === "eAU");
     const kvdt = inventory.families.find((entry) => entry.family === "KVDT");
     const bmp = inventory.families.find((entry) => entry.family === "BMP");
@@ -59,7 +60,16 @@ describe("validation coverage inventory", () => {
     expect(evdga?.runtimeWorkflow).toBe(true);
     expect(evdga?.testStatus).toBe("covered");
 
-    for (const family of ["eRezept", "eAU", "KVDT", "BMP", "Heilmittel", "BFB", "TSS", "eVDGA"]) {
+    for (const family of [
+      "eRezept",
+      "eAU",
+      "KVDT",
+      "BMP",
+      "Heilmittel",
+      "BFB",
+      "TSS",
+      "eVDGA",
+    ]) {
       expect(markdown.includes(family)).toBe(true);
     }
   });

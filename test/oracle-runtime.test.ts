@@ -1,213 +1,228 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAndExecuteOraclePlan, executeOraclePlan } from "../tools/oracles/runtime";
 import type { OraclePlan } from "../tools/oracles/types";
+
+import {
+  buildAndExecuteOraclePlan,
+  executeOraclePlan,
+} from "../tools/oracles/runtime";
 
 describe("oracle runtime", () => {
   it("executes local BFB, ICD, ICD package, Heilmittel, and TSS runners", async () => {
     const bfbPlan = {
-      family: "BFB",
-      pluginKind: "fixture-backed",
-      inputKind: "print-artifact",
-      fixtureRoot: "test/oracles/bfb",
-      workingDirectory: ".",
       expectedOutputs: ["comparison.json"],
-      passFailRule: "Rendered output matches fixture expectations and barcode checks.",
+      family: "BFB",
+      fixtureRoot: "test/oracles/bfb",
+      inputKind: "print-artifact",
+      passFailRule:
+        "Rendered output matches fixture expectations and barcode checks.",
+      pluginKind: "fixture-backed",
+      workingDirectory: ".",
     } satisfies OraclePlan;
 
     const heilmittelPlan = {
-      family: "Heilmittel",
-      pluginKind: "fixture-backed",
-      inputKind: "heilmittel-order",
-      fixtureRoot: "test/oracles/heilmittel",
-      workingDirectory: ".",
       expectedOutputs: ["comparison.json"],
-      passFailRule: "Order evaluation and output match approved regression fixtures.",
+      family: "Heilmittel",
+      fixtureRoot: "test/oracles/heilmittel",
+      inputKind: "heilmittel-order",
+      passFailRule:
+        "Order evaluation and output match approved regression fixtures.",
+      pluginKind: "fixture-backed",
+      workingDirectory: ".",
     } satisfies OraclePlan;
 
     const tssPlan = {
-      family: "TSS",
-      pluginKind: "fixture-backed",
-      inputKind: "tss-selection",
-      fixtureRoot: "test/oracles/tss",
-      workingDirectory: ".",
       expectedOutputs: ["comparison.json"],
-      passFailRule: "TSS appointment listing and selection behavior matches fixture expectations.",
+      family: "TSS",
+      fixtureRoot: "test/oracles/tss",
+      inputKind: "tss-selection",
+      passFailRule:
+        "TSS appointment listing and selection behavior matches fixture expectations.",
+      pluginKind: "fixture-backed",
+      workingDirectory: ".",
     } satisfies OraclePlan;
 
     const codingPlan = {
-      family: "ICD",
-      pluginKind: "fixture-backed",
-      inputKind: "coding-preview",
-      fixtureRoot: "test/oracles/coding",
-      workingDirectory: ".",
       expectedOutputs: ["comparison.json"],
-      passFailRule: "Coding evaluation matches SDICD/SDKH/SDKRW fixture expectations.",
+      family: "ICD",
+      fixtureRoot: "test/oracles/coding",
+      inputKind: "coding-preview",
+      passFailRule:
+        "Coding evaluation matches SDICD/SDKH/SDKRW fixture expectations.",
+      pluginKind: "fixture-backed",
+      workingDirectory: ".",
     } satisfies OraclePlan;
 
-    const [bfbResult, codingResult, codingPackageResult, heilmittelResult, tssResult] = await Promise.all([
+    const [
+      bfbResult,
+      codingResult,
+      codingPackageResult,
+      heilmittelResult,
+      tssResult,
+    ] = await Promise.all([
       executeOraclePlan({
-        plan: bfbPlan,
         payloadPreview: JSON.stringify({
-          caseId: "BFB-RUNTIME-PREVIEW",
-          templateId: "Muster16",
-          templateVersion: "2026.1",
-          subjectKind: "prescription-print",
-          pageCount: 1,
-          goldenTemplate: {
-            snapshotId: "Muster16-runtime-golden",
-            templateId: "Muster16",
-            templateVersion: "2026.1",
-            subjectKind: "prescription-print",
-            pageCount: 1,
-            fields: [
-              {
-                fieldCode: "patient-name",
-                page: 1,
-                x: 12.5,
-                y: 18.2,
-                width: 72,
-                height: 5,
-                required: true,
-                exactValue: "Erika Mustermann",
-              },
-            ],
-            barcodes: [
-              {
-                barcodeType: "datamatrix",
-                page: 1,
-                x: 156,
-                y: 232,
-                width: 24,
-                height: 24,
-                payloadPrefix: "ERP|runtime|",
-              },
-            ],
-          },
-          fields: [
-            {
-              fieldCode: "patient-name",
-              page: 1,
-              x: 12.5,
-              y: 18.2,
-              width: 72,
-              height: 5,
-              value: "Erika Mustermann",
-              required: true,
-            },
-          ],
           barcodes: [
             {
               barcodeType: "datamatrix",
+              height: 24,
               page: 1,
+              payload: "ERP|runtime|token",
+              width: 24,
               x: 156,
               y: 232,
-              width: 24,
-              height: 24,
-              payload: "ERP|runtime|token",
             },
           ],
+          caseId: "BFB-RUNTIME-PREVIEW",
+          fields: [
+            {
+              fieldCode: "patient-name",
+              height: 5,
+              page: 1,
+              required: true,
+              value: "Erika Mustermann",
+              width: 72,
+              x: 12.5,
+              y: 18.2,
+            },
+          ],
+          goldenTemplate: {
+            barcodes: [
+              {
+                barcodeType: "datamatrix",
+                height: 24,
+                page: 1,
+                payloadPrefix: "ERP|runtime|",
+                width: 24,
+                x: 156,
+                y: 232,
+              },
+            ],
+            fields: [
+              {
+                exactValue: "Erika Mustermann",
+                fieldCode: "patient-name",
+                height: 5,
+                page: 1,
+                required: true,
+                width: 72,
+                x: 12.5,
+                y: 18.2,
+              },
+            ],
+            pageCount: 1,
+            snapshotId: "Muster16-runtime-golden",
+            subjectKind: "prescription-print",
+            templateId: "Muster16",
+            templateVersion: "2026.1",
+          },
+          pageCount: 1,
+          subjectKind: "prescription-print",
+          templateId: "Muster16",
+          templateVersion: "2026.1",
         }),
+        plan: bfbPlan,
       }),
       executeOraclePlan({
-        plan: codingPlan,
         payloadPreview: JSON.stringify({
           caseId: "SDKH-CHRONIC-CERTAINTY",
-          patient: {
-            birthDate: "1975-08-17",
-            administrativeGender: { code: "female" },
-          },
-          diagnosis: {
-            icdCode: "M54.5",
-            category: "dauerdiagnose",
-          },
           catalogEntry: {
             code: "M54.5",
-            text: "Low back pain",
             isBillable: true,
+            text: "Low back pain",
           },
           createdAt: "2026-03-11T10:04:00.000Z",
+          diagnosis: {
+            category: "dauerdiagnose",
+            icdCode: "M54.5",
+          },
+          patient: {
+            administrativeGender: { code: "female" },
+            birthDate: "1975-08-17",
+          },
         }),
+        plan: codingPlan,
       }),
       executeOraclePlan({
-        plan: codingPlan,
         payloadPreview: JSON.stringify({
           caseId: "ICD-PACKAGE-RUNTIME-PREVIEW",
-          package: {
-            family: "SDICD",
-            version: "2026.2",
-            sourcePath: "Abrechnung/ICD/SDICD_2026_2.txt",
-            importedAt: "2026-03-11T10:05:00.000Z",
-            status: "active",
-            authenticity: {
-              signatureStatus: "verified",
-              signatureAlgorithm: "cms-detached-sha256",
-              detachedSignaturePath: "Abrechnung/ICD/SDICD_2026_2.p7s",
-              signerOrganization: "KBV",
-              trustAnchor: "KBV_UPDATE",
-              certificateSha256:
-                "6666666666666666666666666666666666666666666666666666666666666666",
-              verifiedAt: "2026-03-11T10:05:01.000Z",
-            },
-            artifact: {
-              storageId: "seed;_storage",
-              contentType: "text/plain",
-              byteSize: 19,
-              sha256: "9589c5b90e81329f7ffa074ffee01e27767850b03b23327bc6b3fa227d5c1622",
-              bytesBase64: "Q09ERTtBMDAuMDtDaG9sZXJhCg==",
-            },
-          },
           entries: [
             {
               code: "A00.0",
-              text: "Cholera",
               isBillable: true,
+              text: "Cholera",
             },
           ],
+          package: {
+            artifact: {
+              bytesBase64: "Q09ERTtBMDAuMDtDaG9sZXJhCg==",
+              byteSize: 19,
+              contentType: "text/plain",
+              sha256:
+                "9589c5b90e81329f7ffa074ffee01e27767850b03b23327bc6b3fa227d5c1622",
+              storageId: "seed;_storage",
+            },
+            authenticity: {
+              certificateSha256:
+                "6666666666666666666666666666666666666666666666666666666666666666",
+              detachedSignaturePath: "Abrechnung/ICD/SDICD_2026_2.p7s",
+              signatureAlgorithm: "cms-detached-sha256",
+              signatureStatus: "verified",
+              signerOrganization: "KBV",
+              trustAnchor: "KBV_UPDATE",
+              verifiedAt: "2026-03-11T10:05:01.000Z",
+            },
+            family: "SDICD",
+            importedAt: "2026-03-11T10:05:00.000Z",
+            sourcePath: "Abrechnung/ICD/SDICD_2026_2.txt",
+            status: "active",
+            version: "2026.2",
+          },
         }),
+        plan: codingPlan,
       }),
       executeOraclePlan({
-        plan: heilmittelPlan,
         payloadPreview: JSON.stringify({
-          caseId: "PF06-A1",
-          heilmittelbereich: "Physiotherapie",
-          diagnosegruppe: "WS",
-          diagnosisCodes: ["M54.0", "Z98.8"],
           blankoFlag: true,
-          items: [],
+          caseId: "PF06-A1",
           catalogEntries: [
             {
-              code: "X0501",
-              heilmittelbereich: "Physiotherapie",
-              diagnosegruppe: "WS",
-              kind: "vorrangig",
               blankoEligible: true,
+              code: "X0501",
+              diagnosegruppe: "WS",
+              heilmittelbereich: "Physiotherapie",
+              kind: "vorrangig",
             },
           ],
+          diagnosegruppe: "WS",
+          diagnosisCodes: ["M54.0", "Z98.8"],
+          heilmittelbereich: "Physiotherapie",
+          items: [],
         }),
+        plan: heilmittelPlan,
       }),
       executeOraclePlan({
-        plan: tssPlan,
         payloadPreview: JSON.stringify({
-          caseId: "TSS-RUNTIME-PREVIEW",
-          criteria: {
-            organizationId: "org-1",
-            vermittlungscode: "VMC-1000",
-            tssServiceType: "orthopaedy",
-          },
           appointments: [
             {
               appointmentId: "apt-1",
               organizationId: "org-1",
               source: "tss",
-              status: "proposed",
               start: "2026-04-12T09:00:00.000Z",
-              vermittlungscode: "VMC-1000",
+              status: "proposed",
               tssServiceType: "orthopaedy",
+              vermittlungscode: "VMC-1000",
             },
           ],
+          caseId: "TSS-RUNTIME-PREVIEW",
+          criteria: {
+            organizationId: "org-1",
+            tssServiceType: "orthopaedy",
+            vermittlungscode: "VMC-1000",
+          },
           expectedSelectableAppointmentIds: ["apt-1"],
         }),
+        plan: tssPlan,
       }),
     ]);
 
@@ -235,7 +250,7 @@ describe("oracle runtime", () => {
     });
     const bmpExecuted = await buildAndExecuteOraclePlan({
       family: "BMP",
-      payloadPreviewXml: "<?xml version=\"1.0\"?><bmp/>",
+      payloadPreviewXml: '<?xml version="1.0"?><bmp/>',
     });
 
     expect(kvdtExecuted?.report.passed).toBe(true);

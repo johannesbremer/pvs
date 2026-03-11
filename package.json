@@ -1,14 +1,21 @@
 {
   "name": "pvs",
-  "private": true,
   "version": "0.1.0",
+  "private": true,
+  "description": "KBV-aligned PVS prototype built on Confect and Convex",
   "type": "module",
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "codegen": "confect codegen",
+    "format": "prettier --write .",
+    "format:list": "prettier --check .",
+    "lint": "eslint . --fix",
+    "lint:check": "eslint .",
     "oracle:coverage-inventory": "node tools/oracles/print-coverage-inventory.mjs",
     "oracle:prefetch": "node --experimental-strip-types tools/oracles/prefetch.mjs",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "tsc": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@confect/cli": "^2.0.0",
@@ -21,9 +28,27 @@
   },
   "devDependencies": {
     "@confect/test": "latest",
+    "@convex-dev/eslint-plugin": "^1.1.1",
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.5.0",
+    "@eslint/js": "^9.36.0",
+    "@eslint/markdown": "^7.4.0",
     "@types/node": "latest",
+    "@vitest/eslint-plugin": "^1.4.3",
+    "eslint": "^9.36.0",
+    "eslint-plugin-jsdoc": "^61.1.4",
+    "eslint-plugin-jsonc": "^2.20.1",
+    "eslint-plugin-n": "^17.23.1",
+    "eslint-plugin-package-json": "^0.58.0",
+    "eslint-plugin-perfectionist": "^4.15.1",
+    "eslint-plugin-regexp": "^2.10.0",
+    "eslint-plugin-yml": "^1.18.0",
     "fast-check": "latest",
+    "globals": "^16.4.0",
+    "jiti": "^2.6.1",
+    "prettier": "^3.6.2",
     "typescript": "latest",
+    "typescript-eslint": "^8.44.1",
     "vitest": "latest"
-  }
+  },
+  "packageManager": "pnpm@10.18.1"
 }

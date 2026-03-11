@@ -1,0 +1,45 @@
+# Forked from MIT licensed repo: https://github.com/JoshuaKGoldberg/create-typescript-app/blob/36cbb8aa21051b00bc753abde5be781d5203821f/.github/workflows/ci.yml
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare-node
+      - run: pnpm build
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare-node
+      - run: pnpm lint:check
+  prettier:
+    name: Prettier
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare-node
+      - run: pnpm format:list
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare
+      - run: pnpm test
+  type_check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare-node
+      - run: pnpm tsc
+name: CI
+on:
+  pull_request: ~
+  push:
+    branches:
+      - main
+permissions:
+  contents: read

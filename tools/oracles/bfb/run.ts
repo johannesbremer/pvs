@@ -1,85 +1,80 @@
 import type { OracleExecutionResult } from "../types";
 
-type BfbFieldPreview = {
-  readonly fieldCode?: string;
-  readonly page?: number;
-  readonly x?: number;
-  readonly y?: number;
-  readonly width?: number;
-  readonly height?: number;
-  readonly value?: string;
-  readonly required?: boolean;
-};
-
-type BfbBarcodePreview = {
+interface BfbBarcodePreview {
   readonly barcodeType?: string;
+  readonly height?: number;
   readonly page?: number;
+  readonly payload?: string;
+  readonly width?: number;
   readonly x?: number;
   readonly y?: number;
-  readonly width?: number;
-  readonly height?: number;
-  readonly payload?: string;
-};
+}
 
-type BfbRenderContextPreview = {
-  readonly caseId?: string;
-  readonly sourceReference?: string;
-  readonly templateId?: string;
-  readonly templateVersion?: string;
-  readonly subjectKind?: string;
-  readonly pageCount?: number;
-  readonly fields?: ReadonlyArray<BfbFieldPreview>;
-  readonly barcodes?: ReadonlyArray<BfbBarcodePreview>;
-  readonly goldenTemplate?: BfbGoldenTemplatePreview;
-};
-
-type BfbGoldenFieldPreview = {
-  readonly fieldCode: string;
-  readonly page: number;
-  readonly x: number;
-  readonly y: number;
-  readonly width?: number;
+interface BfbFieldPreview {
+  readonly fieldCode?: string;
   readonly height?: number;
+  readonly page?: number;
   readonly required?: boolean;
-  readonly exactValue?: string;
-};
+  readonly value?: string;
+  readonly width?: number;
+  readonly x?: number;
+  readonly y?: number;
+}
 
-type BfbGoldenBarcodePreview = {
+interface BfbGoldenBarcodePreview {
   readonly barcodeType: string;
+  readonly exactPayload?: string;
+  readonly height: number;
   readonly page: number;
+  readonly payloadPrefix?: string;
+  readonly width: number;
   readonly x: number;
   readonly y: number;
-  readonly width: number;
-  readonly height: number;
-  readonly payloadPrefix?: string;
-  readonly exactPayload?: string;
-};
+}
 
-type BfbGoldenTemplatePreview = {
+interface BfbGoldenFieldPreview {
+  readonly exactValue?: string;
+  readonly fieldCode: string;
+  readonly height?: number;
+  readonly page: number;
+  readonly required?: boolean;
+  readonly width?: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+interface BfbGoldenTemplatePreview {
+  readonly barcodes: readonly BfbGoldenBarcodePreview[];
+  readonly fields: readonly BfbGoldenFieldPreview[];
+  readonly pageCount: number;
   readonly snapshotId?: string;
+  readonly subjectKind?: string;
   readonly templateId: string;
   readonly templateVersion?: string;
-  readonly subjectKind?: string;
-  readonly pageCount: number;
-  readonly fields: ReadonlyArray<BfbGoldenFieldPreview>;
-  readonly barcodes: ReadonlyArray<BfbGoldenBarcodePreview>;
-};
+}
 
-const allowedBarcodeTypes = new Set([
-  "code128",
-  "datamatrix",
-  "ean13",
-  "qr",
-]);
+interface BfbRenderContextPreview {
+  readonly barcodes?: readonly BfbBarcodePreview[];
+  readonly caseId?: string;
+  readonly fields?: readonly BfbFieldPreview[];
+  readonly goldenTemplate?: BfbGoldenTemplatePreview;
+  readonly pageCount?: number;
+  readonly sourceReference?: string;
+  readonly subjectKind?: string;
+  readonly templateId?: string;
+  readonly templateVersion?: string;
+}
+
+const allowedBarcodeTypes = new Set(["code128", "datamatrix", "ean13", "qr"]);
 
 const makeFinding = (
   code: string,
-  severity: "info" | "warning" | "error",
+  severity: "error" | "info" | "warning",
   message: string,
 ) => ({
   code,
-  severity,
   message,
+  severity,
 });
 
 const hasPositiveNumber = (value: number | undefined) =>
@@ -88,10 +83,8 @@ const hasPositiveNumber = (value: number | undefined) =>
 const hasCoordinate = (value: number | undefined) =>
   value !== undefined && Number.isFinite(value) && value >= 0;
 
-const numbersEqual = (
-  left: number | undefined,
-  right: number | undefined,
-) => left !== undefined && right !== undefined && left === right;
+const numbersEqual = (left: number | undefined, right: number | undefined) =>
+  left !== undefined && right !== undefined && left === right;
 
 export const runBfbOracle = ({
   payloadPreview,
@@ -101,7 +94,6 @@ export const runBfbOracle = ({
   if (!payloadPreview || payloadPreview.trim().length === 0) {
     return {
       family: "BFB",
-      passed: false,
       findings: [
         makeFinding(
           "BFB_RENDER_CONTEXT_MISSING",
@@ -109,6 +101,7 @@ export const runBfbOracle = ({
           "No BFB render context preview was provided to the oracle runner.",
         ),
       ],
+      passed: false,
       summary: "BFB preview failed the local fixture-backed checks.",
     };
   }
@@ -119,7 +112,6 @@ export const runBfbOracle = ({
   } catch (error) {
     return {
       family: "BFB",
-      passed: false,
       findings: [
         makeFinding(
           "BFB_RENDER_CONTEXT_INVALID_JSON",
@@ -129,6 +121,7 @@ export const runBfbOracle = ({
             : "BFB render context preview is not valid JSON.",
         ),
       ],
+      passed: false,
       summary: "BFB preview failed the local fixture-backed checks.",
     };
   }
@@ -473,7 +466,9 @@ export const runBfbOracle = ({
       }
     }
 
-    const expectedFieldCodes = new Set(golden.fields.map((field) => field.fieldCode));
+    const expectedFieldCodes = new Set(
+      golden.fields.map((field) => field.fieldCode),
+    );
     for (const actualField of preview.fields ?? []) {
       if (
         actualField.fieldCode &&
@@ -554,8 +549,8 @@ export const runBfbOracle = ({
 
   return {
     family: "BFB",
-    passed,
     findings,
+    passed,
     summary: passed
       ? "BFB preview satisfied the local fixture-backed checks."
       : "BFB preview failed the local fixture-backed checks.",

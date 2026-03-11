@@ -1,20 +1,24 @@
 import { GenericId } from "@confect/core";
 import { Schema } from "effect";
 
-import { AttachmentRefValue, IsoDate, IsoDateTime } from "../../confect/tables/primitives";
-import { EauPayload } from "../fhir-r4-effect/resources/eau";
-import { ErpPayload } from "../fhir-r4-effect/resources/erp";
+import {
+  AttachmentRefValue,
+  IsoDate,
+  IsoDateTime,
+} from "../../confect/tables/primitives";
 import {
   OracleExecutionResultFields,
   OraclePlanFields,
   OraclePluginFields,
 } from "../../tools/oracles/types";
+import { EauPayload } from "../fhir-r4-effect/resources/eau";
+import { ErpPayload } from "../fhir-r4-effect/resources/erp";
 
 export const XmlRenderResult = Schema.Struct({
-  family: Schema.Literal("ERP", "EAU"),
-  encoding: Schema.Literal("UTF-8"),
-  contentType: Schema.Literal("application/fhir+xml"),
   boundaryKind: Schema.Literal("emit-only"),
+  contentType: Schema.Literal("application/fhir+xml"),
+  encoding: Schema.Literal("UTF-8"),
+  family: Schema.Literal("ERP", "EAU"),
   xml: Schema.String,
 });
 
@@ -25,8 +29,8 @@ export const RenderErpBundleArgs = Schema.Struct({
 export const RenderErpBundleFound = Schema.Struct({
   found: Schema.Literal(true),
   payload: ErpPayload,
-  xml: XmlRenderResult,
   validationPlan: Schema.optional(OraclePlanFields),
+  xml: XmlRenderResult,
 });
 export const RenderErpBundleMissing = Schema.Struct({
   found: Schema.Literal(false),
@@ -37,62 +41,62 @@ export const RenderErpBundleResult = Schema.Union(
 );
 
 export const CreateEauDocumentArgs = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
-  encounterId: GenericId.GenericId("encounters"),
-  diagnosisIds: Schema.Array(GenericId.GenericId("diagnoses")),
-  attesterPractitionerId: GenericId.GenericId("practitioners"),
-  signerPractitionerId: Schema.optional(GenericId.GenericId("practitioners")),
-  organizationId: GenericId.GenericId("organizations"),
-  coverageId: GenericId.GenericId("coverages"),
-  finalizedAt: IsoDateTime,
-  profileVersion: Schema.optional(Schema.String),
   artifact: Schema.Struct({
     attachment: AttachmentRefValue,
     externalIdentifier: Schema.optional(Schema.String),
   }),
-  patientView: Schema.optional(
-    Schema.Struct({
-      attachment: AttachmentRefValue,
-      externalIdentifier: Schema.optional(Schema.String),
-    }),
-  ),
+  attesterPractitionerId: GenericId.GenericId("practitioners"),
+  coverageId: GenericId.GenericId("coverages"),
+  diagnosisIds: Schema.Array(GenericId.GenericId("diagnoses")),
   employerView: Schema.optional(
     Schema.Struct({
       attachment: AttachmentRefValue,
       externalIdentifier: Schema.optional(Schema.String),
     }),
   ),
+  encounterId: GenericId.GenericId("encounters"),
+  finalizedAt: IsoDateTime,
   insurerView: Schema.optional(
     Schema.Struct({
       attachment: AttachmentRefValue,
       externalIdentifier: Schema.optional(Schema.String),
     }),
   ),
+  organizationId: GenericId.GenericId("organizations"),
+  patientId: GenericId.GenericId("patients"),
+  patientView: Schema.optional(
+    Schema.Struct({
+      attachment: AttachmentRefValue,
+      externalIdentifier: Schema.optional(Schema.String),
+    }),
+  ),
+  profileVersion: Schema.optional(Schema.String),
+  signerPractitionerId: Schema.optional(GenericId.GenericId("practitioners")),
 });
 export const CreateEauDocumentResult = Schema.Struct({
-  documentId: GenericId.GenericId("clinicalDocuments"),
-  revisionId: GenericId.GenericId("documentRevisions"),
   artifactId: GenericId.GenericId("artifacts"),
-  patientViewArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  documentId: GenericId.GenericId("clinicalDocuments"),
   employerViewArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
   insurerViewArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  patientViewArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  revisionId: GenericId.GenericId("documentRevisions"),
 });
 
 export const RenderEauDocumentArgs = Schema.Struct({
+  attesterPractitionerId: GenericId.GenericId("practitioners"),
+  coverageId: GenericId.GenericId("coverages"),
+  diagnosisIds: Schema.Array(GenericId.GenericId("diagnoses")),
   documentId: GenericId.GenericId("clinicalDocuments"),
   encounterId: GenericId.GenericId("encounters"),
-  diagnosisIds: Schema.Array(GenericId.GenericId("diagnoses")),
-  attesterPractitionerId: GenericId.GenericId("practitioners"),
-  signerPractitionerId: Schema.optional(GenericId.GenericId("practitioners")),
   organizationId: GenericId.GenericId("organizations"),
-  coverageId: GenericId.GenericId("coverages"),
   profileVersion: Schema.optional(Schema.String),
+  signerPractitionerId: Schema.optional(GenericId.GenericId("practitioners")),
 });
 export const RenderEauDocumentFound = Schema.Struct({
   found: Schema.Literal(true),
   payload: EauPayload,
-  xml: XmlRenderResult,
   validationPlan: Schema.optional(OraclePlanFields),
+  xml: XmlRenderResult,
 });
 export const RenderEauDocumentMissing = Schema.Struct({
   found: Schema.Literal(false),
@@ -108,9 +112,9 @@ export const ListOraclePluginsArgs = Schema.Struct({
 export const ListOraclePluginsResult = Schema.Array(OraclePluginFields);
 
 export const BuildValidationPlanArgs = Schema.Struct({
-  family: Schema.String,
   artifactId: Schema.optional(GenericId.GenericId("artifacts")),
   documentId: Schema.optional(GenericId.GenericId("clinicalDocuments")),
+  family: Schema.String,
   profileVersion: Schema.optional(Schema.String),
 });
 export const BuildValidationPlanFound = Schema.Struct({
@@ -143,12 +147,12 @@ export const ValidationSummaryResult = Schema.Union(
 
 export const RunValidationArgs = Schema.Struct({
   artifactId: GenericId.GenericId("artifacts"),
-  family: Schema.optional(Schema.String),
   documentId: Schema.optional(GenericId.GenericId("clinicalDocuments")),
-  profileVersion: Schema.optional(Schema.String),
   executionMode: Schema.optional(Schema.Literal("local", "executable")),
-  payloadPreviewXml: Schema.optional(Schema.String),
+  family: Schema.optional(Schema.String),
   payloadPreview: Schema.optional(Schema.String),
+  payloadPreviewXml: Schema.optional(Schema.String),
+  profileVersion: Schema.optional(Schema.String),
 });
 export const RunValidationMissing = Schema.Struct({
   outcome: Schema.Literal("artifact-not-found"),

@@ -5,11 +5,14 @@ import { unsafeMakeTable } from "./makeTable";
 import { CodingValue, IsoDate, IsoDateTime } from "./primitives";
 
 export const AppointmentsFields = Schema.Struct({
-  patientId: Schema.optional(GenericId.GenericId("patients")),
-  organizationId: GenericId.GenericId("organizations"),
-  locationId: Schema.optional(GenericId.GenericId("practiceLocations")),
-  start: IsoDateTime,
+  displayBucket: Schema.optional(Schema.String),
   end: Schema.optional(IsoDateTime),
+  externalAppointmentId: Schema.optional(Schema.String),
+  locationId: Schema.optional(GenericId.GenericId("practiceLocations")),
+  organizationId: GenericId.GenericId("organizations"),
+  patientId: Schema.optional(GenericId.GenericId("patients")),
+  source: Schema.Literal("internal", "tss"),
+  start: IsoDateTime,
   status: Schema.Literal(
     "proposed",
     "booked",
@@ -17,28 +20,21 @@ export const AppointmentsFields = Schema.Struct({
     "cancelled",
     "noshow",
   ),
-  source: Schema.Literal("internal", "tss"),
-  externalAppointmentId: Schema.optional(Schema.String),
-  vermittlungscode: Schema.optional(Schema.String),
   tssServiceType: Schema.optional(Schema.String),
-  displayBucket: Schema.optional(Schema.String),
+  vermittlungscode: Schema.optional(Schema.String),
 });
 
 export const Appointments = unsafeMakeTable("appointments", AppointmentsFields)
   .index("by_patientId_and_start", ["patientId", "start"])
-  .index("by_source_and_externalAppointmentId", ["source", "externalAppointmentId"])
+  .index("by_source_and_externalAppointmentId", [
+    "source",
+    "externalAppointmentId",
+  ])
   .index("by_organizationId_and_start", ["organizationId", "start"]);
 
 export const EncountersFields = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
-  organizationId: GenericId.GenericId("organizations"),
-  locationId: Schema.optional(GenericId.GenericId("practiceLocations")),
-  practitionerRoleId: Schema.optional(GenericId.GenericId("practitionerRoles")),
   appointmentId: Schema.optional(GenericId.GenericId("appointments")),
-  coverageId: Schema.optional(GenericId.GenericId("coverages")),
-  quarter: Schema.String,
-  start: IsoDateTime,
-  end: Schema.optional(IsoDateTime),
+  billingCaseId: Schema.optional(GenericId.GenericId("billingCases")),
   caseType: Schema.Literal(
     "regular",
     "tss",
@@ -48,7 +44,14 @@ export const EncountersFields = Schema.Struct({
     "heilmittel",
     "prescription-only",
   ),
-  billingCaseId: Schema.optional(GenericId.GenericId("billingCases")),
+  coverageId: Schema.optional(GenericId.GenericId("coverages")),
+  end: Schema.optional(IsoDateTime),
+  locationId: Schema.optional(GenericId.GenericId("practiceLocations")),
+  organizationId: GenericId.GenericId("organizations"),
+  patientId: GenericId.GenericId("patients"),
+  practitionerRoleId: Schema.optional(GenericId.GenericId("practitionerRoles")),
+  quarter: Schema.String,
+  start: IsoDateTime,
 });
 
 export const Encounters = unsafeMakeTable("encounters", EncountersFields)
@@ -57,16 +60,20 @@ export const Encounters = unsafeMakeTable("encounters", EncountersFields)
   .index("by_quarter_and_organizationId", ["quarter", "organizationId"]);
 
 export const ReferralsFields = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
-  requesterRoleId: GenericId.GenericId("practitionerRoles"),
-  recipientOrganizationId: Schema.optional(GenericId.GenericId("organizations")),
-  recipientPractitionerId: Schema.optional(GenericId.GenericId("practitioners")),
-  issueDate: IsoDate,
-  reasonCodes: Schema.Array(CodingValue),
-  vermittlungscode: Schema.optional(Schema.String),
   erstveranlasserBsnr: Schema.optional(Schema.String),
   erstveranlasserLanr: Schema.optional(Schema.String),
+  issueDate: IsoDate,
+  patientId: GenericId.GenericId("patients"),
+  reasonCodes: Schema.Array(CodingValue),
+  recipientOrganizationId: Schema.optional(
+    GenericId.GenericId("organizations"),
+  ),
+  recipientPractitionerId: Schema.optional(
+    GenericId.GenericId("practitioners"),
+  ),
+  requesterRoleId: GenericId.GenericId("practitionerRoles"),
   status: Schema.Literal("active", "used", "cancelled", "expired"),
+  vermittlungscode: Schema.optional(Schema.String),
 });
 
 export const Referrals = unsafeMakeTable("referrals", ReferralsFields)

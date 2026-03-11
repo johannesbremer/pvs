@@ -40,12 +40,12 @@ export const RegisterMasterDataPackageResult = Schema.Struct({
 });
 
 export const ImportIcdCatalogEntriesArgs = Schema.Struct({
-  sourcePackageId: GenericId.GenericId("masterDataPackages"),
   entries: Schema.Array(IcdCatalogEntriesFields.omit("sourcePackageId")),
+  sourcePackageId: GenericId.GenericId("masterDataPackages"),
 });
 export const ImportIcdCatalogEntriesResult = Schema.Struct({
-  importedCount: Schema.Number,
   entryIds: Schema.Array(GenericId.GenericId("icdCatalogEntries")),
+  importedCount: Schema.Number,
 });
 
 export const CreateBillingCaseArgs = BillingCasesFields;
@@ -74,9 +74,9 @@ export const GetBillingCaseArgs = Schema.Struct({
   billingCaseId: GenericId.GenericId("billingCases"),
 });
 export const GetBillingCaseFound = Schema.Struct({
-  found: Schema.Literal(true),
   billingCase: BillingCaseDocument,
   diagnoses: Schema.Array(DiagnosisDocument),
+  found: Schema.Literal(true),
   lineItems: Schema.Array(BillingLineItemDocument),
 });
 export const GetBillingCaseMissing = Schema.Struct({
@@ -97,18 +97,18 @@ export const GetKvdtCaseViewArgs = Schema.Struct({
   billingCaseId: GenericId.GenericId("billingCases"),
 });
 export const KvdtReadyIssue = Schema.Struct({
+  blocking: Schema.Boolean,
   code: Schema.String,
   message: Schema.String,
-  blocking: Schema.Boolean,
 });
 export const GetKvdtCaseViewFound = Schema.Struct({
-  found: Schema.Literal(true),
   billingCase: BillingCaseDocument,
   diagnoses: Schema.Array(DiagnosisDocument),
-  lineItems: Schema.Array(BillingLineItemDocument),
   evaluations: Schema.Array(CodingEvaluationDocument),
-  issues: Schema.Array(KvdtReadyIssue),
   exportReady: Schema.Boolean,
+  found: Schema.Literal(true),
+  issues: Schema.Array(KvdtReadyIssue),
+  lineItems: Schema.Array(BillingLineItemDocument),
 });
 export const GetKvdtCaseViewMissing = Schema.Struct({
   found: Schema.Literal(false),
@@ -122,14 +122,14 @@ export const PrepareKvdtExportArgs = Schema.Struct({
   billingCaseId: GenericId.GenericId("billingCases"),
 });
 export const PrepareKvdtExportReady = Schema.Struct({
-  outcome: Schema.Literal("ready"),
   billingCaseId: GenericId.GenericId("billingCases"),
   issues: Schema.Array(KvdtReadyIssue),
+  outcome: Schema.Literal("ready"),
 });
 export const PrepareKvdtExportBlocked = Schema.Struct({
-  outcome: Schema.Literal("blocked"),
   billingCaseId: GenericId.GenericId("billingCases"),
   issues: Schema.Array(KvdtReadyIssue),
+  outcome: Schema.Literal("blocked"),
 });
 export const PrepareKvdtExportMissing = Schema.Struct({
   outcome: Schema.Literal("billing-case-not-found"),
@@ -141,8 +141,8 @@ export const PrepareKvdtExportResult = Schema.Union(
 );
 
 export const ListDiagnosesArgs = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
   billingCaseId: Schema.optional(GenericId.GenericId("billingCases")),
+  patientId: GenericId.GenericId("patients"),
 });
 export const ListDiagnosesResult = Schema.Array(DiagnosisDocument);
 

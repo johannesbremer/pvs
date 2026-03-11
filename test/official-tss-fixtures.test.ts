@@ -1,13 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import { runTssOracle } from "../tools/oracles/tss/run";
 
-type TssFixture = {
+interface TssFixture {
   readonly caseId: string;
-};
+}
 
 describe("official TSS fixture sweeps", () => {
   it("validates local TSS listing and selection fixtures", async () => {
@@ -20,7 +19,7 @@ describe("official TSS fixture sweeps", () => {
     );
     const fixtures = JSON.parse(
       await readFile(fixturePath, "utf8"),
-    ) as ReadonlyArray<TssFixture>;
+    ) as readonly TssFixture[];
 
     expect(fixtures.length).toBeGreaterThanOrEqual(2);
 

@@ -23,27 +23,26 @@ export const ListAppointmentsArgs = Schema.Struct({
   organizationId: GenericId.GenericId("organizations"),
   patientId: Schema.optional(GenericId.GenericId("patients")),
   source: Schema.optional(Schema.Literal("internal", "tss")),
+  startFrom: Schema.optional(IsoDateTime),
+  startTo: Schema.optional(IsoDateTime),
   status: Schema.optional(
     Schema.Literal("proposed", "booked", "fulfilled", "cancelled", "noshow"),
   ),
-  vermittlungscode: Schema.optional(Schema.String),
   tssServiceType: Schema.optional(Schema.String),
-  startFrom: Schema.optional(IsoDateTime),
-  startTo: Schema.optional(IsoDateTime),
+  vermittlungscode: Schema.optional(Schema.String),
 });
 export const ListAppointmentsResult = Schema.Array(AppointmentDocument);
 
 export const ListAvailableTssAppointmentsArgs = Schema.Struct({
+  displayBucket: Schema.optional(Schema.String),
   organizationId: GenericId.GenericId("organizations"),
-  vermittlungscode: Schema.optional(Schema.String),
-  tssServiceType: Schema.optional(Schema.String),
   startFrom: Schema.optional(IsoDateTime),
   startTo: Schema.optional(IsoDateTime),
-  displayBucket: Schema.optional(Schema.String),
+  tssServiceType: Schema.optional(Schema.String),
+  vermittlungscode: Schema.optional(Schema.String),
 });
-export const ListAvailableTssAppointmentsResult = Schema.Array(
-  AppointmentDocument,
-);
+export const ListAvailableTssAppointmentsResult =
+  Schema.Array(AppointmentDocument);
 
 export const BookTssAppointmentArgs = Schema.Struct({
   appointmentId: GenericId.GenericId("appointments"),
@@ -51,8 +50,8 @@ export const BookTssAppointmentArgs = Schema.Struct({
   vermittlungscode: Schema.optional(Schema.String),
 });
 export const BookTssAppointmentBooked = Schema.Struct({
-  outcome: Schema.Literal("booked"),
   appointmentId: GenericId.GenericId("appointments"),
+  outcome: Schema.Literal("booked"),
 });
 export const BookTssAppointmentBlocked = Schema.Struct({
   outcome: Schema.Literal("not-bookable"),
@@ -95,33 +94,28 @@ export const LookupReferralByVermittlungscodeResult = Schema.Union(
   LookupReferralByVermittlungscodeMissing,
 );
 
-export type TssAppointmentPreview = {
+export interface TssAppointmentPreview {
   readonly appointmentId?: string;
+  readonly displayBucket?: string;
+  readonly end?: string;
+  readonly externalAppointmentId?: string;
   readonly organizationId: string;
   readonly patientId?: string;
   readonly source: "internal" | "tss";
-  readonly status:
-    | "proposed"
-    | "booked"
-    | "fulfilled"
-    | "cancelled"
-    | "noshow";
   readonly start: string;
-  readonly end?: string;
-  readonly vermittlungscode?: string;
+  readonly status: "booked" | "cancelled" | "fulfilled" | "noshow" | "proposed";
   readonly tssServiceType?: string;
-  readonly displayBucket?: string;
-  readonly externalAppointmentId?: string;
-};
+  readonly vermittlungscode?: string;
+}
 
-export type TssSelectionCriteria = {
+export interface TssSelectionCriteria {
+  readonly displayBucket?: string;
   readonly organizationId: string;
-  readonly vermittlungscode?: string;
-  readonly tssServiceType?: string;
   readonly startFrom?: string;
   readonly startTo?: string;
-  readonly displayBucket?: string;
-};
+  readonly tssServiceType?: string;
+  readonly vermittlungscode?: string;
+}
 
 const withinRange = (
   timestamp: string,
@@ -138,11 +132,13 @@ const withinRange = (
 };
 
 export const filterSelectableTssAppointments = (
-  appointments: ReadonlyArray<TssAppointmentPreview>,
+  appointments: readonly TssAppointmentPreview[],
   criteria: TssSelectionCriteria,
 ) =>
   appointments
-    .filter((appointment) => appointment.organizationId === criteria.organizationId)
+    .filter(
+      (appointment) => appointment.organizationId === criteria.organizationId,
+    )
     .filter((appointment) => appointment.source === "tss")
     .filter((appointment) => appointment.status === "proposed")
     .filter((appointment) =>

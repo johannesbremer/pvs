@@ -8,30 +8,33 @@ import {
 import { IsoDateTime } from "../../confect/tables/primitives";
 import { OraclePlanFields } from "../../tools/oracles/types";
 import { EvdgaPayload } from "../fhir-r4-effect/resources/evdga";
-import { withSystemFields } from "./shared";
 import { FinalizeDocumentArtifactInput } from "./prescribing-documents";
+import { withSystemFields } from "./shared";
 
 export const DigaCatalogRefDocument = withSystemFields(
   "digaCatalogRefs",
   DigaCatalogRefsFields,
 );
-export const DigaOrderDocument = withSystemFields("digaOrders", DigaOrdersFields);
+export const DigaOrderDocument = withSystemFields(
+  "digaOrders",
+  DigaOrdersFields,
+);
 
 export const ImportDigaCatalogRefsArgs = Schema.Struct({
-  sourcePackageId: GenericId.GenericId("masterDataPackages"),
   entries: Schema.Array(DigaCatalogRefsFields.omit("sourcePackageId")),
+  sourcePackageId: GenericId.GenericId("masterDataPackages"),
 });
 export const ImportDigaCatalogRefsResult = Schema.Struct({
-  importedCount: Schema.Number,
   entryIds: Schema.Array(GenericId.GenericId("digaCatalogRefs")),
+  importedCount: Schema.Number,
 });
 
 export const LookupDigaByPznArgs = Schema.Struct({
   pzn: Schema.String,
 });
 export const LookupDigaByPznFound = Schema.Struct({
-  found: Schema.Literal(true),
   entry: DigaCatalogRefDocument,
+  found: Schema.Literal(true),
 });
 export const LookupDigaByPznMissing = Schema.Struct({
   found: Schema.Literal(false),
@@ -70,37 +73,37 @@ export const ListDigaOrdersArgs = Schema.Struct({
 export const ListDigaOrdersResult = Schema.Array(DigaOrderDocument);
 
 export const FinalizeDigaOrderArgs = Schema.Struct({
+  artifact: FinalizeDocumentArtifactInput,
   digaOrderId: GenericId.GenericId("digaOrders"),
   finalizedAt: IsoDateTime,
-  profileVersion: Schema.optional(Schema.String),
-  artifact: FinalizeDocumentArtifactInput,
   patientPrint: Schema.optional(FinalizeDocumentArtifactInput),
+  profileVersion: Schema.optional(Schema.String),
   tokenArtifact: Schema.optional(FinalizeDocumentArtifactInput),
 });
 
 export const FinalizeDigaOrderFinalized = Schema.Struct({
-  outcome: Schema.Literal("finalized"),
+  artifactId: GenericId.GenericId("artifacts"),
   digaOrderId: GenericId.GenericId("digaOrders"),
   documentId: GenericId.GenericId("clinicalDocuments"),
-  revisionId: GenericId.GenericId("documentRevisions"),
-  artifactId: GenericId.GenericId("artifacts"),
+  outcome: Schema.Literal("finalized"),
   patientPrintArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  revisionId: GenericId.GenericId("documentRevisions"),
   tokenArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
 });
 export const FinalizeDigaOrderBlocked = Schema.Struct({
-  outcome: Schema.Literal("blocked"),
   digaOrderId: GenericId.GenericId("digaOrders"),
   issues: Schema.Array(
     Schema.Struct({
+      blocking: Schema.Boolean,
       code: Schema.String,
       message: Schema.String,
-      blocking: Schema.Boolean,
     }),
   ),
+  outcome: Schema.Literal("blocked"),
 });
 export const FinalizeDigaOrderNotDraft = Schema.Struct({
-  outcome: Schema.Literal("not-draft"),
   digaOrderId: GenericId.GenericId("digaOrders"),
+  outcome: Schema.Literal("not-draft"),
 });
 export const FinalizeDigaOrderMissing = Schema.Struct({
   outcome: Schema.Literal("order-not-found"),
@@ -113,10 +116,10 @@ export const FinalizeDigaOrderResult = Schema.Union(
 );
 
 export const EvdgaXmlRenderResult = Schema.Struct({
-  family: Schema.Literal("EVDGA"),
-  encoding: Schema.Literal("UTF-8"),
-  contentType: Schema.Literal("application/fhir+xml"),
   boundaryKind: Schema.Literal("emit-only"),
+  contentType: Schema.Literal("application/fhir+xml"),
+  encoding: Schema.Literal("UTF-8"),
+  family: Schema.Literal("EVDGA"),
   xml: Schema.String,
 });
 
@@ -127,8 +130,8 @@ export const RenderEvdgaBundleArgs = Schema.Struct({
 export const RenderEvdgaBundleFound = Schema.Struct({
   found: Schema.Literal(true),
   payload: EvdgaPayload,
-  xml: EvdgaXmlRenderResult,
   validationPlan: Schema.optional(OraclePlanFields),
+  xml: EvdgaXmlRenderResult,
 });
 export const RenderEvdgaBundleMissing = Schema.Struct({
   found: Schema.Literal(false),

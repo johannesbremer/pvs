@@ -19,8 +19,8 @@ export const FhirCodeableConcept = Schema.Struct({
 });
 
 export const FhirReference = Schema.Struct({
-  reference: Schema.String,
   display: Schema.optional(Schema.String),
+  reference: Schema.String,
 });
 
 export const FhirMeta = Schema.Struct({
@@ -28,127 +28,127 @@ export const FhirMeta = Schema.Struct({
 });
 
 export const FhirPatientResource = Schema.Struct({
-  resourceType: Schema.Literal("Patient"),
-  id: Schema.String,
-  meta: Schema.optional(FhirMeta),
-  identifier: Schema.Array(FhirIdentifier),
-  name: Schema.Array(FhirHumanName),
+  address: Schema.Array(FhirAddress),
   birthDate: Schema.optional(Schema.String),
   gender: Schema.optional(Schema.String),
-  address: Schema.Array(FhirAddress),
+  id: Schema.String,
+  identifier: Schema.Array(FhirIdentifier),
+  meta: Schema.optional(FhirMeta),
+  name: Schema.Array(FhirHumanName),
+  resourceType: Schema.Literal("Patient"),
   telecom: Schema.Array(FhirContactPoint),
 });
 
 export const FhirOrganizationResource = Schema.Struct({
-  resourceType: Schema.Literal("Organization"),
-  id: Schema.String,
-  meta: Schema.optional(FhirMeta),
-  identifier: Schema.Array(FhirIdentifier),
-  name: Schema.String,
-  telecom: Schema.Array(FhirContactPoint),
   address: Schema.Array(FhirAddress),
+  id: Schema.String,
+  identifier: Schema.Array(FhirIdentifier),
+  meta: Schema.optional(FhirMeta),
+  name: Schema.String,
+  resourceType: Schema.Literal("Organization"),
+  telecom: Schema.Array(FhirContactPoint),
 });
 
 export const FhirPractitionerResource = Schema.Struct({
-  resourceType: Schema.Literal("Practitioner"),
   id: Schema.String,
-  meta: Schema.optional(FhirMeta),
   identifier: Schema.Array(FhirIdentifier),
+  meta: Schema.optional(FhirMeta),
   name: Schema.Array(FhirHumanName),
+  resourceType: Schema.Literal("Practitioner"),
 });
 
 export const FhirCoverageResource = Schema.Struct({
-  resourceType: Schema.Literal("Coverage"),
+  beneficiary: FhirReference,
   id: Schema.String,
   meta: Schema.optional(FhirMeta),
+  payor: Schema.Array(FhirReference),
+  resourceType: Schema.Literal("Coverage"),
   status: Schema.String,
   type: Schema.optional(FhirCodeableConcept),
-  beneficiary: FhirReference,
-  payor: Schema.Array(FhirReference),
 });
 
 export const FhirCompositionResource = Schema.Struct({
-  resourceType: Schema.Literal("Composition"),
+  author: Schema.Array(FhirReference),
+  date: Schema.String,
   id: Schema.String,
   meta: Schema.optional(FhirMeta),
+  resourceType: Schema.Literal("Composition"),
   status: Schema.String,
-  type: FhirCodeableConcept,
-  date: Schema.String,
-  title: Schema.String,
   subject: FhirReference,
-  author: Schema.Array(FhirReference),
+  title: Schema.String,
+  type: FhirCodeableConcept,
 });
 
 export const FhirMedicationResource = Schema.Struct({
-  resourceType: Schema.Literal("Medication"),
-  id: Schema.String,
-  meta: Schema.optional(FhirMeta),
-  code: Schema.optional(FhirCodeableConcept),
-  form: Schema.optional(FhirCodeableConcept),
   amount: Schema.optional(
     Schema.Struct({
-      value: Schema.Number,
       unit: Schema.optional(Schema.String),
+      value: Schema.Number,
     }),
   ),
+  code: Schema.optional(FhirCodeableConcept),
+  form: Schema.optional(FhirCodeableConcept),
+  id: Schema.String,
+  meta: Schema.optional(FhirMeta),
+  resourceType: Schema.Literal("Medication"),
 });
 
 export const FhirMedicationRequestResource = Schema.Struct({
-  resourceType: Schema.Literal("MedicationRequest"),
-  id: Schema.String,
-  meta: Schema.optional(FhirMeta),
-  status: Schema.String,
-  intent: Schema.String,
-  subject: FhirReference,
   authoredOn: Schema.String,
-  requester: Schema.optional(FhirReference),
-  insurance: Schema.Array(FhirReference),
-  medicationReference: Schema.optional(FhirReference),
   dosageInstruction: Schema.Array(
     Schema.Struct({
       text: Schema.optional(Schema.String),
     }),
   ),
+  id: Schema.String,
+  insurance: Schema.Array(FhirReference),
+  intent: Schema.String,
+  medicationReference: Schema.optional(FhirReference),
+  meta: Schema.optional(FhirMeta),
+  requester: Schema.optional(FhirReference),
+  resourceType: Schema.Literal("MedicationRequest"),
+  status: Schema.String,
+  subject: FhirReference,
 });
 
 export const FhirDeviceRequestResource = Schema.Struct({
-  resourceType: Schema.Literal("DeviceRequest"),
-  id: Schema.String,
-  meta: Schema.optional(FhirMeta),
-  status: Schema.String,
-  intent: Schema.String,
-  subject: FhirReference,
   authoredOn: Schema.String,
-  requester: Schema.optional(FhirReference),
-  insurance: Schema.Array(FhirReference),
   codeCodeableConcept: Schema.optional(FhirCodeableConcept),
+  id: Schema.String,
+  insurance: Schema.Array(FhirReference),
+  intent: Schema.String,
+  meta: Schema.optional(FhirMeta),
   reasonCode: Schema.Array(FhirCodeableConcept),
+  requester: Schema.optional(FhirReference),
+  resourceType: Schema.Literal("DeviceRequest"),
+  status: Schema.String,
+  subject: FhirReference,
 });
 
 export const FhirConditionResource = Schema.Struct({
-  resourceType: Schema.Literal("Condition"),
+  code: FhirCodeableConcept,
+  encounter: Schema.optional(FhirReference),
   id: Schema.String,
   meta: Schema.optional(FhirMeta),
-  code: FhirCodeableConcept,
-  subject: FhirReference,
-  encounter: Schema.optional(FhirReference),
   recordedDate: Schema.optional(Schema.String),
+  resourceType: Schema.Literal("Condition"),
+  subject: FhirReference,
 });
 
 export const FhirEncounterResource = Schema.Struct({
-  resourceType: Schema.Literal("Encounter"),
+  class: Schema.Struct({
+    code: Schema.String,
+    system: Schema.String,
+  }),
   id: Schema.String,
   meta: Schema.optional(FhirMeta),
-  status: Schema.String,
-  class: Schema.Struct({
-    system: Schema.String,
-    code: Schema.String,
-  }),
-  subject: FhirReference,
   period: Schema.Struct({
-    start: Schema.String,
     end: Schema.optional(Schema.String),
+    start: Schema.String,
   }),
+  resourceType: Schema.Literal("Encounter"),
+  status: Schema.String,
+  subject: FhirReference,
 });
 
 export const FhirBundleEntry = Schema.Struct({

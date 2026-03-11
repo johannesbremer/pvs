@@ -1,13 +1,15 @@
-import type { OracleExecutionResult } from "../types";
-import { ensureBmpAssets } from "../assets";
-import { resolveJavaCommand, resolveJavacCommand } from "../system";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+
+import type { OracleExecutionResult } from "../types";
+
+import { ensureBmpAssets } from "../assets";
+import { resolveJavacCommand, resolveJavaCommand } from "../system";
 
 const execFileAsync = promisify(execFile);
 const bmpValidatorSourcePath = fileURLToPath(
@@ -27,10 +29,14 @@ const ensureBmpJavaValidator = async (cacheDir?: string) => {
   }
 
   await mkdir(buildDir, { recursive: true });
-  await execFileAsync(resolveJavacCommand(), ["-d", buildDir, bmpValidatorSourcePath], {
-    cwd: dirname(bmpValidatorSourcePath),
-    maxBuffer: 5 * 1024 * 1024,
-  });
+  await execFileAsync(
+    resolveJavacCommand(),
+    ["-d", buildDir, bmpValidatorSourcePath],
+    {
+      cwd: dirname(bmpValidatorSourcePath),
+      maxBuffer: 5 * 1024 * 1024,
+    },
+  );
 
   return {
     buildDir,
@@ -39,7 +45,7 @@ const ensureBmpJavaValidator = async (cacheDir?: string) => {
 };
 
 const parseBmpFindings = (output: string) => {
-  const findings: Array<OracleExecutionResult["findings"][number]> = [];
+  const findings: OracleExecutionResult["findings"][number][] = [];
   const trimmedOutput = output.trim();
 
   if (trimmedOutput.length === 0) {
@@ -49,16 +55,16 @@ const parseBmpFindings = (output: string) => {
   if (/validates/i.test(trimmedOutput)) {
     findings.push({
       code: "BMP_XSD_VALID",
-      severity: "info",
       message: trimmedOutput.slice(0, 500),
+      severity: "info",
     });
   }
 
   if (/error|fails to validate|Schemas parser error/i.test(trimmedOutput)) {
     findings.push({
       code: "BMP_XSD_ERROR",
-      severity: "error",
       message: trimmedOutput.slice(0, 500),
+      severity: "error",
     });
   }
 
@@ -74,21 +80,20 @@ export const runBmpOracle = ({
 }): OracleExecutionResult => {
   const findings = [];
   const hasStringXml = typeof xml === "string" && xml.includes("<?xml");
-  const hasByteXml =
-    xmlBytes instanceof Uint8Array && xmlBytes.byteLength > 0;
+  const hasByteXml = xmlBytes instanceof Uint8Array && xmlBytes.byteLength > 0;
 
   if (!hasStringXml && !hasByteXml) {
     findings.push({
       code: "BMP_XML_MISSING",
-      severity: "error" as const,
       message: "BMP XML input is missing or malformed.",
+      severity: "error" as const,
     });
   }
 
   return {
     family: "BMP",
-    passed: findings.length === 0,
     findings,
+    passed: findings.length === 0,
     summary:
       findings.length === 0
         ? "BMP XML satisfied the local oracle checks."
@@ -97,22 +102,20 @@ export const runBmpOracle = ({
 };
 
 export const runExecutableBmpOracle = async ({
+  cacheDir,
   xml,
   xmlBytes,
-  cacheDir,
 }: {
+  cacheDir?: string;
   xml?: string;
   xmlBytes?: Uint8Array;
-  cacheDir?: string;
 }): Promise<OracleExecutionResult> => {
   const localResult = runBmpOracle({ xml, xmlBytes });
   if (!localResult.passed) {
     return localResult;
   }
   const validatedXmlBytes =
-    xmlBytes instanceof Uint8Array
-      ? xmlBytes
-      : Buffer.from(xml as string, "utf8");
+    xmlBytes instanceof Uint8Array ? xmlBytes : Buffer.from(xml!, "utf8");
 
   try {
     const assets = await ensureBmpAssets({
@@ -123,22 +126,26 @@ export const runExecutableBmpOracle = async ({
     const xmlPath = join(tempDir, "payload.xml");
     try {
       await writeFile(xmlPath, validatedXmlBytes);
-      await execFileAsync(resolveJavaCommand(), [
-        "-cp",
-        validator.buildDir,
-        validator.className,
-        assets.bmpXsd,
-        xmlPath,
-      ], {
-        maxBuffer: 5 * 1024 * 1024,
-      });
+      await execFileAsync(
+        resolveJavaCommand(),
+        [
+          "-cp",
+          validator.buildDir,
+          validator.className,
+          assets.bmpXsd,
+          xmlPath,
+        ],
+        {
+          maxBuffer: 5 * 1024 * 1024,
+        },
+      );
     } finally {
-      await rm(tempDir, { recursive: true, force: true });
+      await rm(tempDir, { force: true, recursive: true });
     }
     return {
       family: "BMP",
-      passed: true,
       findings: [],
+      passed: true,
       summary: `BMP XML validated successfully against ${assets.bmpXsd}.`,
     };
   } catch (error) {
@@ -154,17 +161,17 @@ export const runExecutableBmpOracle = async ({
     const findings = parseBmpFindings(errorOutput);
     return {
       family: "BMP",
-      passed: false,
       findings:
         findings.length > 0
           ? findings
           : [
               {
                 code: "BMP_EXECUTION_FAILED",
-                severity: "error",
                 message: errorOutput.slice(0, 500),
+                severity: "error",
               },
             ],
+      passed: false,
       summary: "BMP executable validation failed.",
     };
   }

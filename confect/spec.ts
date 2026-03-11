@@ -1,19 +1,21 @@
 import { FunctionSpec, GroupSpec, Spec } from "@confect/core";
 
 import {
-  AdoptVsdSnapshotArgs,
-  AdoptVsdSnapshotResult,
-  CreateManualPatientArgs,
-  CreateManualPatientResult,
-  GetVsdSnapshotArgs,
-  GetVsdSnapshotResult,
-  ListCoveragesArgs,
-  ListCoveragesResult,
-  PatientChartArgs,
-  PatientChartResult,
-  RecordVsdSnapshotArgs,
-  RecordVsdSnapshotResult,
-} from "../src/domain/patients";
+  BookTssAppointmentArgs,
+  BookTssAppointmentResult,
+  CreateAppointmentArgs,
+  CreateAppointmentResult,
+  CreateReferralArgs,
+  CreateReferralResult,
+  ListAppointmentsArgs,
+  ListAppointmentsResult,
+  ListAvailableTssAppointmentsArgs,
+  ListAvailableTssAppointmentsResult,
+  ListReferralsByPatientArgs,
+  ListReferralsByPatientResult,
+  LookupReferralByVermittlungscodeArgs,
+  LookupReferralByVermittlungscodeResult,
+} from "../src/domain/appointments-referrals";
 import {
   AddBillingLineItemArgs,
   AddBillingLineItemResult,
@@ -40,22 +42,6 @@ import {
   RegisterMasterDataPackageResult,
 } from "../src/domain/billing-coding";
 import {
-  BookTssAppointmentArgs,
-  BookTssAppointmentResult,
-  CreateAppointmentArgs,
-  CreateAppointmentResult,
-  CreateReferralArgs,
-  CreateReferralResult,
-  ListAppointmentsArgs,
-  ListAppointmentsResult,
-  ListAvailableTssAppointmentsArgs,
-  ListAvailableTssAppointmentsResult,
-  ListReferralsByPatientArgs,
-  ListReferralsByPatientResult,
-  LookupReferralByVermittlungscodeArgs,
-  LookupReferralByVermittlungscodeResult,
-} from "../src/domain/appointments-referrals";
-import {
   CreateDigaOrderArgs,
   CreateDigaOrderResult,
   FinalizeDigaOrderArgs,
@@ -71,6 +57,36 @@ import {
   RenderEvdgaBundleArgs,
   RenderEvdgaBundleResult,
 } from "../src/domain/diga-evdga";
+import {
+  BuildValidationPlanArgs,
+  BuildValidationPlanResult,
+  CreateEauDocumentArgs,
+  CreateEauDocumentResult,
+  ListOraclePluginsArgs,
+  ListOraclePluginsResult,
+  RenderEauDocumentArgs,
+  RenderEauDocumentResult,
+  RenderErpBundleArgs,
+  RenderErpBundleResult,
+  RunValidationArgs,
+  RunValidationResult,
+  ValidationSummaryArgs,
+  ValidationSummaryResult,
+} from "../src/domain/emission";
+import {
+  AdoptVsdSnapshotArgs,
+  AdoptVsdSnapshotResult,
+  CreateManualPatientArgs,
+  CreateManualPatientResult,
+  GetVsdSnapshotArgs,
+  GetVsdSnapshotResult,
+  ListCoveragesArgs,
+  ListCoveragesResult,
+  PatientChartArgs,
+  PatientChartResult,
+  RecordVsdSnapshotArgs,
+  RecordVsdSnapshotResult,
+} from "../src/domain/patients";
 import {
   AddMedicationPlanEntryArgs,
   AddMedicationPlanEntryResult,
@@ -121,52 +137,33 @@ import {
   SaveDraftWorkspaceArgs,
   SaveDraftWorkspaceResult,
 } from "../src/domain/prescribing-documents";
-import {
-  BuildValidationPlanArgs,
-  BuildValidationPlanResult,
-  CreateEauDocumentArgs,
-  CreateEauDocumentResult,
-  ListOraclePluginsArgs,
-  ListOraclePluginsResult,
-  RenderEauDocumentArgs,
-  RenderEauDocumentResult,
-  RenderErpBundleArgs,
-  RenderErpBundleResult,
-  RunValidationArgs,
-  RunValidationResult,
-  ValidationSummaryArgs,
-  ValidationSummaryResult,
-} from "../src/domain/emission";
-import {
-  internalConfectModules,
-  publicConfectModules,
-} from "./modules";
+import { internalConfectModules, publicConfectModules } from "./modules";
 
 export const ConfectSpecLayout = {
-  publicModules: publicConfectModules,
   internalModules: internalConfectModules,
+  publicModules: publicConfectModules,
 } as const;
 
 export const PatientsGroup = GroupSpec.make("patients")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "createManual",
       args: CreateManualPatientArgs,
+      name: "createManual",
       returns: CreateManualPatientResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getChart",
       args: PatientChartArgs,
+      name: "getChart",
       returns: PatientChartResult,
     }),
   );
 
 export const CoveragesGroup = GroupSpec.make("coverages").addFunction(
   FunctionSpec.publicQuery({
-    name: "listByPatient",
     args: ListCoveragesArgs,
+    name: "listByPatient",
     returns: ListCoveragesResult,
   }),
 );
@@ -174,22 +171,22 @@ export const CoveragesGroup = GroupSpec.make("coverages").addFunction(
 export const VsdGroup = GroupSpec.make("vsd")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "recordSnapshot",
       args: RecordVsdSnapshotArgs,
+      name: "recordSnapshot",
       returns: RecordVsdSnapshotResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getSnapshot",
       args: GetVsdSnapshotArgs,
+      name: "getSnapshot",
       returns: GetVsdSnapshotResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "adoptSnapshot",
       args: AdoptVsdSnapshotArgs,
+      name: "adoptSnapshot",
       returns: AdoptVsdSnapshotResult,
     }),
   );
@@ -197,43 +194,43 @@ export const VsdGroup = GroupSpec.make("vsd")
 export const CodingGroup = GroupSpec.make("coding")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "registerMasterDataPackage",
       args: RegisterMasterDataPackageArgs,
+      name: "registerMasterDataPackage",
       returns: RegisterMasterDataPackageResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "importIcdCatalogEntries",
       args: ImportIcdCatalogEntriesArgs,
+      name: "importIcdCatalogEntries",
       returns: ImportIcdCatalogEntriesResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "createDiagnosis",
       args: CreateDiagnosisArgs,
+      name: "createDiagnosis",
       returns: CreateDiagnosisResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listDiagnoses",
       args: ListDiagnosesArgs,
+      name: "listDiagnoses",
       returns: ListDiagnosesResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listEvaluationsByDiagnosis",
       args: ListCodingEvaluationsByDiagnosisArgs,
+      name: "listEvaluationsByDiagnosis",
       returns: ListCodingEvaluationsResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listEvaluationsByBillingCase",
       args: ListCodingEvaluationsByBillingCaseArgs,
+      name: "listEvaluationsByBillingCase",
       returns: ListCodingEvaluationsResult,
     }),
   );
@@ -241,43 +238,43 @@ export const CodingGroup = GroupSpec.make("coding")
 export const BillingGroup = GroupSpec.make("billing")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "createCase",
       args: CreateBillingCaseArgs,
+      name: "createCase",
       returns: CreateBillingCaseResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "addLineItem",
       args: AddBillingLineItemArgs,
+      name: "addLineItem",
       returns: AddBillingLineItemResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "prepareKvdtExport",
       args: PrepareKvdtExportArgs,
+      name: "prepareKvdtExport",
       returns: PrepareKvdtExportResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getCase",
       args: GetBillingCaseArgs,
+      name: "getCase",
       returns: GetBillingCaseResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listCases",
       args: ListBillingCasesArgs,
+      name: "listCases",
       returns: ListBillingCasesResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getKvdtCaseView",
       args: GetKvdtCaseViewArgs,
+      name: "getKvdtCaseView",
       returns: GetKvdtCaseViewResult,
     }),
   );
@@ -285,29 +282,29 @@ export const BillingGroup = GroupSpec.make("billing")
 export const AppointmentsGroup = GroupSpec.make("appointments")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "create",
       args: CreateAppointmentArgs,
+      name: "create",
       returns: CreateAppointmentResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listByOrganization",
       args: ListAppointmentsArgs,
+      name: "listByOrganization",
       returns: ListAppointmentsResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listAvailableTss",
       args: ListAvailableTssAppointmentsArgs,
+      name: "listAvailableTss",
       returns: ListAvailableTssAppointmentsResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "bookTss",
       args: BookTssAppointmentArgs,
+      name: "bookTss",
       returns: BookTssAppointmentResult,
     }),
   );
@@ -315,22 +312,22 @@ export const AppointmentsGroup = GroupSpec.make("appointments")
 export const ReferralsGroup = GroupSpec.make("referrals")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "create",
       args: CreateReferralArgs,
+      name: "create",
       returns: CreateReferralResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listByPatient",
       args: ListReferralsByPatientArgs,
+      name: "listByPatient",
       returns: ListReferralsByPatientResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "lookupByVermittlungscode",
       args: LookupReferralByVermittlungscodeArgs,
+      name: "lookupByVermittlungscode",
       returns: LookupReferralByVermittlungscodeResult,
     }),
   );
@@ -338,43 +335,43 @@ export const ReferralsGroup = GroupSpec.make("referrals")
 export const CatalogGroup = GroupSpec.make("catalog")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "importMedicationCatalogRefs",
       args: ImportMedicationCatalogRefsArgs,
+      name: "importMedicationCatalogRefs",
       returns: ImportMedicationCatalogRefsResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "lookupMedicationByPzn",
       args: LookupMedicationByPznArgs,
+      name: "lookupMedicationByPzn",
       returns: LookupMedicationByPznResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "importDigaCatalogRefs",
       args: ImportDigaCatalogRefsArgs,
+      name: "importDigaCatalogRefs",
       returns: ImportDigaCatalogRefsResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "lookupDigaByPzn",
       args: LookupDigaByPznArgs,
+      name: "lookupDigaByPzn",
       returns: LookupDigaByPznResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "importHeilmittelCatalogRefs",
       args: ImportHeilmittelCatalogRefsArgs,
+      name: "importHeilmittelCatalogRefs",
       returns: ImportHeilmittelCatalogRefsResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "lookupHeilmittelByKey",
       args: LookupHeilmittelByKeyArgs,
+      name: "lookupHeilmittelByKey",
       returns: LookupHeilmittelByKeyResult,
     }),
   );
@@ -382,36 +379,36 @@ export const CatalogGroup = GroupSpec.make("catalog")
 export const DigaGroup = GroupSpec.make("diga")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "createOrder",
       args: CreateDigaOrderArgs,
+      name: "createOrder",
       returns: CreateDigaOrderResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getOrder",
       args: GetDigaOrderArgs,
+      name: "getOrder",
       returns: GetDigaOrderResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listOrdersByPatient",
       args: ListDigaOrdersArgs,
+      name: "listOrdersByPatient",
       returns: ListDigaOrdersResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "finalizeOrder",
       args: FinalizeDigaOrderArgs,
+      name: "finalizeOrder",
       returns: FinalizeDigaOrderResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "renderEvdgaBundle",
       args: RenderEvdgaBundleArgs,
+      name: "renderEvdgaBundle",
       returns: RenderEvdgaBundleResult,
     }),
   );
@@ -419,57 +416,57 @@ export const DigaGroup = GroupSpec.make("diga")
 export const PrescriptionsGroup = GroupSpec.make("prescriptions")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "createOrder",
       args: CreateMedicationOrderArgs,
+      name: "createOrder",
       returns: CreateMedicationOrderResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getOrder",
       args: GetMedicationOrderArgs,
+      name: "getOrder",
       returns: GetMedicationOrderResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listOrdersByPatient",
       args: ListMedicationOrdersArgs,
+      name: "listOrdersByPatient",
       returns: ListMedicationOrdersResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "finalizeOrder",
       args: FinalizeMedicationOrderArgs,
+      name: "finalizeOrder",
       returns: FinalizeMedicationOrderResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "renderErpBundle",
       args: RenderErpBundleArgs,
+      name: "renderErpBundle",
       returns: RenderErpBundleResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "createMedicationPlan",
       args: CreateMedicationPlanArgs,
+      name: "createMedicationPlan",
       returns: CreateMedicationPlanResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "addPlanEntry",
       args: AddMedicationPlanEntryArgs,
+      name: "addPlanEntry",
       returns: AddMedicationPlanEntryResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getCurrentPlan",
       args: GetCurrentMedicationPlanArgs,
+      name: "getCurrentPlan",
       returns: GetCurrentMedicationPlanResult,
     }),
   );
@@ -477,36 +474,36 @@ export const PrescriptionsGroup = GroupSpec.make("prescriptions")
 export const HeilmittelGroup = GroupSpec.make("heilmittel")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "createApproval",
       args: CreateHeilmittelApprovalArgs,
+      name: "createApproval",
       returns: CreateHeilmittelApprovalResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "createOrder",
       args: CreateHeilmittelOrderArgs,
+      name: "createOrder",
       returns: CreateHeilmittelOrderResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getOrder",
       args: GetHeilmittelOrderArgs,
+      name: "getOrder",
       returns: GetHeilmittelOrderResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listOrdersByPatient",
       args: ListHeilmittelOrdersArgs,
+      name: "listOrdersByPatient",
       returns: ListHeilmittelOrdersResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "finalizeOrder",
       args: FinalizeHeilmittelOrderArgs,
+      name: "finalizeOrder",
       returns: FinalizeHeilmittelOrderResult,
     }),
   );
@@ -514,50 +511,50 @@ export const HeilmittelGroup = GroupSpec.make("heilmittel")
 export const DocumentsGroup = GroupSpec.make("documents")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "registerFormDefinition",
       args: RegisterFormDefinitionArgs,
+      name: "registerFormDefinition",
       returns: RegisterFormDefinitionResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listFormDefinitions",
       args: ListFormDefinitionsArgs,
+      name: "listFormDefinitions",
       returns: ListFormDefinitionsResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listFormInstancesByPatient",
       args: ListFormInstancesByPatientArgs,
+      name: "listFormInstancesByPatient",
       returns: ListFormInstancesByPatientResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "createEauDocument",
       args: CreateEauDocumentArgs,
+      name: "createEauDocument",
       returns: CreateEauDocumentResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "renderEauDocument",
       args: RenderEauDocumentArgs,
+      name: "renderEauDocument",
       returns: RenderEauDocumentResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getDocument",
       args: GetDocumentArgs,
+      name: "getDocument",
       returns: GetDocumentResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listByPatient",
       args: ListDocumentsByPatientArgs,
+      name: "listByPatient",
       returns: ListDocumentsByPatientResult,
     }),
   );
@@ -565,22 +562,22 @@ export const DocumentsGroup = GroupSpec.make("documents")
 export const DraftsGroup = GroupSpec.make("drafts")
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "saveWorkspace",
       args: SaveDraftWorkspaceArgs,
+      name: "saveWorkspace",
       returns: SaveDraftWorkspaceResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getWorkspace",
       args: GetDraftWorkspaceArgs,
+      name: "getWorkspace",
       returns: GetDraftWorkspaceResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "promoteWorkspace",
       args: PromoteDraftWorkspaceArgs,
+      name: "promoteWorkspace",
       returns: PromoteDraftWorkspaceResult,
     }),
   );
@@ -588,29 +585,29 @@ export const DraftsGroup = GroupSpec.make("drafts")
 export const IntegrationGroup = GroupSpec.make("integration")
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "listOraclePlugins",
       args: ListOraclePluginsArgs,
+      name: "listOraclePlugins",
       returns: ListOraclePluginsResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "buildValidationPlan",
       args: BuildValidationPlanArgs,
+      name: "buildValidationPlan",
       returns: BuildValidationPlanResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicQuery({
-      name: "getValidationSummary",
       args: ValidationSummaryArgs,
+      name: "getValidationSummary",
       returns: ValidationSummaryResult,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
-      name: "runValidation",
       args: RunValidationArgs,
+      name: "runValidation",
       returns: RunValidationResult,
     }),
   );
@@ -633,5 +630,5 @@ const spec = Spec.make()
 
 export default spec;
 
-export type PublicConfectModule = (typeof publicConfectModules)[number];
 export type InternalConfectModule = (typeof internalConfectModules)[number];
+export type PublicConfectModule = (typeof publicConfectModules)[number];

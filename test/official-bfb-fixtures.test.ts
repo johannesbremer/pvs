@@ -1,15 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import { runBfbOracle } from "../tools/oracles/bfb/run";
 
-type BfbFixture = {
+interface BfbFixture {
   readonly caseId: string;
+  readonly expectedErrorCodes?: readonly string[];
   readonly expectedPassed: boolean;
-  readonly expectedErrorCodes?: ReadonlyArray<string>;
-};
+}
 
 describe("official BFB fixture sweeps", () => {
   it("validates local BFB golden render-context fixtures", async () => {
@@ -22,7 +21,7 @@ describe("official BFB fixture sweeps", () => {
     );
     const fixtures = JSON.parse(
       await readFile(fixturePath, "utf8"),
-    ) as ReadonlyArray<BfbFixture>;
+    ) as readonly BfbFixture[];
 
     expect(fixtures.length).toBeGreaterThanOrEqual(4);
 

@@ -10,24 +10,24 @@ import {
 } from "./primitives";
 
 export const MedicationCatalogRefsFields = Schema.Struct({
-  sourcePackageId: GenericId.GenericId("masterDataPackages"),
-  pzn: Schema.String,
+  activeIngredientText: Schema.optional(Schema.String),
+  articleStatus: Schema.optional(Schema.String),
+  atcCode: Schema.optional(Schema.String),
   displayName: Schema.String,
   doseForm: Schema.optional(CodeableConceptValue),
-  activeIngredientText: Schema.optional(Schema.String),
-  strengthText: Schema.optional(Schema.String),
-  packageSizeValue: Schema.optional(Schema.Number),
-  packageSizeUnit: Schema.optional(Schema.String),
-  normGroesse: Schema.optional(Schema.String),
-  articleStatus: Schema.optional(Schema.String),
-  isPrescriptionOnly: Schema.optional(Schema.Boolean),
   isApothekenpflichtig: Schema.optional(Schema.Boolean),
   isBtm: Schema.optional(Schema.Boolean),
+  isPrescriptionOnly: Schema.optional(Schema.Boolean),
   isTRezept: Schema.optional(Schema.Boolean),
   manufacturer: Schema.optional(Schema.String),
-  atcCode: Schema.optional(Schema.String),
+  normGroesse: Schema.optional(Schema.String),
+  packageSizeUnit: Schema.optional(Schema.String),
+  packageSizeValue: Schema.optional(Schema.Number),
   priceAvp: Schema.optional(Schema.Number),
+  pzn: Schema.String,
   regionalArvFlags: Schema.Array(Schema.String),
+  sourcePackageId: GenericId.GenericId("masterDataPackages"),
+  strengthText: Schema.optional(Schema.String),
 });
 
 export const MedicationCatalogRefs = unsafeMakeTable(
@@ -38,11 +38,11 @@ export const MedicationCatalogRefs = unsafeMakeTable(
   .index("by_atcCode", ["atcCode"]);
 
 export const HousePharmacyItemsFields = Schema.Struct({
+  isPreferred: Schema.Boolean,
+  note: Schema.optional(Schema.String),
   organizationId: GenericId.GenericId("organizations"),
   pzn: Schema.String,
   rank: Schema.optional(Schema.Number),
-  isPreferred: Schema.Boolean,
-  note: Schema.optional(Schema.String),
 });
 
 export const HousePharmacyItems = unsafeMakeTable(
@@ -51,16 +51,44 @@ export const HousePharmacyItems = unsafeMakeTable(
 ).index("by_organizationId_and_pzn", ["organizationId", "pzn"]);
 
 export const MedicationOrdersFields = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
-  encounterId: Schema.optional(GenericId.GenericId("encounters")),
+  accidentInfo: Schema.optional(
+    Schema.Struct({
+      accidentDate: Schema.optional(IsoDate),
+      accidentLocation: Schema.optional(Schema.String),
+      employerName: Schema.optional(Schema.String),
+      isAccident: Schema.Boolean,
+      isWorkAccident: Schema.optional(Schema.Boolean),
+    }),
+  ),
+  artifactDocumentId: Schema.optional(GenericId.GenericId("clinicalDocuments")),
+  authoredOn: IsoDateTime,
   billingCaseId: Schema.optional(GenericId.GenericId("billingCases")),
   coverageId: GenericId.GenericId("coverages"),
+  dosageText: Schema.optional(Schema.String),
+  emergencyServicesFee: Schema.optional(Schema.Boolean),
+  encounterId: Schema.optional(GenericId.GenericId("encounters")),
+  freeTextMedication: Schema.optional(Schema.String),
+  legalBasisCode: Schema.optional(Schema.String),
+  medicationCatalogRefId: Schema.optional(
+    GenericId.GenericId("medicationCatalogRefs"),
+  ),
+  multiplePrescription: Schema.optional(
+    Schema.Struct({
+      denominator: Schema.optional(Schema.Number),
+      enabled: Schema.Boolean,
+      numerator: Schema.optional(Schema.Number),
+      redeemFrom: Schema.optional(IsoDate),
+      redeemUntil: Schema.optional(IsoDate),
+      seriesIdentifier: Schema.optional(Schema.String),
+    }),
+  ),
+  orderKind: Schema.Literal("pzn", "ingredient", "compounding", "freetext"),
+  organizationId: GenericId.GenericId("organizations"),
+  packageCount: Schema.optional(Schema.Number),
+  packagingText: Schema.optional(Schema.String),
+  patientId: GenericId.GenericId("patients"),
   practitionerId: GenericId.GenericId("practitioners"),
   preparerPractitionerId: Schema.optional(GenericId.GenericId("practitioners")),
-  signerPractitionerId: Schema.optional(GenericId.GenericId("practitioners")),
-  organizationId: GenericId.GenericId("organizations"),
-  orderKind: Schema.Literal("pzn", "ingredient", "compounding", "freetext"),
-  prescriptionMode: Schema.Literal("paper", "electronic", "fallback-paper"),
   prescriptionContext: Schema.Literal(
     "regular",
     "practice-supply",
@@ -68,42 +96,16 @@ export const MedicationOrdersFields = Schema.Struct({
     "care-home",
     "technical-fallback",
   ),
-  status: Schema.Literal("draft", "final", "cancelled", "superseded"),
-  authoredOn: IsoDateTime,
-  medicationCatalogRefId: Schema.optional(GenericId.GenericId("medicationCatalogRefs")),
-  freeTextMedication: Schema.optional(Schema.String),
-  dosageText: Schema.optional(Schema.String),
+  prescriptionMode: Schema.Literal("paper", "electronic", "fallback-paper"),
   quantity: Schema.optional(QuantityValue),
-  packageCount: Schema.optional(Schema.Number),
-  packagingText: Schema.optional(Schema.String),
-  substitutionAllowed: Schema.optional(Schema.Boolean),
-  statusCoPaymentCode: Schema.optional(Schema.String),
-  legalBasisCode: Schema.optional(Schema.String),
   serFlag: Schema.optional(Schema.Boolean),
-  accidentInfo: Schema.optional(
-    Schema.Struct({
-      isAccident: Schema.Boolean,
-      isWorkAccident: Schema.optional(Schema.Boolean),
-      employerName: Schema.optional(Schema.String),
-      accidentDate: Schema.optional(IsoDate),
-      accidentLocation: Schema.optional(Schema.String),
-    }),
-  ),
+  signerPractitionerId: Schema.optional(GenericId.GenericId("practitioners")),
   specialRecipeType: Schema.optional(Schema.Literal("btm", "t-rezept", "none")),
-  vaccineFlag: Schema.optional(Schema.Boolean),
   sprechstundenbedarfFlag: Schema.optional(Schema.Boolean),
-  emergencyServicesFee: Schema.optional(Schema.Boolean),
-  multiplePrescription: Schema.optional(
-    Schema.Struct({
-      enabled: Schema.Boolean,
-      numerator: Schema.optional(Schema.Number),
-      denominator: Schema.optional(Schema.Number),
-      redeemFrom: Schema.optional(IsoDate),
-      redeemUntil: Schema.optional(IsoDate),
-      seriesIdentifier: Schema.optional(Schema.String),
-    }),
-  ),
-  artifactDocumentId: Schema.optional(GenericId.GenericId("clinicalDocuments")),
+  status: Schema.Literal("draft", "final", "cancelled", "superseded"),
+  statusCoPaymentCode: Schema.optional(Schema.String),
+  substitutionAllowed: Schema.optional(Schema.Boolean),
+  vaccineFlag: Schema.optional(Schema.Boolean),
 });
 
 export const MedicationOrders = unsafeMakeTable(
@@ -115,17 +117,17 @@ export const MedicationOrders = unsafeMakeTable(
   .index("by_medicationCatalogRefId", ["medicationCatalogRefId"]);
 
 export const MedicationPlansFields = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
-  status: Schema.Literal("current", "superseded"),
-  sourceKind: Schema.Literal("structured", "bmp-xml", "bmp-barcode", "vos"),
+  barcodePayload: Schema.optional(Schema.String),
   bmpVersion: Schema.optional(Schema.String),
   documentIdentifier: Schema.optional(Schema.String),
-  setIdentifier: Schema.optional(Schema.String),
   issuerPractitionerId: Schema.optional(GenericId.GenericId("practitioners")),
   issuingOrganizationId: Schema.optional(GenericId.GenericId("organizations")),
-  barcodePayload: Schema.optional(Schema.String),
-  sourceArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  patientId: GenericId.GenericId("patients"),
   patientPrintArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  setIdentifier: Schema.optional(Schema.String),
+  sourceArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  sourceKind: Schema.Literal("structured", "bmp-xml", "bmp-barcode", "vos"),
+  status: Schema.Literal("current", "superseded"),
   updatedAt: IsoDateTime,
 });
 
@@ -135,26 +137,28 @@ export const MedicationPlans = unsafeMakeTable(
 ).index("by_patientId_and_status", ["patientId", "status"]);
 
 export const MedicationPlanEntriesFields = Schema.Struct({
-  planId: GenericId.GenericId("medicationPlans"),
-  sortOrder: Schema.Number,
+  activeIngredientText: Schema.optional(Schema.String),
+  basedOnMedicationOrderId: Schema.optional(
+    GenericId.GenericId("medicationOrders"),
+  ),
+  displayName: Schema.String,
+  dosageText: Schema.optional(Schema.String),
+  doseFormText: Schema.optional(Schema.String),
   entrySource: Schema.Literal(
     "own-prescription",
     "external-prescription",
     "self-medication",
     "imported-plan",
   ),
-  basedOnMedicationOrderId: Schema.optional(GenericId.GenericId("medicationOrders")),
-  productCode: Schema.optional(Schema.String),
-  displayName: Schema.String,
-  activeIngredientText: Schema.optional(Schema.String),
-  strengthText: Schema.optional(Schema.String),
-  doseFormText: Schema.optional(Schema.String),
-  dosageText: Schema.optional(Schema.String),
-  indicationText: Schema.optional(Schema.String),
-  printOnPlan: Schema.Boolean,
   hasBoundSupplementLine: Schema.Boolean,
-  supplementLineText: Schema.optional(Schema.String),
+  indicationText: Schema.optional(Schema.String),
   isRecipePreparation: Schema.Boolean,
+  planId: GenericId.GenericId("medicationPlans"),
+  printOnPlan: Schema.Boolean,
+  productCode: Schema.optional(Schema.String),
+  sortOrder: Schema.Number,
+  strengthText: Schema.optional(Schema.String),
+  supplementLineText: Schema.optional(Schema.String),
 });
 
 export const MedicationPlanEntries = unsafeMakeTable(
@@ -163,20 +167,20 @@ export const MedicationPlanEntries = unsafeMakeTable(
 ).index("by_planId_and_sortOrder", ["planId", "sortOrder"]);
 
 export const DigaCatalogRefsFields = Schema.Struct({
-  sourcePackageId: GenericId.GenericId("masterDataPackages"),
-  pzn: Schema.String,
-  verordnungseinheitName: Schema.String,
-  digaName: Schema.optional(Schema.String),
+  additionalCoCost: Schema.optional(Schema.Number),
+  ageGroups: Schema.Array(Schema.String),
   digaModulName: Schema.optional(Schema.String),
-  statusImVerzeichnis: Schema.optional(Schema.String),
+  digaName: Schema.optional(Schema.String),
   indikationen: Schema.Array(CodeableConceptValue),
   kontraindikationen: Schema.Array(CodeableConceptValue),
-  notIndicatedGenders: Schema.Array(Schema.String),
-  ageGroups: Schema.Array(Schema.String),
-  usageDurationText: Schema.optional(Schema.String),
-  price: Schema.optional(Schema.Number),
-  additionalCoCost: Schema.optional(Schema.Number),
   manufacturerName: Schema.optional(Schema.String),
+  notIndicatedGenders: Schema.Array(Schema.String),
+  price: Schema.optional(Schema.Number),
+  pzn: Schema.String,
+  sourcePackageId: GenericId.GenericId("masterDataPackages"),
+  statusImVerzeichnis: Schema.optional(Schema.String),
+  usageDurationText: Schema.optional(Schema.String),
+  verordnungseinheitName: Schema.String,
 });
 
 export const DigaCatalogRefs = unsafeMakeTable(
@@ -185,16 +189,16 @@ export const DigaCatalogRefs = unsafeMakeTable(
 ).index("by_pzn", ["pzn"]);
 
 export const DigaOrdersFields = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
-  coverageId: GenericId.GenericId("coverages"),
-  practitionerId: GenericId.GenericId("practitioners"),
-  organizationId: GenericId.GenericId("organizations"),
-  digaCatalogRefId: GenericId.GenericId("digaCatalogRefs"),
-  authoredOn: IsoDateTime,
-  status: Schema.Literal("draft", "final", "cancelled", "superseded"),
-  serFlag: Schema.optional(Schema.Boolean),
-  legalBasisCode: Schema.optional(Schema.String),
   artifactDocumentId: Schema.optional(GenericId.GenericId("clinicalDocuments")),
+  authoredOn: IsoDateTime,
+  coverageId: GenericId.GenericId("coverages"),
+  digaCatalogRefId: GenericId.GenericId("digaCatalogRefs"),
+  legalBasisCode: Schema.optional(Schema.String),
+  organizationId: GenericId.GenericId("organizations"),
+  patientId: GenericId.GenericId("patients"),
+  practitionerId: GenericId.GenericId("practitioners"),
+  serFlag: Schema.optional(Schema.Boolean),
+  status: Schema.Literal("draft", "final", "cancelled", "superseded"),
 });
 
 export const DigaOrders = unsafeMakeTable("digaOrders", DigaOrdersFields)
@@ -202,18 +206,18 @@ export const DigaOrders = unsafeMakeTable("digaOrders", DigaOrdersFields)
   .index("by_digaCatalogRefId", ["digaCatalogRefId"]);
 
 export const HeilmittelCatalogRefsFields = Schema.Struct({
-  sourcePackageId: GenericId.GenericId("masterDataPackages"),
-  heilmittelbereich: Schema.String,
-  diagnosegruppe: Schema.String,
-  heilmittelCode: Schema.String,
-  displayName: Schema.String,
-  isVorrangig: Schema.Boolean,
-  isErgaenzend: Schema.Boolean,
-  positionsnummern: Schema.Array(Schema.String),
-  orientierendeBehandlungsmenge: Schema.optional(Schema.Number),
   blankoEligible: Schema.optional(Schema.Boolean),
-  specialNeedText: Schema.optional(Schema.String),
+  diagnosegruppe: Schema.String,
+  displayName: Schema.String,
+  heilmittelbereich: Schema.String,
+  heilmittelCode: Schema.String,
+  isErgaenzend: Schema.Boolean,
+  isVorrangig: Schema.Boolean,
   longTermNeedText: Schema.optional(Schema.String),
+  orientierendeBehandlungsmenge: Schema.optional(Schema.Number),
+  positionsnummern: Schema.Array(Schema.String),
+  sourcePackageId: GenericId.GenericId("masterDataPackages"),
+  specialNeedText: Schema.optional(Schema.String),
 });
 
 export const HeilmittelCatalogRefs = unsafeMakeTable(
@@ -227,15 +231,15 @@ export const HeilmittelCatalogRefs = unsafeMakeTable(
   .index("by_diagnosegruppe", ["diagnosegruppe"]);
 
 export const HeilmittelApprovalsFields = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
   approvalType: Schema.Literal("long-term", "special-need", "other"),
-  validFrom: Schema.optional(IsoDate),
-  validTo: Schema.optional(IsoDate),
-  icdCodes: Schema.Array(Schema.String),
+  artifactId: Schema.optional(GenericId.GenericId("artifacts")),
   diagnosegruppen: Schema.Array(Schema.String),
   heilmittelCodes: Schema.Array(Schema.String),
+  icdCodes: Schema.Array(Schema.String),
   issuerDisplay: Schema.optional(Schema.String),
-  artifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  patientId: GenericId.GenericId("patients"),
+  validFrom: Schema.optional(IsoDate),
+  validTo: Schema.optional(IsoDate),
 });
 
 export const HeilmittelApprovals = unsafeMakeTable(
@@ -244,28 +248,28 @@ export const HeilmittelApprovals = unsafeMakeTable(
 ).index("by_patientId_and_validTo", ["patientId", "validTo"]);
 
 export const HeilmittelOrdersFields = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
+  approvalId: Schema.optional(GenericId.GenericId("heilmittelApprovals")),
+  artifactDocumentId: Schema.optional(GenericId.GenericId("clinicalDocuments")),
+  blankoFlag: Schema.optional(Schema.Boolean),
   coverageId: GenericId.GenericId("coverages"),
-  practitionerId: GenericId.GenericId("practitioners"),
-  organizationId: GenericId.GenericId("organizations"),
-  issueDate: IsoDate,
-  status: Schema.Literal("draft", "final", "cancelled", "superseded"),
-  diagnosisIds: Schema.Array(GenericId.GenericId("diagnoses")),
   diagnosegruppe: Schema.String,
-  heilmittelbereich: Schema.String,
-  vorrangigeHeilmittelCodes: Schema.Array(Schema.String),
+  diagnosisIds: Schema.Array(GenericId.GenericId("diagnoses")),
   ergaenzendeHeilmittelCodes: Schema.Array(Schema.String),
-  standardisierteKombinationCode: Schema.optional(Schema.String),
-  verordnungsmenge: Schema.optional(Schema.Number),
   frequenzText: Schema.optional(Schema.String),
   hausbesuch: Schema.optional(Schema.Boolean),
-  therapiebericht: Schema.optional(Schema.Boolean),
-  specialNeedFlag: Schema.optional(Schema.Boolean),
+  heilmittelbereich: Schema.String,
+  issueDate: IsoDate,
   longTermNeedFlag: Schema.optional(Schema.Boolean),
-  blankoFlag: Schema.optional(Schema.Boolean),
-  approvalId: Schema.optional(GenericId.GenericId("heilmittelApprovals")),
+  organizationId: GenericId.GenericId("organizations"),
+  patientId: GenericId.GenericId("patients"),
+  practitionerId: GenericId.GenericId("practitioners"),
+  specialNeedFlag: Schema.optional(Schema.Boolean),
+  standardisierteKombinationCode: Schema.optional(Schema.String),
+  status: Schema.Literal("draft", "final", "cancelled", "superseded"),
   stornoDate: Schema.optional(IsoDate),
-  artifactDocumentId: Schema.optional(GenericId.GenericId("clinicalDocuments")),
+  therapiebericht: Schema.optional(Schema.Boolean),
+  verordnungsmenge: Schema.optional(Schema.Number),
+  vorrangigeHeilmittelCodes: Schema.Array(Schema.String),
 });
 
 export const HeilmittelOrders = unsafeMakeTable(

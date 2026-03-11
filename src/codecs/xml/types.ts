@@ -1,11 +1,11 @@
 export type XmlBoundaryKind =
-  | "reversible"
-  | "partially reversible"
   | "emit-only"
-  | "import-authoritative";
+  | "import-authoritative"
+  | "partially reversible"
+  | "reversible";
 
 export interface XmlFamilyDefinition {
-  readonly family: string;
-  readonly encoding: string;
   readonly boundaryKind: XmlBoundaryKind;
+  readonly encoding: string;
+  readonly family: string;
 }

@@ -1,39 +1,39 @@
 import type { OracleExecutionResult } from "../types";
 
-type HeilmittelOrderItem = {
-  readonly code: string;
-  readonly units: number;
-  readonly kind: "vorrangig" | "ergaenzend" | "standardkombination";
-};
-
-type HeilmittelCatalogEntry = {
-  readonly code: string;
-  readonly heilmittelbereich: string;
-  readonly diagnosegruppe: string;
-  readonly kind: "vorrangig" | "ergaenzend" | "standardkombination";
-  readonly blankoEligible?: boolean;
-};
-
-type HeilmittelApprovalPreview = {
+interface HeilmittelApprovalPreview {
+  readonly diagnosegruppen?: readonly string[];
+  readonly heilmittelCodes?: readonly string[];
   readonly validUntil?: string;
-  readonly diagnosegruppen?: ReadonlyArray<string>;
-  readonly heilmittelCodes?: ReadonlyArray<string>;
-};
+}
 
-type HeilmittelOraclePreview = {
-  readonly caseId?: string;
-  readonly sourceReference?: string;
-  readonly issueDate?: string;
-  readonly heilmittelbereich: string;
+interface HeilmittelCatalogEntry {
+  readonly blankoEligible?: boolean;
+  readonly code: string;
   readonly diagnosegruppe: string;
-  readonly diagnosisCodes: ReadonlyArray<string>;
-  readonly blankoFlag?: boolean;
-  readonly requiresLongTermApproval?: boolean;
+  readonly heilmittelbereich: string;
+  readonly kind: "ergaenzend" | "standardkombination" | "vorrangig";
+}
+
+interface HeilmittelOraclePreview {
   readonly approval?: HeilmittelApprovalPreview;
-  readonly items: ReadonlyArray<HeilmittelOrderItem>;
-  readonly catalogEntries: ReadonlyArray<HeilmittelCatalogEntry>;
+  readonly blankoFlag?: boolean;
+  readonly caseId?: string;
+  readonly catalogEntries: readonly HeilmittelCatalogEntry[];
+  readonly diagnosegruppe: string;
+  readonly diagnosisCodes: readonly string[];
+  readonly heilmittelbereich: string;
+  readonly issueDate?: string;
+  readonly items: readonly HeilmittelOrderItem[];
   readonly maxTotalUnits?: number;
-};
+  readonly requiresLongTermApproval?: boolean;
+  readonly sourceReference?: string;
+}
+
+interface HeilmittelOrderItem {
+  readonly code: string;
+  readonly kind: "ergaenzend" | "standardkombination" | "vorrangig";
+  readonly units: number;
+}
 
 const parsePreview = (payloadPreview: string) => {
   const parsed = JSON.parse(payloadPreview) as HeilmittelOraclePreview;
@@ -42,12 +42,12 @@ const parsePreview = (payloadPreview: string) => {
 
 const makeFinding = (
   code: string,
-  severity: "info" | "warning" | "error",
+  severity: "error" | "info" | "warning",
   message: string,
 ) => ({
   code,
-  severity,
   message,
+  severity,
 });
 
 export const runHeilmittelOracle = ({
@@ -58,7 +58,6 @@ export const runHeilmittelOracle = ({
   if (!payloadPreview || payloadPreview.trim().length === 0) {
     return {
       family: "Heilmittel",
-      passed: false,
       findings: [
         makeFinding(
           "HEILMITTEL_PAYLOAD_PREVIEW_MISSING",
@@ -66,6 +65,7 @@ export const runHeilmittelOracle = ({
           "No Heilmittel payload preview was provided to the oracle runner.",
         ),
       ],
+      passed: false,
       summary: "Heilmittel preview failed the official fixture-backed checks.",
     };
   }
@@ -76,7 +76,6 @@ export const runHeilmittelOracle = ({
   } catch (error) {
     return {
       family: "Heilmittel",
-      passed: false,
       findings: [
         makeFinding(
           "HEILMITTEL_FIXTURE_INVALID_JSON",
@@ -86,11 +85,12 @@ export const runHeilmittelOracle = ({
             : "Heilmittel oracle preview is not valid JSON.",
         ),
       ],
+      passed: false,
       summary: "Heilmittel preview failed the official fixture-backed checks.",
     };
   }
 
-  const findings: Array<OracleExecutionResult["findings"][number]> = [];
+  const findings: OracleExecutionResult["findings"][number][] = [];
   const matchingCatalogEntries = preview.catalogEntries.filter(
     (entry) =>
       entry.heilmittelbereich === preview.heilmittelbereich &&
@@ -237,8 +237,8 @@ export const runHeilmittelOracle = ({
 
   return {
     family: "Heilmittel",
-    passed: findings.every((finding) => finding.severity !== "error"),
     findings,
+    passed: findings.every((finding) => finding.severity !== "error"),
     summary: findings.every((finding) => finding.severity !== "error")
       ? "Heilmittel preview satisfied the official fixture-backed checks."
       : "Heilmittel preview failed the official fixture-backed checks.",

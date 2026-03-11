@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -12,11 +11,11 @@ import {
   kbvOracleAssets,
 } from "../tools/oracles/assets";
 
-const tempDirs: Array<string> = [];
+const tempDirs: string[] = [];
 
 afterEach(async () => {
   for (const tempDir of tempDirs.splice(0)) {
-    await rm(tempDir, { recursive: true, force: true });
+    await rm(tempDir, { force: true, recursive: true });
   }
 });
 
@@ -54,9 +53,9 @@ describe("oracle asset downloader", () => {
     const downloadedPath = await downloadManagedAsset(
       {
         assetId: "test-asset",
-        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
         fileName: "asset.bin",
         sha256,
+        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
       },
       tempDir,
     );
@@ -86,9 +85,9 @@ describe("oracle asset downloader", () => {
     const downloadedPath = await downloadManagedAsset(
       {
         assetId: "test-asset-corruption",
-        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
         fileName: "asset.bin",
         sha256,
+        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
       },
       tempDir,
     );
@@ -98,9 +97,9 @@ describe("oracle asset downloader", () => {
     const redownloadedPath = await downloadManagedAsset(
       {
         assetId: "test-asset-corruption",
-        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
         fileName: "asset.bin",
         sha256,
+        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
       },
       tempDir,
     );
@@ -124,9 +123,9 @@ describe("oracle asset downloader", () => {
     const downloadedPath = await downloadManagedAsset(
       {
         assetId: "test-asset-broken-manifest",
-        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
         fileName: "asset.bin",
         sha256,
+        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
       },
       tempDir,
     );

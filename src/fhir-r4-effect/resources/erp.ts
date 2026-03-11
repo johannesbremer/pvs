@@ -12,26 +12,26 @@ import {
 } from "./common";
 
 export const ErpBundleResource = Schema.Struct({
-  resourceType: Schema.Literal("Bundle"),
-  type: Schema.Literal("document"),
+  entry: Schema.Array(FhirBundleEntry),
   identifier: Schema.optional(
     Schema.Struct({
       system: Schema.String,
       value: Schema.String,
     }),
   ),
+  resourceType: Schema.Literal("Bundle"),
   timestamp: Schema.String,
-  entry: Schema.Array(FhirBundleEntry),
+  type: Schema.Literal("document"),
 });
 
 export const ErpPayload = Schema.Struct({
-  profileVersion: Schema.String,
+  bundle: ErpBundleResource,
   composition: FhirCompositionResource,
-  patient: FhirPatientResource,
-  practitioner: FhirPractitionerResource,
-  organization: FhirOrganizationResource,
   coverage: FhirCoverageResource,
   medication: FhirMedicationResource,
   medicationRequest: FhirMedicationRequestResource,
-  bundle: ErpBundleResource,
+  organization: FhirOrganizationResource,
+  patient: FhirPatientResource,
+  practitioner: FhirPractitionerResource,
+  profileVersion: Schema.String,
 });

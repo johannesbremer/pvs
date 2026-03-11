@@ -2,26 +2,22 @@ import { GenericId } from "@confect/core";
 import { Schema } from "effect";
 
 import { unsafeMakeTable } from "./makeTable";
-import {
-  CodingValue,
-  IsoDate,
-  IsoDateTime,
-} from "./primitives";
+import { CodingValue, IsoDate, IsoDateTime } from "./primitives";
 
 export const DiagnosesFields = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
-  encounterId: Schema.optional(GenericId.GenericId("encounters")),
   billingCaseId: Schema.optional(GenericId.GenericId("billingCases")),
-  icdCode: Schema.String,
-  icd10gm: CodingValue,
-  diagnoseklartext: Schema.optional(Schema.String),
   category: Schema.Literal("acute", "dauerdiagnose", "anamnestisch"),
-  diagnosensicherheit: Schema.optional(Schema.String),
-  seitenlokalisation: Schema.optional(Schema.String),
   diagnoseerlaeuterung: Schema.optional(Schema.String),
+  diagnoseklartext: Schema.optional(Schema.String),
+  diagnosensicherheit: Schema.optional(Schema.String),
+  encounterId: Schema.optional(GenericId.GenericId("encounters")),
+  icd10gm: CodingValue,
+  icdCode: Schema.String,
   isPrimary: Schema.optional(Schema.Boolean),
   isSecondary: Schema.optional(Schema.Boolean),
+  patientId: GenericId.GenericId("patients"),
   recordStatus: Schema.Literal("active", "cancelled", "superseded"),
+  seitenlokalisation: Schema.optional(Schema.String),
 });
 
 export const Diagnoses = unsafeMakeTable("diagnoses", DiagnosesFields)
@@ -30,17 +26,17 @@ export const Diagnoses = unsafeMakeTable("diagnoses", DiagnosesFields)
   .index("by_icdCode", ["icdCode"]);
 
 export const IcdCatalogEntriesFields = Schema.Struct({
-  sourcePackageId: GenericId.GenericId("masterDataPackages"),
-  code: Schema.String,
-  text: Schema.String,
-  isBillable: Schema.Boolean,
-  notationFlag: Schema.optional(Schema.String),
+  ageErrorType: Schema.optional(Schema.String),
   ageLower: Schema.optional(Schema.Number),
   ageUpper: Schema.optional(Schema.Number),
-  ageErrorType: Schema.optional(Schema.String),
+  code: Schema.String,
   genderConstraint: Schema.optional(Schema.String),
   genderErrorType: Schema.optional(Schema.String),
+  isBillable: Schema.Boolean,
+  notationFlag: Schema.optional(Schema.String),
   rareDiseaseFlag: Schema.optional(Schema.Boolean),
+  sourcePackageId: GenericId.GenericId("masterDataPackages"),
+  text: Schema.String,
 });
 
 export const IcdCatalogEntries = unsafeMakeTable(
@@ -51,15 +47,15 @@ export const IcdCatalogEntries = unsafeMakeTable(
   .index("by_sourcePackageId_and_code", ["sourcePackageId", "code"]);
 
 export const CodingEvaluationsFields = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
-  diagnosisId: Schema.optional(GenericId.GenericId("diagnoses")),
   billingCaseId: Schema.optional(GenericId.GenericId("billingCases")),
-  ruleFamily: Schema.Literal("sdicd", "sdkh", "sdkrw"),
-  severity: Schema.Literal("info", "warning", "error"),
-  ruleCode: Schema.String,
-  message: Schema.String,
   blocking: Schema.Boolean,
   createdAt: IsoDateTime,
+  diagnosisId: Schema.optional(GenericId.GenericId("diagnoses")),
+  message: Schema.String,
+  patientId: GenericId.GenericId("patients"),
+  ruleCode: Schema.String,
+  ruleFamily: Schema.Literal("sdicd", "sdkh", "sdkrw"),
+  severity: Schema.Literal("info", "warning", "error"),
 });
 
 export const CodingEvaluations = unsafeMakeTable(
@@ -70,20 +66,20 @@ export const CodingEvaluations = unsafeMakeTable(
   .index("by_billingCaseId_and_ruleFamily", ["billingCaseId", "ruleFamily"]);
 
 export const BillingCasesFields = Schema.Struct({
-  patientId: GenericId.GenericId("patients"),
   coverageId: Schema.optional(GenericId.GenericId("coverages")),
-  organizationId: GenericId.GenericId("organizations"),
+  einlesedatum4109: Schema.optional(IsoDate),
+  kostentraegerkennung4133: Schema.optional(Schema.String),
+  kostentraegername4134: Schema.optional(Schema.String),
   locationId: Schema.optional(GenericId.GenericId("practiceLocations")),
+  organizationId: GenericId.GenericId("organizations"),
+  patientId: GenericId.GenericId("patients"),
   practitionerRoleId: Schema.optional(GenericId.GenericId("practitionerRoles")),
   quarter: Schema.String,
   scheinuntergruppe: Schema.optional(Schema.String),
-  einlesedatum4109: Schema.optional(IsoDate),
-  vsdSnapshotId: Schema.optional(GenericId.GenericId("vsdSnapshots")),
-  kostentraegerkennung4133: Schema.optional(Schema.String),
-  kostentraegername4134: Schema.optional(Schema.String),
-  tssRelevant: Schema.Boolean,
-  tssAppointmentId: Schema.optional(GenericId.GenericId("appointments")),
   status: Schema.Literal("open", "ready-for-export", "exported", "corrected"),
+  tssAppointmentId: Schema.optional(GenericId.GenericId("appointments")),
+  tssRelevant: Schema.Boolean,
+  vsdSnapshotId: Schema.optional(GenericId.GenericId("vsdSnapshots")),
 });
 
 export const BillingCases = unsafeMakeTable("billingCases", BillingCasesFields)
@@ -93,13 +89,13 @@ export const BillingCases = unsafeMakeTable("billingCases", BillingCasesFields)
 
 export const BillingLineItemsFields = Schema.Struct({
   billingCaseId: GenericId.GenericId("billingCases"),
-  chargeCodeSystem: Schema.Literal("EBM", "GOAE", "other"),
   chargeCode: Schema.String,
-  serviceDate: IsoDate,
-  quantity: Schema.Number,
+  chargeCodeSystem: Schema.Literal("EBM", "GOAE", "other"),
   diagnosisIds: Schema.Array(GenericId.GenericId("diagnoses")),
   modifierCodes: Schema.Array(CodingValue),
   originKind: Schema.Literal("manual", "form", "tss", "import"),
+  quantity: Schema.Number,
+  serviceDate: IsoDate,
 });
 
 export const BillingLineItems = unsafeMakeTable(
@@ -107,7 +103,10 @@ export const BillingLineItems = unsafeMakeTable(
   BillingLineItemsFields,
 )
   .index("by_billingCaseId", ["billingCaseId"])
-  .index("by_chargeCodeSystem_and_chargeCode", ["chargeCodeSystem", "chargeCode"]);
+  .index("by_chargeCodeSystem_and_chargeCode", [
+    "chargeCodeSystem",
+    "chargeCode",
+  ]);
 
 export const BillingTables = [
   Diagnoses,

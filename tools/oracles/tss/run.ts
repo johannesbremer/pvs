@@ -1,26 +1,27 @@
+import type { OracleExecutionResult } from "../types";
+
 import {
   filterSelectableTssAppointments,
   type TssAppointmentPreview,
   type TssSelectionCriteria,
 } from "../../../src/domain/appointments-referrals";
-import type { OracleExecutionResult } from "../types";
 
-type TssOraclePreview = {
+interface TssOraclePreview {
+  readonly appointments: readonly TssAppointmentPreview[];
   readonly caseId?: string;
-  readonly sourceReference?: string;
   readonly criteria: TssSelectionCriteria;
-  readonly appointments: ReadonlyArray<TssAppointmentPreview>;
-  readonly expectedSelectableAppointmentIds: ReadonlyArray<string>;
-};
+  readonly expectedSelectableAppointmentIds: readonly string[];
+  readonly sourceReference?: string;
+}
 
 const makeFinding = (
   code: string,
-  severity: "info" | "warning" | "error",
+  severity: "error" | "info" | "warning",
   message: string,
 ) => ({
   code,
-  severity,
   message,
+  severity,
 });
 
 export const runTssOracle = ({
@@ -31,7 +32,6 @@ export const runTssOracle = ({
   if (!payloadPreview || payloadPreview.trim().length === 0) {
     return {
       family: "TSS",
-      passed: false,
       findings: [
         makeFinding(
           "TSS_PAYLOAD_PREVIEW_MISSING",
@@ -39,6 +39,7 @@ export const runTssOracle = ({
           "No TSS payload preview was provided to the oracle runner.",
         ),
       ],
+      passed: false,
       summary: "TSS preview failed the fixture-backed checks.",
     };
   }
@@ -49,7 +50,6 @@ export const runTssOracle = ({
   } catch (error) {
     return {
       family: "TSS",
-      passed: false,
       findings: [
         makeFinding(
           "TSS_FIXTURE_INVALID_JSON",
@@ -59,6 +59,7 @@ export const runTssOracle = ({
             : "TSS oracle preview is not valid JSON.",
         ),
       ],
+      passed: false,
       summary: "TSS preview failed the fixture-backed checks.",
     };
   }
@@ -80,7 +81,9 @@ export const runTssOracle = ({
   );
   const actualIds = selected
     .map((appointment) => appointment.appointmentId)
-    .filter((appointmentId): appointmentId is string => appointmentId !== undefined)
+    .filter(
+      (appointmentId): appointmentId is string => appointmentId !== undefined,
+    )
     .sort();
   const expectedIds = [...preview.expectedSelectableAppointmentIds].sort();
 
@@ -94,7 +97,9 @@ export const runTssOracle = ({
 
   const mismatch =
     actualIds.length !== expectedIds.length ||
-    expectedIds.some((appointmentId, index) => appointmentId !== actualIds[index]);
+    expectedIds.some(
+      (appointmentId, index) => appointmentId !== actualIds[index],
+    );
 
   if (mismatch) {
     findings.push(
@@ -108,11 +113,10 @@ export const runTssOracle = ({
 
   return {
     family: "TSS",
-    passed: findings.every((finding) => finding.severity !== "error"),
     findings,
-    summary:
-      findings.every((finding) => finding.severity !== "error")
-        ? "TSS preview satisfied the fixture-backed checks."
-        : "TSS preview failed the fixture-backed checks.",
+    passed: findings.every((finding) => finding.severity !== "error"),
+    summary: findings.every((finding) => finding.severity !== "error")
+      ? "TSS preview satisfied the fixture-backed checks."
+      : "TSS preview failed the fixture-backed checks.",
   };
 };

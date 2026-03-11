@@ -1,4 +1,5 @@
-const { kbvOracleAssets, prefetchKbvOracleAssets } = await import("./assets.ts");
+const { kbvOracleAssets, prefetchKbvOracleAssets } =
+  await import("./assets.ts");
 
 const requestedAssetIds = process.argv.slice(2);
 const assetIds =

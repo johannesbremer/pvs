@@ -1,8 +1,8 @@
 export interface XdtFamilyDefinition {
-  readonly family: string;
   readonly boundaryKind:
-    | "reversible"
-    | "partially reversible"
     | "emit-only"
-    | "import-authoritative";
+    | "import-authoritative"
+    | "partially reversible"
+    | "reversible";
+  readonly family: string;
 }

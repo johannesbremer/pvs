@@ -1,108 +1,113 @@
 import { Buffer } from "node:buffer";
 
-import { evaluateCodingRules } from "../../../src/domain/coding-rules";
-import { computeBufferSha256 } from "../assets";
 import type { OracleExecutionResult } from "../types";
 
-type CodingOraclePreview = {
+import { evaluateCodingRules } from "../../../src/domain/coding-rules";
+import { computeBufferSha256 } from "../assets";
+
+interface CodingOraclePreview {
+  readonly billingCaseId?: string;
+  readonly caseDiagnoses?: readonly {
+    readonly billingCaseId?: string;
+    readonly isPrimary?: boolean;
+    readonly recordStatus: "active" | "cancelled" | "superseded";
+  }[];
   readonly caseId?: string;
-  readonly sourceReference?: string;
-  readonly patientId?: string;
+  readonly catalogEntry?: {
+    readonly ageErrorType?: string;
+    readonly ageLower?: number;
+    readonly ageUpper?: number;
+    readonly code: string;
+    readonly genderConstraint?: string;
+    readonly genderErrorType?: string;
+    readonly isBillable: boolean;
+    readonly notationFlag?: string;
+    readonly rareDiseaseFlag?: boolean;
+    readonly text: string;
+  };
+  readonly createdAt: string;
+  readonly diagnosis: {
+    readonly category: "acute" | "anamnestisch" | "dauerdiagnose";
+    readonly diagnosensicherheit?: string;
+    readonly icdCode: string;
+    readonly isPrimary?: boolean;
+    readonly patientId?: string;
+  };
   readonly patient: {
-    readonly birthDate?: string;
     readonly administrativeGender?: {
       readonly code: string;
     };
+    readonly birthDate?: string;
   };
-  readonly diagnosis: {
-    readonly patientId?: string;
-    readonly icdCode: string;
-    readonly category: "acute" | "dauerdiagnose" | "anamnestisch";
-    readonly diagnosensicherheit?: string;
-    readonly isPrimary?: boolean;
-  };
-  readonly billingCaseId?: string;
-  readonly caseDiagnoses?: ReadonlyArray<{
-    readonly billingCaseId?: string;
-    readonly recordStatus: "active" | "cancelled" | "superseded";
-    readonly isPrimary?: boolean;
-  }>;
-  readonly catalogEntry?: {
-    readonly code: string;
-    readonly text: string;
-    readonly isBillable: boolean;
-    readonly notationFlag?: string;
+  readonly patientId?: string;
+  readonly sourceReference?: string;
+}
+
+interface CodingPackagePreview {
+  readonly caseId?: string;
+  readonly entries: readonly {
+    readonly ageErrorType?: string;
     readonly ageLower?: number;
     readonly ageUpper?: number;
-    readonly ageErrorType?: string;
+    readonly code?: string;
     readonly genderConstraint?: string;
     readonly genderErrorType?: string;
-    readonly rareDiseaseFlag?: boolean;
-  };
-  readonly createdAt: string;
-};
-
-type CodingPackagePreview = {
-  readonly caseId?: string;
-  readonly sourceReference?: string;
-  readonly package: {
-    readonly family: string;
-    readonly version: string;
-    readonly effectiveFrom?: string;
-    readonly effectiveTo?: string;
-    readonly sourcePath: string;
-    readonly importedAt: string;
-    readonly status: string;
-    readonly authenticity?: {
-      readonly signatureStatus: "verified" | "missing" | "failed" | "unverified";
-      readonly signatureAlgorithm?: string;
-      readonly detachedSignaturePath?: string;
-      readonly signerOrganization?: string;
-      readonly trustAnchor?: string;
-      readonly certificateSha256?: string;
-      readonly verifiedAt?: string;
-    };
-    readonly artifact?: {
-      readonly storageId?: string;
-      readonly contentType?: string;
-      readonly byteSize?: number;
-      readonly sha256?: string;
-      readonly title?: string;
-      readonly bytesBase64?: string;
-    };
-  };
-  readonly entries: ReadonlyArray<{
-    readonly code?: string;
-    readonly text?: string;
     readonly isBillable?: boolean;
     readonly notationFlag?: string;
-    readonly ageLower?: number;
-    readonly ageUpper?: number;
-    readonly ageErrorType?: string;
-    readonly genderConstraint?: string;
-    readonly genderErrorType?: string;
     readonly rareDiseaseFlag?: boolean;
-  }>;
-};
+    readonly text?: string;
+  }[];
+  readonly package: {
+    readonly artifact?: {
+      readonly bytesBase64?: string;
+      readonly byteSize?: number;
+      readonly contentType?: string;
+      readonly sha256?: string;
+      readonly storageId?: string;
+      readonly title?: string;
+    };
+    readonly authenticity?: {
+      readonly certificateSha256?: string;
+      readonly detachedSignaturePath?: string;
+      readonly signatureAlgorithm?: string;
+      readonly signatureStatus:
+        | "failed"
+        | "missing"
+        | "unverified"
+        | "verified";
+      readonly signerOrganization?: string;
+      readonly trustAnchor?: string;
+      readonly verifiedAt?: string;
+    };
+    readonly effectiveFrom?: string;
+    readonly effectiveTo?: string;
+    readonly family: string;
+    readonly importedAt: string;
+    readonly sourcePath: string;
+    readonly status: string;
+    readonly version: string;
+  };
+  readonly sourceReference?: string;
+}
 
 const makeFinding = (
   code: string,
-  severity: "info" | "warning" | "error",
+  severity: "error" | "info" | "warning",
   message: string,
 ) => ({
   code,
-  severity,
   message,
+  severity,
 });
 
 const allowedPackageFamilies = new Set(["SDICD", "SDKH", "SDKRW"]);
-const allowedPackageStatuses = new Set(["active", "superseded", "failed"]);
-const allowedSeverityModes = new Set(["warning", "error"]);
+const allowedPackageStatuses = new Set(["active", "failed", "superseded"]);
+const allowedSeverityModes = new Set(["error", "warning"]);
 const allowedArtifactContentTypes = new Set([
-  "application/zip",
   "application/octet-stream",
-  "text/plain",
+  "application/zip",
   "text/csv",
+  "text/plain",
 ]);
 const allowedSignatureAlgorithms = new Set([
   "cms-detached-sha256",
@@ -115,17 +120,16 @@ const expectedSignerByFamily: Record<string, string> = {
   SDKRW: "KBV",
 };
 const allowedGenderConstraints = new Set([
-  "male",
-  "female",
   "diverse",
+  "female",
+  "male",
   "unknown",
 ]);
 
 const sha256Pattern = /^[a-f0-9]{64}$/i;
 
 const isIsoLikeDate = (value: string | undefined) =>
-  value !== undefined &&
-  !Number.isNaN(new Date(value).getTime());
+  value !== undefined && !Number.isNaN(new Date(value).getTime());
 
 const runCodingPackageOracle = (
   preview: CodingPackagePreview,
@@ -162,7 +166,10 @@ const runCodingPackageOracle = (
     );
   }
 
-  if (!preview.package.sourcePath || preview.package.sourcePath.trim().length === 0) {
+  if (
+    !preview.package.sourcePath ||
+    preview.package.sourcePath.trim().length === 0
+  ) {
     findings.push(
       makeFinding(
         "ICD_PACKAGE_SOURCE_PATH_MISSING",
@@ -242,7 +249,10 @@ const runCodingPackageOracle = (
     );
   }
 
-  const normalizedVersionToken = preview.package.version.replace(/[^\dA-Za-z]+/g, "_");
+  const normalizedVersionToken = preview.package.version.replace(
+    /[^\dA-Z]+/gi,
+    "_",
+  );
   if (
     normalizedVersionToken.length > 0 &&
     !preview.package.sourcePath.includes(normalizedVersionToken) &&
@@ -343,7 +353,11 @@ const runCodingPackageOracle = (
         );
       }
 
-      if (decodedBytes && artifact.byteSize !== undefined && decodedBytes.byteLength !== artifact.byteSize) {
+      if (
+        decodedBytes &&
+        artifact.byteSize !== undefined &&
+        decodedBytes.byteLength !== artifact.byteSize
+      ) {
         findings.push(
           makeFinding(
             "ICD_PACKAGE_ARTIFACT_BYTESIZE_MISMATCH",
@@ -353,7 +367,11 @@ const runCodingPackageOracle = (
         );
       }
 
-      if (decodedBytes && artifact.sha256 && sha256Pattern.test(artifact.sha256)) {
+      if (
+        decodedBytes &&
+        artifact.sha256 &&
+        sha256Pattern.test(artifact.sha256)
+      ) {
         const actualSha256 = computeBufferSha256(decodedBytes);
         if (actualSha256 !== artifact.sha256.toLowerCase()) {
           findings.push(
@@ -432,12 +450,10 @@ const runCodingPackageOracle = (
 
     if (authenticity.detachedSignaturePath) {
       const normalizedVersionToken = preview.package.version.replace(
-        /[^\dA-Za-z]+/g,
+        /[^\dA-Z]+/gi,
         "_",
       );
-      if (
-        !/\.(p7s|sig|asc)$/i.test(authenticity.detachedSignaturePath)
-      ) {
+      if (!/\.(p7s|sig|asc)$/i.test(authenticity.detachedSignaturePath)) {
         findings.push(
           makeFinding(
             "ICD_PACKAGE_SIGNATURE_PATH_EXTENSION_INVALID",
@@ -707,8 +723,8 @@ const runCodingPackageOracle = (
 
   return {
     family: "ICD",
-    passed,
     findings,
+    passed,
     summary: passed
       ? "Coding package satisfied the fixture-backed integrity checks."
       : "Coding package failed the fixture-backed integrity checks.",
@@ -723,7 +739,6 @@ export const runCodingOracle = ({
   if (!payloadPreview || payloadPreview.trim().length === 0) {
     return {
       family: "ICD",
-      passed: false,
       findings: [
         makeFinding(
           "ICD_PAYLOAD_PREVIEW_MISSING",
@@ -731,6 +746,7 @@ export const runCodingOracle = ({
           "No coding payload preview was provided to the oracle runner.",
         ),
       ],
+      passed: false,
       summary: "Coding preview failed the fixture-backed rule checks.",
     };
   }
@@ -741,7 +757,6 @@ export const runCodingOracle = ({
   } catch (error) {
     return {
       family: "ICD",
-      passed: false,
       findings: [
         makeFinding(
           "ICD_FIXTURE_INVALID_JSON",
@@ -751,6 +766,7 @@ export const runCodingOracle = ({
             : "Coding oracle preview is not valid JSON.",
         ),
       ],
+      passed: false,
       summary: "Coding preview failed the fixture-backed rule checks.",
     };
   }
@@ -765,12 +781,11 @@ export const runCodingOracle = ({
   }
 
   const evaluations = evaluateCodingRules({
-    patientId: preview.patientId ?? "preview-patient",
-    patient: preview.patient,
     diagnosis: {
-      patientId: preview.diagnosis.patientId ?? preview.patientId ?? "preview-patient",
-      icdCode: preview.diagnosis.icdCode,
       category: preview.diagnosis.category,
+      icdCode: preview.diagnosis.icdCode,
+      patientId:
+        preview.diagnosis.patientId ?? preview.patientId ?? "preview-patient",
       ...(preview.diagnosis.diagnosensicherheit
         ? { diagnosensicherheit: preview.diagnosis.diagnosensicherheit }
         : {}),
@@ -778,6 +793,8 @@ export const runCodingOracle = ({
         ? { isPrimary: preview.diagnosis.isPrimary }
         : {}),
     },
+    patient: preview.patient,
+    patientId: preview.patientId ?? "preview-patient",
     ...(preview.billingCaseId ? { billingCaseId: preview.billingCaseId } : {}),
     ...(preview.caseDiagnoses ? { caseDiagnoses: preview.caseDiagnoses } : {}),
     ...(preview.catalogEntry ? { catalogEntry: preview.catalogEntry } : {}),
@@ -800,11 +817,10 @@ export const runCodingOracle = ({
 
   return {
     family: "ICD",
-    passed: findings.every((finding) => finding.severity !== "error"),
     findings,
-    summary:
-      findings.every((finding) => finding.severity !== "error")
-        ? "Coding preview satisfied the fixture-backed rule checks."
-        : "Coding preview failed the fixture-backed rule checks.",
+    passed: findings.every((finding) => finding.severity !== "error"),
+    summary: findings.every((finding) => finding.severity !== "error")
+      ? "Coding preview satisfied the fixture-backed rule checks."
+      : "Coding preview failed the fixture-backed rule checks.",
   };
 };

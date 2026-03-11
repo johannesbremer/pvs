@@ -11,6 +11,6 @@ export const plannedFhirResources = [
 ] as const;
 
 export * from "./common";
-export * from "./evdga";
-export * from "./erp";
 export * from "./eau";
+export * from "./erp";
+export * from "./evdga";

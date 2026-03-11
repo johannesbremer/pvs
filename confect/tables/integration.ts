@@ -5,6 +5,14 @@ import { unsafeMakeTable } from "./makeTable";
 import { AttachmentRefValue, IsoDateTime } from "./primitives";
 
 export const ArtifactsFields = Schema.Struct({
+  artifactFamily: Schema.String,
+  artifactSubtype: Schema.String,
+  attachment: AttachmentRefValue,
+  contentType: Schema.String,
+  direction: Schema.Literal("inbound", "outbound", "internal"),
+  externalIdentifier: Schema.optional(Schema.String),
+  immutableAt: IsoDateTime,
+  ownerId: Schema.String,
   ownerKind: Schema.Literal(
     "documentRevision",
     "billingCase",
@@ -12,18 +20,10 @@ export const ArtifactsFields = Schema.Struct({
     "masterDataPackage",
     "integrationJob",
   ),
-  ownerId: Schema.String,
-  direction: Schema.Literal("inbound", "outbound", "internal"),
-  artifactFamily: Schema.String,
-  artifactSubtype: Schema.String,
   profileVersion: Schema.optional(Schema.String),
   transportKind: Schema.String,
-  contentType: Schema.String,
-  attachment: AttachmentRefValue,
-  externalIdentifier: Schema.optional(Schema.String),
   validationStatus: Schema.Literal("pending", "valid", "invalid"),
   validationSummary: Schema.optional(Schema.String),
-  immutableAt: IsoDateTime,
 });
 
 export const Artifacts = unsafeMakeTable("artifacts", ArtifactsFields)
@@ -35,17 +35,17 @@ export const Artifacts = unsafeMakeTable("artifacts", ArtifactsFields)
   .index("by_externalIdentifier", ["externalIdentifier"]);
 
 export const IntegrationJobsFields = Schema.Struct({
-  jobType: Schema.String,
-  ownerKind: Schema.String,
-  ownerId: Schema.String,
-  direction: Schema.Literal("inbound", "outbound"),
-  status: Schema.Literal("queued", "running", "waiting", "failed", "done"),
-  idempotencyKey: Schema.String,
-  selectedProfileId: Schema.optional(GenericId.GenericId("interfaceProfiles")),
-  payloadArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
   attemptCount: Schema.Number,
-  nextAttemptAt: Schema.optional(IsoDateTime),
   counterparty: Schema.optional(Schema.String),
+  direction: Schema.Literal("inbound", "outbound"),
+  idempotencyKey: Schema.String,
+  jobType: Schema.String,
+  nextAttemptAt: Schema.optional(IsoDateTime),
+  ownerId: Schema.String,
+  ownerKind: Schema.String,
+  payloadArtifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  selectedProfileId: Schema.optional(GenericId.GenericId("interfaceProfiles")),
+  status: Schema.Literal("queued", "running", "waiting", "failed", "done"),
 });
 
 export const IntegrationJobs = unsafeMakeTable(
@@ -57,12 +57,12 @@ export const IntegrationJobs = unsafeMakeTable(
   .index("by_idempotencyKey", ["idempotencyKey"]);
 
 export const IntegrationEventsFields = Schema.Struct({
-  jobId: GenericId.GenericId("integrationJobs"),
-  eventType: Schema.String,
-  occurredAt: IsoDateTime,
-  message: Schema.optional(Schema.String),
   artifactId: Schema.optional(GenericId.GenericId("artifacts")),
+  eventType: Schema.String,
   externalCorrelationId: Schema.optional(Schema.String),
+  jobId: GenericId.GenericId("integrationJobs"),
+  message: Schema.optional(Schema.String),
+  occurredAt: IsoDateTime,
 });
 
 export const IntegrationEvents = unsafeMakeTable(
@@ -71,14 +71,14 @@ export const IntegrationEvents = unsafeMakeTable(
 ).index("by_jobId_and_occurredAt", ["jobId", "occurredAt"]);
 
 export const DraftWorkspacesFields = Schema.Struct({
-  ownerKind: Schema.String,
-  ownerId: Schema.String,
-  workflowKind: Schema.String,
-  status: Schema.Literal("open", "abandoned", "promoted"),
-  snapshot: Schema.Unknown,
-  schemaVersion: Schema.Number,
   lastTouchedAt: IsoDateTime,
   lastTouchedBy: Schema.String,
+  ownerId: Schema.String,
+  ownerKind: Schema.String,
+  schemaVersion: Schema.Number,
+  snapshot: Schema.Unknown,
+  status: Schema.Literal("open", "abandoned", "promoted"),
+  workflowKind: Schema.String,
 });
 
 export const DraftWorkspaces = unsafeMakeTable(

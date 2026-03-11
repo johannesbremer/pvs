@@ -7,14 +7,14 @@ export const getOraclePlugin = (family: string) =>
   oraclePluginRegistry.plugins.find((plugin) => plugin.family === family);
 
 export const buildOraclePlan = ({
-  family,
   artifactId,
   documentId,
+  family,
   profileVersion,
 }: {
-  family: string;
   artifactId?: string;
   documentId?: string;
+  family: string;
   profileVersion?: string;
 }) => {
   const plugin = getOraclePlugin(family);
@@ -24,9 +24,9 @@ export const buildOraclePlan = ({
 
   return {
     family: plugin.family,
-    pluginKind: plugin.kind,
-    inputKind: plugin.inputKind,
     fixtureRoot: plugin.fixtureRoot,
+    inputKind: plugin.inputKind,
+    pluginKind: plugin.kind,
     ...("command" in plugin ? { command: plugin.command } : {}),
     ...("workingDirectory" in plugin
       ? { workingDirectory: plugin.workingDirectory }
@@ -47,10 +47,9 @@ export const stubOracleReport = ({
   family: string;
   passed: boolean;
   summary: string;
-}) =>
-  ({
-    family,
-    passed,
-    severity: passed ? "info" : "error",
-    summary,
-  });
+}) => ({
+  family,
+  passed,
+  severity: passed ? "info" : "error",
+  summary,
+});

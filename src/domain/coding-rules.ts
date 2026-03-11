@@ -1,55 +1,55 @@
-export type CodingRuleFamily = "sdicd" | "sdkh" | "sdkrw";
-export type CodingRuleSeverity = "info" | "warning" | "error";
-
-export type CodingCatalogEntry = {
-  readonly code: string;
-  readonly text: string;
-  readonly isBillable: boolean;
-  readonly notationFlag?: string;
+export interface CodingCatalogEntry {
+  readonly ageErrorType?: string;
   readonly ageLower?: number;
   readonly ageUpper?: number;
-  readonly ageErrorType?: string;
+  readonly code: string;
   readonly genderConstraint?: string;
   readonly genderErrorType?: string;
+  readonly isBillable: boolean;
+  readonly notationFlag?: string;
   readonly rareDiseaseFlag?: boolean;
-};
-
-export type CodingRuleInput = {
+  readonly text: string;
+}
+export interface CodingRuleEvaluation {
+  readonly billingCaseId?: string;
+  readonly blocking: boolean;
+  readonly createdAt: string;
+  readonly diagnosisId?: string;
+  readonly message: string;
   readonly patientId: string;
+  readonly ruleCode: string;
+  readonly ruleFamily: CodingRuleFamily;
+  readonly severity: CodingRuleSeverity;
+}
+
+export type CodingRuleFamily = "sdicd" | "sdkh" | "sdkrw";
+
+export interface CodingRuleInput {
+  readonly billingCaseId?: string;
+  readonly caseDiagnoses?: readonly {
+    readonly billingCaseId?: string;
+    readonly isPrimary?: boolean;
+    readonly recordStatus: "active" | "cancelled" | "superseded";
+  }[];
+  readonly catalogEntry?: CodingCatalogEntry;
+  readonly createdAt: string;
+  readonly diagnosis: {
+    readonly category: "acute" | "anamnestisch" | "dauerdiagnose";
+    readonly diagnosensicherheit?: string;
+    readonly icdCode: string;
+    readonly isPrimary?: boolean;
+    readonly patientId: string;
+  };
   readonly patient: {
-    readonly birthDate?: string;
     readonly administrativeGender?: {
       readonly code: string;
     };
+    readonly birthDate?: string;
   };
-  readonly diagnosis: {
-    readonly patientId: string;
-    readonly icdCode: string;
-    readonly category: "acute" | "dauerdiagnose" | "anamnestisch";
-    readonly diagnosensicherheit?: string;
-    readonly isPrimary?: boolean;
-  };
-  readonly billingCaseId?: string;
-  readonly caseDiagnoses?: ReadonlyArray<{
-    readonly billingCaseId?: string;
-    readonly recordStatus: "active" | "cancelled" | "superseded";
-    readonly isPrimary?: boolean;
-  }>;
-  readonly catalogEntry?: CodingCatalogEntry;
-  readonly createdAt: string;
-};
-
-export type CodingRuleEvaluation = {
   readonly patientId: string;
-  readonly diagnosisId?: string;
-  readonly billingCaseId?: string;
-  readonly ruleFamily: CodingRuleFamily;
-  readonly severity: CodingRuleSeverity;
-  readonly ruleCode: string;
-  readonly message: string;
-  readonly blocking: boolean;
-  readonly createdAt: string;
-};
+}
+
+export type CodingRuleSeverity = "error" | "info" | "warning";
 
 export const calculateAgeAtDate = (
   birthDate?: string,
@@ -78,38 +78,38 @@ export const calculateAgeAtDate = (
 };
 
 export const evaluateCodingRules = ({
-  patientId,
-  patient,
-  diagnosis,
   billingCaseId,
   caseDiagnoses = [],
   catalogEntry,
   createdAt,
-}: CodingRuleInput): Array<CodingRuleEvaluation> => {
-  const evaluations: Array<CodingRuleEvaluation> = [];
+  diagnosis,
+  patient,
+  patientId,
+}: CodingRuleInput): CodingRuleEvaluation[] => {
+  const evaluations: CodingRuleEvaluation[] = [];
 
   if (!catalogEntry) {
     evaluations.push({
       patientId,
       ...(billingCaseId ? { billingCaseId } : {}),
-      ruleFamily: "sdicd",
-      severity: "error",
-      ruleCode: "SDICD_CODE_UNKNOWN",
-      message: `ICD code ${diagnosis.icdCode} is not present in the imported SDICD catalog.`,
       blocking: true,
       createdAt,
+      message: `ICD code ${diagnosis.icdCode} is not present in the imported SDICD catalog.`,
+      ruleCode: "SDICD_CODE_UNKNOWN",
+      ruleFamily: "sdicd",
+      severity: "error",
     });
   } else {
     if (!catalogEntry.isBillable) {
       evaluations.push({
         patientId,
         ...(billingCaseId ? { billingCaseId } : {}),
-        ruleFamily: "sdicd",
-        severity: "warning",
-        ruleCode: "SDICD_NOT_BILLABLE",
-        message: `ICD code ${diagnosis.icdCode} is not marked billable in SDICD.`,
         blocking: false,
         createdAt,
+        message: `ICD code ${diagnosis.icdCode} is not marked billable in SDICD.`,
+        ruleCode: "SDICD_NOT_BILLABLE",
+        ruleFamily: "sdicd",
+        severity: "warning",
       });
     }
 
@@ -122,12 +122,12 @@ export const evaluateCodingRules = ({
       evaluations.push({
         patientId,
         ...(billingCaseId ? { billingCaseId } : {}),
-        ruleFamily: "sdicd",
-        severity: catalogEntry.ageErrorType === "warning" ? "warning" : "error",
-        ruleCode: "SDICD_AGE_TOO_LOW",
-        message: `Patient age ${ageAtReference} is below the ICD lower bound ${catalogEntry.ageLower}.`,
         blocking: catalogEntry.ageErrorType !== "warning",
         createdAt,
+        message: `Patient age ${ageAtReference} is below the ICD lower bound ${catalogEntry.ageLower}.`,
+        ruleCode: "SDICD_AGE_TOO_LOW",
+        ruleFamily: "sdicd",
+        severity: catalogEntry.ageErrorType === "warning" ? "warning" : "error",
       });
     }
 
@@ -139,12 +139,12 @@ export const evaluateCodingRules = ({
       evaluations.push({
         patientId,
         ...(billingCaseId ? { billingCaseId } : {}),
-        ruleFamily: "sdicd",
-        severity: catalogEntry.ageErrorType === "warning" ? "warning" : "error",
-        ruleCode: "SDICD_AGE_TOO_HIGH",
-        message: `Patient age ${ageAtReference} exceeds the ICD upper bound ${catalogEntry.ageUpper}.`,
         blocking: catalogEntry.ageErrorType !== "warning",
         createdAt,
+        message: `Patient age ${ageAtReference} exceeds the ICD upper bound ${catalogEntry.ageUpper}.`,
+        ruleCode: "SDICD_AGE_TOO_HIGH",
+        ruleFamily: "sdicd",
+        severity: catalogEntry.ageErrorType === "warning" ? "warning" : "error",
       });
     }
 
@@ -157,13 +157,13 @@ export const evaluateCodingRules = ({
       evaluations.push({
         patientId,
         ...(billingCaseId ? { billingCaseId } : {}),
+        blocking: catalogEntry.genderErrorType !== "warning",
+        createdAt,
+        message: `Patient gender ${patientGender} conflicts with ICD constraint ${catalogEntry.genderConstraint}.`,
+        ruleCode: "SDICD_GENDER_MISMATCH",
         ruleFamily: "sdicd",
         severity:
           catalogEntry.genderErrorType === "warning" ? "warning" : "error",
-        ruleCode: "SDICD_GENDER_MISMATCH",
-        message: `Patient gender ${patientGender} conflicts with ICD constraint ${catalogEntry.genderConstraint}.`,
-        blocking: catalogEntry.genderErrorType !== "warning",
-        createdAt,
       });
     }
   }
@@ -175,13 +175,13 @@ export const evaluateCodingRules = ({
     evaluations.push({
       patientId,
       ...(billingCaseId ? { billingCaseId } : {}),
-      ruleFamily: "sdkh",
-      severity: "warning",
-      ruleCode: "SDKH_CHRONIC_CERTAINTY_MISSING",
-      message:
-        "Chronic diagnosis was recorded without diagnosensicherheit metadata.",
       blocking: false,
       createdAt,
+      message:
+        "Chronic diagnosis was recorded without diagnosensicherheit metadata.",
+      ruleCode: "SDKH_CHRONIC_CERTAINTY_MISSING",
+      ruleFamily: "sdkh",
+      severity: "warning",
     });
   }
 
@@ -190,22 +190,22 @@ export const evaluateCodingRules = ({
       ...caseDiagnoses,
       {
         billingCaseId,
-        recordStatus: "active" as const,
         isPrimary: diagnosis.isPrimary,
+        recordStatus: "active" as const,
       },
     ].filter((row) => row.recordStatus === "active");
 
     if (!activeCaseDiagnoses.some((row) => row.isPrimary === true)) {
       evaluations.push({
-        patientId,
         billingCaseId,
-        ruleFamily: "sdkrw",
-        severity: "warning",
-        ruleCode: "SDKRW_PRIMARY_DIAGNOSIS_MISSING",
-        message:
-          "No active primary diagnosis is currently attached to this billing case.",
         blocking: false,
         createdAt,
+        message:
+          "No active primary diagnosis is currently attached to this billing case.",
+        patientId,
+        ruleCode: "SDKRW_PRIMARY_DIAGNOSIS_MISSING",
+        ruleFamily: "sdkrw",
+        severity: "warning",
       });
     }
   }

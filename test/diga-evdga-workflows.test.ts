@@ -1,6 +1,7 @@
+import type { GenericId as Id } from "convex/values";
+
 import { GenericId } from "@confect/core";
 import { Effect, Schema } from "effect";
-import type { GenericId as Id } from "convex/values";
 import { describe, expect, it } from "vitest";
 
 import { DatabaseWriter } from "../confect/_generated/services";
@@ -14,43 +15,45 @@ const seedDigaContext = (patientId: Id<"patients">) =>
     const writer = yield* DatabaseWriter;
     const organizationId = yield* writer.table("organizations").insert({
       active: true,
+      addresses: [
+        { city: "Koeln", line1: "Praxisring 12", postalCode: "50667" },
+      ],
+      identifiers: [],
       kind: "practice",
       name: "Praxis DiGA",
-      identifiers: [],
-      addresses: [{ line1: "Praxisring 12", postalCode: "50667", city: "Koeln" }],
-      telecom: [],
       sourceStamp: {
-        sourceKind: "manual",
         capturedAt: "2026-03-11T09:00:00.000Z",
+        sourceKind: "manual",
       },
+      telecom: [],
     });
     const practitionerId = yield* writer.table("practitioners").insert({
       active: true,
       displayName: "Dr. DiGA",
-      nameSortKey: "DiGA,Dr.",
-      names: [{ family: "DiGA", prefixes: ["Dr."], given: ["Dina"] }],
       lanr: "987654321",
+      names: [{ family: "DiGA", given: ["Dina"], prefixes: ["Dr."] }],
+      nameSortKey: "DiGA,Dr.",
       qualifications: [],
       sourceStamp: {
-        sourceKind: "manual",
         capturedAt: "2026-03-11T09:00:00.000Z",
+        sourceKind: "manual",
       },
     });
     const coverageId = yield* writer.table("coverages").insert({
-      patientId,
       kind: "gkv",
       kostentraegerkennung: "109500969",
       kostentraegerName: "AOK DiGA",
+      patientId,
       sourceStamp: {
-        sourceKind: "manual",
         capturedAt: "2026-03-11T09:00:00.000Z",
+        sourceKind: "manual",
       },
     });
 
     return {
+      coverageId,
       organizationId,
       practitionerId,
-      coverageId,
     };
   });
 
@@ -59,125 +62,134 @@ describe("diga and evdga workflows", () => {
     const result = await runWithTestConfect(
       Effect.gen(function* () {
         const test = yield* TestConfect;
-        const patient = yield* test.mutation(refs.public.patients.createManual, {
-          patient: {
-            names: [{ family: "Digital", prefixes: [], given: ["Dora"] }],
-            addresses: [],
-            telecom: [],
-            preferredLanguages: [],
-            capturedAt: "2026-03-11T09:00:00.000Z",
+        const patient = yield* test.mutation(
+          refs.public.patients.createManual,
+          {
+            patient: {
+              addresses: [],
+              capturedAt: "2026-03-11T09:00:00.000Z",
+              names: [{ family: "Digital", given: ["Dora"], prefixes: [] }],
+              preferredLanguages: [],
+              telecom: [],
+            },
           },
-        });
+        );
 
         const context = yield* test.run(
           seedDigaContext(patient.patientId),
           Schema.Struct({
+            coverageId: GenericId.GenericId("coverages"),
             organizationId: GenericId.GenericId("organizations"),
             practitionerId: GenericId.GenericId("practitioners"),
-            coverageId: GenericId.GenericId("coverages"),
           }),
         );
 
         const packageResult = yield* test.mutation(
           refs.public.coding.registerMasterDataPackage,
           {
-            family: "DIGA",
-            version: "Q3_2026",
-            sourcePath: "https://update.kbv.de/ita-update/DigitaleMuster/eVDGA/",
             artifact: {
-              storageId: seedStorageId,
-              contentType: "application/zip",
               byteSize: 128,
+              contentType: "application/zip",
               sha256: "diga-package",
+              storageId: seedStorageId,
             },
+            family: "DIGA",
             importedAt: "2026-03-11T09:01:00.000Z",
+            sourcePath:
+              "https://update.kbv.de/ita-update/DigitaleMuster/eVDGA/",
             status: "active",
+            version: "Q3_2026",
           },
         );
 
         yield* test.mutation(refs.public.catalog.importDigaCatalogRefs, {
-          sourcePackageId: packageResult.packageId,
           entries: [
             {
-              pzn: "19283746",
-              verordnungseinheitName: "DiGA Testmodul",
-              digaName: "RueckenApp",
+              additionalCoCost: 0,
+              ageGroups: ["adult"],
               digaModulName: "RueckenApp Basis",
-              statusImVerzeichnis: "gelistet",
+              digaName: "RueckenApp",
               indikationen: [
                 {
                   coding: [
                     {
-                      system: "urn:icd10gm",
                       code: "M54.5",
                       display: "Low back pain",
+                      system: "urn:icd10gm",
                     },
                   ],
                   text: "Rueckenschmerz",
                 },
               ],
               kontraindikationen: [],
-              notIndicatedGenders: [],
-              ageGroups: ["adult"],
-              usageDurationText: "90 Tage",
-              price: 499.99,
-              additionalCoCost: 0,
               manufacturerName: "DiGA GmbH",
+              notIndicatedGenders: [],
+              price: 499.99,
+              pzn: "19283746",
+              statusImVerzeichnis: "gelistet",
+              usageDurationText: "90 Tage",
+              verordnungseinheitName: "DiGA Testmodul",
             },
           ],
+          sourcePackageId: packageResult.packageId,
         });
 
-        const catalogEntry = yield* test.query(refs.public.catalog.lookupDigaByPzn, {
-          pzn: "19283746",
-        });
+        const catalogEntry = yield* test.query(
+          refs.public.catalog.lookupDigaByPzn,
+          {
+            pzn: "19283746",
+          },
+        );
         if (!catalogEntry.found) {
           throw new Error("expected DiGA catalog entry");
         }
 
         const order = yield* test.mutation(refs.public.diga.createOrder, {
-          patientId: patient.patientId,
-          coverageId: context.coverageId,
-          practitionerId: context.practitionerId,
-          organizationId: context.organizationId,
-          digaCatalogRefId: catalogEntry.entry._id,
           authoredOn: "2026-03-11T09:05:00.000Z",
+          coverageId: context.coverageId,
+          digaCatalogRefId: catalogEntry.entry._id,
+          organizationId: context.organizationId,
+          patientId: patient.patientId,
+          practitionerId: context.practitionerId,
           status: "draft",
         });
 
         const finalized = yield* test.mutation(refs.public.diga.finalizeOrder, {
-          digaOrderId: order.digaOrderId,
-          finalizedAt: "2026-03-11T09:10:00.000Z",
-          profileVersion: "1.2.2",
           artifact: {
             attachment: {
-              storageId: seedStorageId,
-              contentType: "application/fhir+xml",
               byteSize: 256,
+              contentType: "application/fhir+xml",
               sha256: "evdga-xml",
+              storageId: seedStorageId,
             },
             externalIdentifier: "evdga-1",
           },
+          digaOrderId: order.digaOrderId,
+          finalizedAt: "2026-03-11T09:10:00.000Z",
           patientPrint: {
             attachment: {
-              storageId: seedStorageId,
-              contentType: "application/pdf",
               byteSize: 64,
+              contentType: "application/pdf",
               sha256: "evdga-print",
+              storageId: seedStorageId,
             },
           },
+          profileVersion: "1.2.2",
           tokenArtifact: {
             attachment: {
-              storageId: seedStorageId,
-              contentType: "application/json",
               byteSize: 32,
+              contentType: "application/json",
               sha256: "evdga-token",
+              storageId: seedStorageId,
             },
             externalIdentifier: "token-1",
           },
         });
 
         if (finalized.outcome !== "finalized") {
-          throw new Error(`expected finalized outcome, got ${finalized.outcome}`);
+          throw new Error(
+            `expected finalized outcome, got ${finalized.outcome}`,
+          );
         }
 
         const orderView = yield* test.query(refs.public.diga.getOrder, {
@@ -190,54 +202,64 @@ describe("diga and evdga workflows", () => {
         const rendered = yield* test.query(refs.public.diga.renderEvdgaBundle, {
           digaOrderId: order.digaOrderId,
         });
-        const documents = yield* test.query(refs.public.documents.listByPatient, {
-          patientId: patient.patientId,
-          kind: "evdga",
-        });
-        const documentView = yield* test.query(refs.public.documents.getDocument, {
-          documentId: finalized.documentId,
-        });
+        const documents = yield* test.query(
+          refs.public.documents.listByPatient,
+          {
+            kind: "evdga",
+            patientId: patient.patientId,
+          },
+        );
+        const documentView = yield* test.query(
+          refs.public.documents.getDocument,
+          {
+            documentId: finalized.documentId,
+          },
+        );
 
         return {
-          orderView,
-          orders,
-          rendered,
           documents,
           documentView,
           finalized,
+          orders,
+          orderView,
+          rendered,
         };
       }),
     );
 
     expect(result.orderView.found).toBe(true);
-    if (result.orderView.found) {
-      expect(result.orderView.order.status).toBe("final");
+    if (!result.orderView.found) {
+      throw new Error("expected Diga order view");
     }
+    expect(result.orderView.order.status).toBe("final");
     expect(result.orders).toHaveLength(1);
     expect(result.rendered.found).toBe(true);
-    if (result.rendered.found) {
-      expect(result.rendered.payload.bundle.entry).toHaveLength(6);
-      expect(result.rendered.payload.deviceRequest.codeCodeableConcept?.coding[0]?.code).toBe(
-        "19283746",
-      );
-      expect(result.rendered.xml.xml).toContain("<DeviceRequest");
+    if (!result.rendered.found) {
+      throw new Error("expected rendered Diga bundle");
     }
+    expect(result.rendered.payload.bundle.entry).toHaveLength(6);
+    expect(
+      result.rendered.payload.deviceRequest.codeCodeableConcept?.coding[0]
+        ?.code,
+    ).toBe("19283746");
+    expect(result.rendered.xml.xml).toContain("<DeviceRequest");
     expect(result.documents).toHaveLength(1);
     expect(result.documentView.found).toBe(true);
-    if (result.documentView.found) {
-      expect(result.documentView.document.kind).toBe("evdga");
-      expect(result.documentView.artifacts).toHaveLength(3);
-      expect(
-        result.documentView.artifacts.some(
-          (artifact) => artifact.artifactSubtype === "token",
-        ),
-      ).toBe(true);
-      expect(
-        result.documentView.artifacts.some(
-          (artifact) => artifact.artifactSubtype === "patient-print",
-        ),
-      ).toBe(true);
+    if (!result.documentView.found) {
+      throw new Error("expected Diga document view");
     }
+    expect(result.documentView.document.kind).toBe("evdga");
+    expect(result.documentView.artifacts).toHaveLength(3);
+    expect(
+      result.documentView.artifacts.some(
+        (artifact) => artifact.artifactSubtype === "token",
+      ),
+    ).toBe(true);
+    expect(
+      result.documentView.artifacts.some(
+        (artifact) => artifact.artifactSubtype === "patient-print",
+      ),
+    ).toBe(true);
     expect(result.finalized.tokenArtifactId).toBeDefined();
   });
 });

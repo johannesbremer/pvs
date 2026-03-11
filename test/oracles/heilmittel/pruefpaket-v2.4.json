@@ -12,8 +12,18 @@
       { "code": "X1530", "units": 6, "kind": "ergaenzend" }
     ],
     "catalogEntries": [
-      { "code": "X0106", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "EX", "kind": "vorrangig" },
-      { "code": "X1530", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "EX", "kind": "ergaenzend" }
+      {
+        "code": "X0106",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "EX",
+        "kind": "vorrangig"
+      },
+      {
+        "code": "X1530",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "EX",
+        "kind": "ergaenzend"
+      }
     ],
     "expectedPassed": true
   },
@@ -25,11 +35,14 @@
     "diagnosegruppe": "EX",
     "diagnosisCodes": ["S82.21"],
     "blankoFlag": false,
-    "items": [
-      { "code": "X2001", "units": 6, "kind": "standardkombination" }
-    ],
+    "items": [{ "code": "X2001", "units": 6, "kind": "standardkombination" }],
     "catalogEntries": [
-      { "code": "X2001", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "EX", "kind": "standardkombination" }
+      {
+        "code": "X2001",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "EX",
+        "kind": "standardkombination"
+      }
     ],
     "expectedPassed": true
   },
@@ -52,8 +65,18 @@
       { "code": "X3103", "units": 5, "kind": "vorrangig" }
     ],
     "catalogEntries": [
-      { "code": "X3102", "heilmittelbereich": "Stimm-, Sprech-, Sprach- und Schlucktherapie", "diagnosegruppe": "ST3", "kind": "vorrangig" },
-      { "code": "X3103", "heilmittelbereich": "Stimm-, Sprech-, Sprach- und Schlucktherapie", "diagnosegruppe": "ST3", "kind": "vorrangig" }
+      {
+        "code": "X3102",
+        "heilmittelbereich": "Stimm-, Sprech-, Sprach- und Schlucktherapie",
+        "diagnosegruppe": "ST3",
+        "kind": "vorrangig"
+      },
+      {
+        "code": "X3103",
+        "heilmittelbereich": "Stimm-, Sprech-, Sprach- und Schlucktherapie",
+        "diagnosegruppe": "ST3",
+        "kind": "vorrangig"
+      }
     ],
     "expectedPassed": true
   },
@@ -67,9 +90,27 @@
     "blankoFlag": true,
     "items": [],
     "catalogEntries": [
-      { "code": "X0501", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "vorrangig", "blankoEligible": true },
-      { "code": "X1201", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "vorrangig", "blankoEligible": true },
-      { "code": "X1530", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "ergaenzend", "blankoEligible": true }
+      {
+        "code": "X0501",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "WS",
+        "kind": "vorrangig",
+        "blankoEligible": true
+      },
+      {
+        "code": "X1201",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "WS",
+        "kind": "vorrangig",
+        "blankoEligible": true
+      },
+      {
+        "code": "X1530",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "WS",
+        "kind": "ergaenzend",
+        "blankoEligible": true
+      }
     ],
     "expectedPassed": true
   },
@@ -88,9 +129,27 @@
       { "code": "X1530", "units": 8, "kind": "ergaenzend" }
     ],
     "catalogEntries": [
-      { "code": "X0501", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "vorrangig", "blankoEligible": true },
-      { "code": "X1201", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "vorrangig", "blankoEligible": true },
-      { "code": "X1530", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "ergaenzend", "blankoEligible": true }
+      {
+        "code": "X0501",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "WS",
+        "kind": "vorrangig",
+        "blankoEligible": true
+      },
+      {
+        "code": "X1201",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "WS",
+        "kind": "vorrangig",
+        "blankoEligible": true
+      },
+      {
+        "code": "X1530",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "WS",
+        "kind": "ergaenzend",
+        "blankoEligible": true
+      }
     ],
     "expectedPassed": false,
     "expectedErrorCodes": ["HEILMITTEL_MAX_TOTAL_UNITS_EXCEEDED"]
@@ -109,8 +168,20 @@
       { "code": "X1530", "units": 7, "kind": "ergaenzend" }
     ],
     "catalogEntries": [
-      { "code": "X0501", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "vorrangig", "blankoEligible": true },
-      { "code": "X1530", "heilmittelbereich": "Physiotherapie", "diagnosegruppe": "WS", "kind": "ergaenzend", "blankoEligible": true }
+      {
+        "code": "X0501",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "WS",
+        "kind": "vorrangig",
+        "blankoEligible": true
+      },
+      {
+        "code": "X1530",
+        "heilmittelbereich": "Physiotherapie",
+        "diagnosegruppe": "WS",
+        "kind": "ergaenzend",
+        "blankoEligible": true
+      }
     ],
     "expectedPassed": false,
     "expectedErrorCodes": ["HEILMITTEL_MAX_TOTAL_UNITS_EXCEEDED"]
@@ -123,11 +194,14 @@
     "diagnosegruppe": "SAS",
     "diagnosisCodes": ["E71.0"],
     "blankoFlag": false,
-    "items": [
-      { "code": "A5003", "units": 100, "kind": "vorrangig" }
-    ],
+    "items": [{ "code": "A5003", "units": 100, "kind": "vorrangig" }],
     "catalogEntries": [
-      { "code": "A5003", "heilmittelbereich": "Massnahmen der Ernaehrungstherapie", "diagnosegruppe": "SAS", "kind": "vorrangig" }
+      {
+        "code": "A5003",
+        "heilmittelbereich": "Massnahmen der Ernaehrungstherapie",
+        "diagnosegruppe": "SAS",
+        "kind": "vorrangig"
+      }
     ],
     "expectedPassed": true
   }

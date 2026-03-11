@@ -1,9 +1,9 @@
 import { GenericId } from "@confect/core";
-import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
+import { describe, expect, it } from "vitest";
 
-import { refs } from "../confect/refs";
 import { DatabaseWriter } from "../confect/_generated/services";
+import { refs } from "../confect/refs";
 import { runWithTestConfect, TestConfect } from "./TestConfect";
 
 const seedTssContext = () =>
@@ -12,45 +12,45 @@ const seedTssContext = () =>
 
     const organizationId = yield* writer.table("organizations").insert({
       active: true,
-      kind: "practice",
-      name: "Praxis TSS",
-      identifiers: [],
       addresses: [
         {
+          city: "Berlin",
           line1: "TSS-Weg 1",
           postalCode: "10115",
-          city: "Berlin",
         },
       ],
-      telecom: [],
+      identifiers: [],
+      kind: "practice",
+      name: "Praxis TSS",
       sourceStamp: {
-        sourceKind: "manual",
         capturedAt: "2026-03-11T08:30:00.000Z",
+        sourceKind: "manual",
       },
+      telecom: [],
     });
 
     const practitionerId = yield* writer.table("practitioners").insert({
       active: true,
       displayName: "Dr. TSS",
-      nameSortKey: "TSS,Dr.",
-      names: [{ family: "TSS", prefixes: ["Dr."], given: ["Tina"] }],
       lanr: "987654321",
+      names: [{ family: "TSS", given: ["Tina"], prefixes: ["Dr."] }],
+      nameSortKey: "TSS,Dr.",
       qualifications: [],
       sourceStamp: {
-        sourceKind: "manual",
         capturedAt: "2026-03-11T08:30:00.000Z",
+        sourceKind: "manual",
       },
     });
 
     const requesterRoleId = yield* writer.table("practitionerRoles").insert({
-      practitionerId,
       organizationId,
+      practitionerId,
       roleCodes: [],
-      specialtyCodes: [],
       sourceStamp: {
-        sourceKind: "manual",
         capturedAt: "2026-03-11T08:30:00.000Z",
+        sourceKind: "manual",
       },
+      specialtyCodes: [],
     });
 
     return {
@@ -72,63 +72,69 @@ describe("appointments, referrals, and TSS workflows", () => {
           }),
         );
 
-        const patient = yield* test.mutation(refs.public.patients.createManual, {
-          patient: {
-            names: [
-              {
-                family: "Terminsuche",
-                prefixes: [],
-                given: ["Erika"],
-              },
-            ],
-            addresses: [],
-            telecom: [],
-            preferredLanguages: [],
-            capturedAt: "2026-03-11T09:00:00.000Z",
+        const patient = yield* test.mutation(
+          refs.public.patients.createManual,
+          {
+            patient: {
+              addresses: [],
+              capturedAt: "2026-03-11T09:00:00.000Z",
+              names: [
+                {
+                  family: "Terminsuche",
+                  given: ["Erika"],
+                  prefixes: [],
+                },
+              ],
+              preferredLanguages: [],
+              telecom: [],
+            },
           },
-        });
+        );
 
         yield* test.mutation(refs.public.referrals.create, {
-          patientId: patient.patientId,
-          requesterRoleId,
           issueDate: "2026-03-11",
+          patientId: patient.patientId,
           reasonCodes: [],
-          vermittlungscode: "VMC-1000",
+          requesterRoleId,
           status: "active",
+          vermittlungscode: "VMC-1000",
         });
 
-        const tssAppointment = yield* test.mutation(refs.public.appointments.create, {
-          organizationId,
-          start: "2026-04-12T09:00:00.000Z",
-          end: "2026-04-12T09:20:00.000Z",
-          status: "proposed",
-          source: "tss",
-          externalAppointmentId: "tss-1",
-          vermittlungscode: "VMC-1000",
-          tssServiceType: "orthopaedy",
-          displayBucket: "morning",
-        });
+        const tssAppointment = yield* test.mutation(
+          refs.public.appointments.create,
+          {
+            displayBucket: "morning",
+            end: "2026-04-12T09:20:00.000Z",
+            externalAppointmentId: "tss-1",
+            organizationId,
+            source: "tss",
+            start: "2026-04-12T09:00:00.000Z",
+            status: "proposed",
+            tssServiceType: "orthopaedy",
+            vermittlungscode: "VMC-1000",
+          },
+        );
 
         yield* test.mutation(refs.public.appointments.create, {
-          organizationId,
-          start: "2026-04-12T10:00:00.000Z",
-          end: "2026-04-12T10:20:00.000Z",
-          status: "proposed",
-          source: "tss",
-          externalAppointmentId: "tss-2",
-          vermittlungscode: "VMC-2000",
-          tssServiceType: "cardiology",
           displayBucket: "morning",
+          end: "2026-04-12T10:20:00.000Z",
+          externalAppointmentId: "tss-2",
+          organizationId,
+          source: "tss",
+          start: "2026-04-12T10:00:00.000Z",
+          status: "proposed",
+          tssServiceType: "cardiology",
+          vermittlungscode: "VMC-2000",
         });
 
         const selectable = yield* test.query(
           refs.public.appointments.listAvailableTss,
           {
             organizationId,
-            vermittlungscode: "VMC-1000",
-            tssServiceType: "orthopaedy",
             startFrom: "2026-04-01T00:00:00.000Z",
             startTo: "2026-04-30T23:59:59.999Z",
+            tssServiceType: "orthopaedy",
+            vermittlungscode: "VMC-1000",
           },
         );
 
@@ -154,10 +160,10 @@ describe("appointments, referrals, and TSS workflows", () => {
         );
 
         return {
-          selectable,
           booked,
-          patientAppointments,
           lookedUpReferral,
+          patientAppointments,
+          selectable,
         };
       }),
     );
@@ -181,31 +187,37 @@ describe("appointments, referrals, and TSS workflows", () => {
           }),
         );
 
-        const patient = yield* test.mutation(refs.public.patients.createManual, {
-          patient: {
-            names: [
-              {
-                family: "Fehlbuchung",
-                prefixes: [],
-                given: ["Karl"],
-              },
-            ],
-            addresses: [],
-            telecom: [],
-            preferredLanguages: [],
-            capturedAt: "2026-03-11T09:10:00.000Z",
+        const patient = yield* test.mutation(
+          refs.public.patients.createManual,
+          {
+            patient: {
+              addresses: [],
+              capturedAt: "2026-03-11T09:10:00.000Z",
+              names: [
+                {
+                  family: "Fehlbuchung",
+                  given: ["Karl"],
+                  prefixes: [],
+                },
+              ],
+              preferredLanguages: [],
+              telecom: [],
+            },
           },
-        });
+        );
 
-        const appointment = yield* test.mutation(refs.public.appointments.create, {
-          organizationId,
-          start: "2026-04-13T09:00:00.000Z",
-          status: "proposed",
-          source: "tss",
-          externalAppointmentId: "tss-3",
-          vermittlungscode: "VMC-3000",
-          tssServiceType: "orthopaedy",
-        });
+        const appointment = yield* test.mutation(
+          refs.public.appointments.create,
+          {
+            externalAppointmentId: "tss-3",
+            organizationId,
+            source: "tss",
+            start: "2026-04-13T09:00:00.000Z",
+            status: "proposed",
+            tssServiceType: "orthopaedy",
+            vermittlungscode: "VMC-3000",
+          },
+        );
 
         return yield* test.mutation(refs.public.appointments.bookTss, {
           appointmentId: appointment.appointmentId,

@@ -1,16 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import { runCodingOracle } from "../tools/oracles/coding/run";
 
-type CodingFixture = {
+interface CodingFixture {
   readonly caseId: string;
+  readonly expectedErrorCodes?: readonly string[];
   readonly expectedPassed: boolean;
-  readonly expectedErrorCodes?: ReadonlyArray<string>;
-  readonly expectedWarningCodes?: ReadonlyArray<string>;
-};
+  readonly expectedWarningCodes?: readonly string[];
+}
 
 describe("official coding fixture sweeps", () => {
   it("validates SDICD/SDKH/SDKRW rule fixtures", async () => {
@@ -23,7 +22,7 @@ describe("official coding fixture sweeps", () => {
     );
     const fixtures = JSON.parse(
       await readFile(fixturePath, "utf8"),
-    ) as ReadonlyArray<CodingFixture>;
+    ) as readonly CodingFixture[];
 
     expect(fixtures.length).toBeGreaterThanOrEqual(6);
 

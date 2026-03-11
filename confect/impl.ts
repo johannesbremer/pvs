@@ -1,16 +1,23 @@
-import { Api, FunctionImpl, GroupImpl, Impl } from "@confect/server";
-import { Effect, Layer, Option } from "effect";
 import type { GenericId as Id } from "convex/values";
 
-import schema from "./schema";
-import spec from "./spec";
-import { DatabaseReader, DatabaseWriter } from "./_generated/services";
+import { Api, FunctionImpl, GroupImpl, Impl } from "@confect/server";
+import { Effect, Layer, Option } from "effect";
+
 import {
-  ManualPatientSeedFields,
-  PatientIdentifierSystem,
-  RecordVsdSnapshotArgs,
-  VsdSnapshotDocument,
-} from "../src/domain/patients";
+  renderEauBundleXml,
+  renderErpBundleXml,
+  renderEvdgaBundleXml,
+} from "../src/codecs/xml/fhir";
+import {
+  BookTssAppointmentArgs,
+  CreateAppointmentArgs,
+  CreateReferralArgs,
+  filterSelectableTssAppointments,
+  ListAppointmentsArgs,
+  ListAvailableTssAppointmentsArgs,
+  ListReferralsByPatientArgs,
+  LookupReferralByVermittlungscodeArgs,
+} from "../src/domain/appointments-referrals";
 import {
   AddBillingLineItemArgs,
   CreateBillingCaseArgs,
@@ -19,16 +26,7 @@ import {
   PrepareKvdtExportArgs,
   RegisterMasterDataPackageArgs,
 } from "../src/domain/billing-coding";
-import {
-  BookTssAppointmentArgs,
-  CreateAppointmentArgs,
-  CreateReferralArgs,
-  ListAppointmentsArgs,
-  ListAvailableTssAppointmentsArgs,
-  ListReferralsByPatientArgs,
-  LookupReferralByVermittlungscodeArgs,
-  filterSelectableTssAppointments,
-} from "../src/domain/appointments-referrals";
+import { evaluateCodingRules } from "../src/domain/coding-rules";
 import {
   CreateDigaOrderArgs,
   FinalizeDigaOrderArgs,
@@ -39,6 +37,21 @@ import {
   RenderEvdgaBundleArgs,
 } from "../src/domain/diga-evdga";
 import {
+  BuildValidationPlanArgs,
+  CreateEauDocumentArgs,
+  ListOraclePluginsArgs,
+  RenderEauDocumentArgs,
+  RenderErpBundleArgs,
+  RunValidationArgs,
+  ValidationSummaryArgs,
+} from "../src/domain/emission";
+import {
+  ManualPatientSeedFields,
+  PatientIdentifierSystem,
+  RecordVsdSnapshotArgs,
+  VsdSnapshotDocument,
+} from "../src/domain/patients";
+import {
   AddMedicationPlanEntryArgs,
   CreateHeilmittelApprovalArgs,
   CreateHeilmittelOrderArgs,
@@ -47,8 +60,8 @@ import {
   FinalizeHeilmittelOrderArgs,
   FinalizeMedicationOrderArgs,
   FormInstanceDocument,
-  GetDraftWorkspaceArgs,
   GetDocumentArgs,
+  GetDraftWorkspaceArgs,
   GetHeilmittelOrderArgs,
   GetMedicationOrderArgs,
   ImportHeilmittelCatalogRefsArgs,
@@ -66,42 +79,36 @@ import {
   WorkflowIssue,
 } from "../src/domain/prescribing-documents";
 import {
-  BuildValidationPlanArgs,
-  CreateEauDocumentArgs,
-  ListOraclePluginsArgs,
-  RenderEauDocumentArgs,
-  RenderErpBundleArgs,
-  RunValidationArgs,
-  ValidationSummaryArgs,
-} from "../src/domain/emission";
+  buildOraclePlan,
+  listOraclePlugins as listRegisteredOraclePlugins,
+} from "../tools/oracles/framework";
 import {
-  renderEauBundleXml,
-  renderErpBundleXml,
-  renderEvdgaBundleXml,
-} from "../src/codecs/xml/fhir";
-import { evaluateCodingRules } from "../src/domain/coding-rules";
-import { buildOraclePlan, listOraclePlugins as listRegisteredOraclePlugins } from "../tools/oracles/framework";
-import { buildAndExecuteOraclePlan, resolveOracleFamily } from "../tools/oracles/runtime";
+  buildAndExecuteOraclePlan,
+  resolveOracleFamily,
+} from "../tools/oracles/runtime";
+import { DatabaseReader, DatabaseWriter } from "./_generated/services";
+import schema from "./schema";
+import spec from "./spec";
 
-type PatientId = Id<"patients">;
-type SnapshotId = Id<"vsdSnapshots">;
+type ArtifactId = Id<"artifacts">;
 type BillingCaseId = Id<"billingCases">;
+type ClinicalDocumentId = Id<"clinicalDocuments">;
 type DiagnosisId = Id<"diagnoses">;
+type DigaOrderId = Id<"digaOrders">;
+type DocumentRevisionId = Id<"documentRevisions">;
+type HeilmittelOrderId = Id<"heilmittelOrders">;
 type MedicationOrderId = Id<"medicationOrders">;
 type MedicationPlanId = Id<"medicationPlans">;
-type DigaOrderId = Id<"digaOrders">;
-type HeilmittelOrderId = Id<"heilmittelOrders">;
-type ClinicalDocumentId = Id<"clinicalDocuments">;
-type DocumentRevisionId = Id<"documentRevisions">;
-type ArtifactId = Id<"artifacts">;
+type PatientId = Id<"patients">;
+type SnapshotId = Id<"vsdSnapshots">;
 
 const api = Api.make(schema, spec);
 
 const formatDisplayName = (
-  names: ReadonlyArray<{
+  names: readonly {
     readonly family: string;
-    readonly given: ReadonlyArray<string>;
-  }>,
+    readonly given: readonly string[];
+  }[],
   fallback?: string,
 ) => {
   if (fallback) {
@@ -112,11 +119,13 @@ const formatDisplayName = (
     return "Unbekannt";
   }
   const given = primaryName.given.join(" ").trim();
-  return [given, primaryName.family].filter(Boolean).join(" ").trim() || "Unbekannt";
+  return (
+    [given, primaryName.family].filter(Boolean).join(" ").trim() || "Unbekannt"
+  );
 };
 
 const sourceStampFromSeed = (
-  sourceKind: "manual" | "egk" | "kvk" | "eeb",
+  sourceKind: "eeb" | "egk" | "kvk" | "manual",
   capturedAt: string,
   sourcePath?: string,
 ) => ({
@@ -125,13 +134,11 @@ const sourceStampFromSeed = (
   capturedAt,
 });
 
-const addressFromSnapshot = (
-  payload: {
-    readonly strasse3107?: string;
-    readonly plz3112?: string;
-    readonly ort3113?: string;
-  },
-) => {
+const addressFromSnapshot = (payload: {
+  readonly ort3113?: string;
+  readonly plz3112?: string;
+  readonly strasse3107?: string;
+}) => {
   if (!payload.strasse3107 && !payload.plz3112 && !payload.ort3113) {
     return [] as const;
   }
@@ -151,34 +158,34 @@ const addressFromSnapshot = (
 const administrativeGenderFromSnapshot = (genderCode?: string) =>
   genderCode
     ? {
-        system: "urn:kbv:administrative-gender",
         code: genderCode,
+        system: "urn:kbv:administrative-gender",
       }
     : undefined;
 
 const kvdtIssuesFromCase = ({
   diagnoses,
-  lineItems,
   evaluations,
+  lineItems,
 }: {
-  diagnoses: ReadonlyArray<{
+  diagnoses: readonly {
     readonly _id: DiagnosisId;
-    readonly recordStatus: "active" | "cancelled" | "superseded";
     readonly isPrimary?: boolean;
-  }>;
-  lineItems: ReadonlyArray<unknown>;
-  evaluations: ReadonlyArray<{
-    readonly severity: "info" | "warning" | "error";
-    readonly ruleCode: string;
-    readonly message: string;
+    readonly recordStatus: "active" | "cancelled" | "superseded";
+  }[];
+  evaluations: readonly {
     readonly blocking: boolean;
-  }>;
+    readonly message: string;
+    readonly ruleCode: string;
+    readonly severity: "error" | "info" | "warning";
+  }[];
+  lineItems: readonly unknown[];
 }) => {
-  const issues: Array<{
+  const issues: {
+    blocking: boolean;
     code: string;
     message: string;
-    blocking: boolean;
-  }> = [];
+  }[] = [];
 
   const activeDiagnoses = diagnoses.filter(
     (diagnosis) => diagnosis.recordStatus === "active",
@@ -186,34 +193,34 @@ const kvdtIssuesFromCase = ({
 
   if (activeDiagnoses.length === 0) {
     issues.push({
+      blocking: true,
       code: "KVDT_ACTIVE_DIAGNOSIS_REQUIRED",
       message: "At least one active diagnosis is required for KVDT export.",
-      blocking: true,
     });
   }
 
   if (!activeDiagnoses.some((diagnosis) => diagnosis.isPrimary === true)) {
     issues.push({
+      blocking: false,
       code: "KVDT_PRIMARY_DIAGNOSIS_MISSING",
       message: "A primary diagnosis is recommended for the billing case.",
-      blocking: false,
     });
   }
 
   if (lineItems.length === 0) {
     issues.push({
+      blocking: true,
       code: "KVDT_LINE_ITEM_REQUIRED",
       message: "At least one billing line item is required for export.",
-      blocking: true,
     });
   }
 
   for (const evaluation of evaluations) {
     if (evaluation.blocking || evaluation.severity === "error") {
       issues.push({
+        blocking: evaluation.blocking || evaluation.severity === "error",
         code: evaluation.ruleCode,
         message: evaluation.message,
-        blocking: evaluation.blocking || evaluation.severity === "error",
       });
     }
   }
@@ -222,28 +229,28 @@ const kvdtIssuesFromCase = ({
 };
 
 const createCodingEvaluationsForDiagnosis = ({
-  diagnosisId,
   billingCaseId,
-  patient,
-  diagnosis,
   createdAt,
+  diagnosis,
+  diagnosisId,
+  patient,
 }: {
-  diagnosisId: DiagnosisId;
   billingCaseId?: BillingCaseId;
+  createdAt: string;
+  diagnosis: {
+    readonly category: "acute" | "anamnestisch" | "dauerdiagnose";
+    readonly diagnosensicherheit?: string;
+    readonly icdCode: string;
+    readonly isPrimary?: boolean;
+    readonly patientId: PatientId;
+  };
+  diagnosisId: DiagnosisId;
   patient: {
-    readonly birthDate?: string;
     readonly administrativeGender?: {
       readonly code: string;
     };
+    readonly birthDate?: string;
   };
-  diagnosis: {
-    readonly patientId: PatientId;
-    readonly icdCode: string;
-    readonly category: "acute" | "dauerdiagnose" | "anamnestisch";
-    readonly diagnosensicherheit?: string;
-    readonly isPrimary?: boolean;
-  };
-  createdAt: string;
 }) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -255,11 +262,11 @@ const createCodingEvaluationsForDiagnosis = ({
     const catalogEntry = catalogEntries.find(
       (entry) => entry.code === diagnosis.icdCode,
     );
-    let caseDiagnoses: Array<{
+    let caseDiagnoses: {
       readonly billingCaseId?: BillingCaseId;
-      readonly recordStatus: "active" | "cancelled" | "superseded";
       readonly isPrimary?: boolean;
-    }> = [];
+      readonly recordStatus: "active" | "cancelled" | "superseded";
+    }[] = [];
     if (billingCaseId) {
       caseDiagnoses = yield* reader
         .table("diagnoses")
@@ -273,9 +280,9 @@ const createCodingEvaluationsForDiagnosis = ({
     }
 
     const pendingEvaluations = evaluateCodingRules({
-      patientId: diagnosis.patientId,
-      patient,
       diagnosis,
+      patient,
+      patientId: diagnosis.patientId,
       ...(billingCaseId ? { billingCaseId } : {}),
       caseDiagnoses,
       ...(catalogEntry ? { catalogEntry } : {}),
@@ -284,12 +291,10 @@ const createCodingEvaluationsForDiagnosis = ({
 
     const evaluationIds = [];
     for (const evaluation of pendingEvaluations) {
-      const evaluationId = yield* writer
-        .table("codingEvaluations")
-        .insert({
-          ...evaluation,
-          diagnosisId,
-        });
+      const evaluationId = yield* writer.table("codingEvaluations").insert({
+        ...evaluation,
+        diagnosisId,
+      });
       evaluationIds.push(evaluationId);
     }
 
@@ -319,35 +324,35 @@ const findPatientByKvid = (kvid10?: string) =>
   });
 
 const upsertPatientIdentifier = ({
+  capturedAt,
+  identifier,
   patientId,
+  sourceKind,
   system,
   value,
-  identifier,
-  capturedAt,
-  sourceKind,
 }: {
-  patientId: PatientId;
-  system: string;
-  value: string;
+  capturedAt: string;
   identifier: {
-    readonly system: string;
-    readonly value: string;
-    readonly type?: {
-      readonly system: string;
-      readonly code: string;
-      readonly display?: string;
-      readonly version?: string;
-      readonly userSelected?: boolean;
-    };
-    readonly use?: "usual" | "official" | "temp" | "secondary" | "old";
     readonly assignerDisplay?: string;
     readonly period?: {
-      readonly start?: string;
       readonly end?: string;
+      readonly start?: string;
     };
+    readonly system: string;
+    readonly type?: {
+      readonly code: string;
+      readonly display?: string;
+      readonly system: string;
+      readonly userSelected?: boolean;
+      readonly version?: string;
+    };
+    readonly use?: "official" | "old" | "secondary" | "temp" | "usual";
+    readonly value: string;
   };
-  capturedAt: string;
-  sourceKind: "manual" | "egk" | "kvk" | "eeb";
+  patientId: PatientId;
+  sourceKind: "eeb" | "egk" | "kvk" | "manual";
+  system: string;
+  value: string;
 }) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -365,8 +370,8 @@ const upsertPatientIdentifier = ({
       const identifierDoc = existing;
       if (identifierDoc.patientId !== patientId) {
         yield* writer.table("patientIdentifiers").patch(identifierDoc._id, {
-          patientId,
           isPrimary: true,
+          patientId,
           sourceStamp: sourceStampFromSeed(sourceKind, capturedAt),
           verifiedAt: capturedAt,
         });
@@ -375,12 +380,12 @@ const upsertPatientIdentifier = ({
     }
 
     return yield* writer.table("patientIdentifiers").insert({
-      patientId,
-      system,
-      value,
       identifier,
       isPrimary: true,
+      patientId,
       sourceStamp: sourceStampFromSeed(sourceKind, capturedAt),
+      system,
+      value,
       verifiedAt: capturedAt,
     });
   });
@@ -401,7 +406,8 @@ const upsertCoverageFromSnapshot = ({
       .collect();
 
     const kvid10 =
-      snapshot.versichertenId3119 ?? snapshot.coveragePayload.versichertenId3119;
+      snapshot.versichertenId3119 ??
+      snapshot.coveragePayload.versichertenId3119;
     const matchedCoverage = existingCoverages.find(
       (coverage) =>
         (kvid10 && coverage.kvid10 === kvid10) ||
@@ -411,8 +417,8 @@ const upsertCoverageFromSnapshot = ({
     );
 
     const coveragePatch = {
-      patientId,
       kind: "gkv" as const,
+      patientId,
       ...(kvid10 ? { kvid10 } : {}),
       ...(snapshot.coveragePayload.versichertennummer3105
         ? {
@@ -439,22 +445,24 @@ const upsertCoverageFromSnapshot = ({
             },
           }
         : {}),
-      sourceVsdSnapshotId: snapshot._id,
       sourceStamp: sourceStampFromSeed(snapshot.readSource, snapshot.readAt),
+      sourceVsdSnapshotId: snapshot._id,
     };
 
     if (matchedCoverage) {
-      yield* writer.table("coverages").patch(matchedCoverage._id, coveragePatch);
+      yield* writer
+        .table("coverages")
+        .patch(matchedCoverage._id, coveragePatch);
       return {
-        coverageId: matchedCoverage._id,
         coverageCreated: false,
+        coverageId: matchedCoverage._id,
       };
     }
 
     const coverageId = yield* writer.table("coverages").insert(coveragePatch);
     return {
-      coverageId,
       coverageCreated: true,
+      coverageId,
     };
   });
 
@@ -464,30 +472,30 @@ const createManual = ({
 }: {
   readonly patient: typeof ManualPatientSeedFields.Type;
   readonly primaryIdentifier?: {
-    readonly system: string;
-    readonly value: string;
-    readonly type?: {
-      readonly system: string;
-      readonly code: string;
-      readonly display?: string;
-      readonly version?: string;
-      readonly userSelected?: boolean;
-    };
-    readonly use?: "usual" | "official" | "temp" | "secondary" | "old";
     readonly assignerDisplay?: string;
     readonly period?: {
-      readonly start?: string;
       readonly end?: string;
+      readonly start?: string;
     };
+    readonly system: string;
+    readonly type?: {
+      readonly code: string;
+      readonly display?: string;
+      readonly system: string;
+      readonly userSelected?: boolean;
+      readonly version?: string;
+    };
+    readonly use?: "official" | "old" | "secondary" | "temp" | "usual";
+    readonly value: string;
   };
 }) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
 
     const patientId = yield* writer.table("patients").insert({
-      status: "active",
       displayName: formatDisplayName(patient.names, patient.displayName),
       names: patient.names,
+      status: "active",
       ...(patient.birthDate ? { birthDate: patient.birthDate } : {}),
       ...(patient.administrativeGender
         ? { administrativeGender: patient.administrativeGender }
@@ -510,12 +518,12 @@ const createManual = ({
 
     const primaryIdentifierId = primaryIdentifier
       ? yield* upsertPatientIdentifier({
+          capturedAt: patient.capturedAt,
+          identifier: primaryIdentifier,
           patientId,
+          sourceKind: "manual",
           system: primaryIdentifier.system,
           value: primaryIdentifier.value,
-          identifier: primaryIdentifier,
-          capturedAt: patient.capturedAt,
-          sourceKind: "manual",
         })
       : undefined;
 
@@ -528,7 +536,10 @@ const createManual = ({
 const getChart = ({ patientId }: { readonly patientId: PatientId }) =>
   Effect.gen(function* () {
     const db = yield* DatabaseReader;
-    const patient = yield* db.table("patients").get(patientId).pipe(Effect.option);
+    const patient = yield* db
+      .table("patients")
+      .get(patientId)
+      .pipe(Effect.option);
 
     if (Option.isNone(patient)) {
       return { found: false as const };
@@ -550,18 +561,14 @@ const getChart = ({ patientId }: { readonly patientId: PatientId }) =>
       );
 
     return {
-      found: true as const,
-      patient: patient.value,
-      identifiers,
       coverages,
+      found: true as const,
+      identifiers,
+      patient: patient.value,
     };
   });
 
-const listByPatient = ({
-  patientId,
-}: {
-  readonly patientId: PatientId;
-}) =>
+const listByPatient = ({ patientId }: { readonly patientId: PatientId }) =>
   Effect.gen(function* () {
     const db = yield* DatabaseReader;
     return yield* db
@@ -578,13 +585,15 @@ const registerMasterDataPackage = (
 ) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
-    const packageId = yield* writer.table("masterDataPackages").insert(packageData);
+    const packageId = yield* writer
+      .table("masterDataPackages")
+      .insert(packageData);
     return { packageId };
   });
 
 const importIcdCatalogEntries = ({
-  sourcePackageId,
   entries,
+  sourcePackageId,
 }: typeof ImportIcdCatalogEntriesArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -614,8 +623,8 @@ const importIcdCatalogEntries = ({
     }
 
     return {
-      importedCount: entryIds.length,
       entryIds,
+      importedCount: entryIds.length,
     };
   });
 
@@ -638,7 +647,9 @@ const addLineItem = (lineItem: typeof AddBillingLineItemArgs.Type) =>
 const createAppointment = (appointment: typeof CreateAppointmentArgs.Type) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
-    const appointmentId = yield* writer.table("appointments").insert(appointment);
+    const appointmentId = yield* writer
+      .table("appointments")
+      .insert(appointment);
     return { appointmentId };
   });
 
@@ -646,11 +657,11 @@ const listAppointmentsByOrganization = ({
   organizationId,
   patientId,
   source,
-  status,
-  vermittlungscode,
-  tssServiceType,
   startFrom,
   startTo,
+  status,
+  tssServiceType,
+  vermittlungscode,
 }: typeof ListAppointmentsArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -661,27 +672,35 @@ const listAppointmentsByOrganization = ({
 
     return appointments
       .filter((row) => row.organizationId === organizationId)
-      .filter((row) => (patientId === undefined ? true : row.patientId === patientId))
+      .filter((row) =>
+        patientId === undefined ? true : row.patientId === patientId,
+      )
       .filter((row) => (source === undefined ? true : row.source === source))
       .filter((row) => (status === undefined ? true : row.status === status))
       .filter((row) =>
-        vermittlungscode === undefined ? true : row.vermittlungscode === vermittlungscode,
+        vermittlungscode === undefined
+          ? true
+          : row.vermittlungscode === vermittlungscode,
       )
       .filter((row) =>
-        tssServiceType === undefined ? true : row.tssServiceType === tssServiceType,
+        tssServiceType === undefined
+          ? true
+          : row.tssServiceType === tssServiceType,
       )
-      .filter((row) => (startFrom === undefined ? true : row.start >= startFrom))
+      .filter((row) =>
+        startFrom === undefined ? true : row.start >= startFrom,
+      )
       .filter((row) => (startTo === undefined ? true : row.start <= startTo))
       .sort((left, right) => left.start.localeCompare(right.start));
   });
 
 const listAvailableTssAppointments = ({
+  displayBucket,
   organizationId,
-  vermittlungscode,
-  tssServiceType,
   startFrom,
   startTo,
-  displayBucket,
+  tssServiceType,
+  vermittlungscode,
 }: typeof ListAvailableTssAppointmentsArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -694,10 +713,12 @@ const listAvailableTssAppointments = ({
       appointments.map((appointment) => ({
         appointmentId: String(appointment._id),
         organizationId: String(appointment.organizationId),
-        ...(appointment.patientId ? { patientId: String(appointment.patientId) } : {}),
+        ...(appointment.patientId
+          ? { patientId: String(appointment.patientId) }
+          : {}),
         source: appointment.source,
-        status: appointment.status,
         start: appointment.start,
+        status: appointment.status,
         ...(appointment.end ? { end: appointment.end } : {}),
         ...(appointment.vermittlungscode
           ? { vermittlungscode: appointment.vermittlungscode }
@@ -724,9 +745,14 @@ const listAvailableTssAppointments = ({
 
     return selected
       .map((candidate) =>
-        appointments.find((appointment) => String(appointment._id) === candidate.appointmentId),
+        appointments.find(
+          (appointment) => String(appointment._id) === candidate.appointmentId,
+        ),
       )
-      .filter((appointment): appointment is NonNullable<typeof appointment> => appointment !== undefined);
+      .filter(
+        (appointment): appointment is NonNullable<typeof appointment> =>
+          appointment !== undefined,
+      );
   });
 
 const bookTssAppointment = ({
@@ -778,8 +804,8 @@ const bookTssAppointment = ({
     });
 
     return {
-      outcome: "booked" as const,
       appointmentId,
+      outcome: "booked" as const,
     };
   });
 
@@ -812,8 +838,13 @@ const lookupReferralByVermittlungscode = ({
 }: typeof LookupReferralByVermittlungscodeArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
-    const referrals = yield* reader.table("referrals").index("by_vermittlungscode").collect();
-    const referral = referrals.find((row) => row.vermittlungscode === vermittlungscode);
+    const referrals = yield* reader
+      .table("referrals")
+      .index("by_vermittlungscode")
+      .collect();
+    const referral = referrals.find(
+      (row) => row.vermittlungscode === vermittlungscode,
+    );
 
     if (!referral) {
       return { found: false as const };
@@ -839,11 +870,11 @@ const createDiagnosis = ({
 
     const patient = yield* reader.table("patients").get(diagnosis.patientId);
     const evaluationIds = yield* createCodingEvaluationsForDiagnosis({
-      diagnosisId,
       billingCaseId: diagnosis.billingCaseId,
-      patient,
-      diagnosis,
       createdAt,
+      diagnosis,
+      diagnosisId,
+      patient,
     });
 
     return {
@@ -853,11 +884,11 @@ const createDiagnosis = ({
   });
 
 const listDiagnoses = ({
-  patientId,
   billingCaseId,
+  patientId,
 }: {
-  readonly patientId: PatientId;
   readonly billingCaseId?: BillingCaseId;
+  readonly patientId: PatientId;
 }) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -885,7 +916,9 @@ const listEvaluationsByDiagnosis = ({
       .table("codingEvaluations")
       .index("by_diagnosisId")
       .collect();
-    return evaluations.filter((evaluation) => evaluation.diagnosisId === diagnosisId);
+    return evaluations.filter(
+      (evaluation) => evaluation.diagnosisId === diagnosisId,
+    );
   });
 
 const listEvaluationsByBillingCase = ({
@@ -940,9 +973,9 @@ const getCase = ({
       );
 
     return {
-      found: true as const,
       billingCase: billingCase.value,
       diagnoses,
+      found: true as const,
       lineItems,
     };
   });
@@ -982,18 +1015,18 @@ const getKvdtCaseView = ({
     const evaluations = yield* listEvaluationsByBillingCase({ billingCaseId });
     const issues = kvdtIssuesFromCase({
       diagnoses: caseResult.diagnoses,
-      lineItems: caseResult.lineItems,
       evaluations,
+      lineItems: caseResult.lineItems,
     });
 
     return {
-      found: true as const,
       billingCase: caseResult.billingCase,
       diagnoses: caseResult.diagnoses,
-      lineItems: caseResult.lineItems,
       evaluations,
-      issues,
       exportReady: !issues.some((issue) => issue.blocking),
+      found: true as const,
+      issues,
+      lineItems: caseResult.lineItems,
     };
   });
 
@@ -1013,16 +1046,16 @@ const prepareKvdtExport = ({
         status: "ready-for-export",
       });
       return {
-        outcome: "ready" as const,
         billingCaseId,
         issues: caseView.issues,
+        outcome: "ready" as const,
       };
     }
 
     return {
-      outcome: "blocked" as const,
       billingCaseId,
       issues: caseView.issues,
+      outcome: "blocked" as const,
     };
   });
 
@@ -1033,11 +1066,7 @@ const recordSnapshot = (snapshot: typeof RecordVsdSnapshotArgs.Type) =>
     return { snapshotId };
   });
 
-const getSnapshot = ({
-  snapshotId,
-}: {
-  readonly snapshotId: SnapshotId;
-}) =>
+const getSnapshot = ({ snapshotId }: { readonly snapshotId: SnapshotId }) =>
   Effect.gen(function* () {
     const db = yield* DatabaseReader;
     const snapshot = yield* db
@@ -1052,13 +1081,13 @@ const getSnapshot = ({
   });
 
 const adoptSnapshot = ({
-  snapshotId,
   existingPatientId,
   patientSeed,
+  snapshotId,
 }: {
-  readonly snapshotId: SnapshotId;
   readonly existingPatientId?: PatientId;
   readonly patientSeed?: typeof ManualPatientSeedFields.Type;
+  readonly snapshotId: SnapshotId;
 }) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -1074,7 +1103,8 @@ const adoptSnapshot = ({
 
     const snapshot = snapshotOption.value;
     const matchedByKvid = yield* findPatientByKvid(
-      snapshot.versichertenId3119 ?? snapshot.coveragePayload.versichertenId3119,
+      snapshot.versichertenId3119 ??
+        snapshot.coveragePayload.versichertenId3119,
     );
 
     let patientId = existingPatientId;
@@ -1094,18 +1124,20 @@ const adoptSnapshot = ({
       }
 
       patientId = yield* writer.table("patients").insert({
-        status: "active",
         displayName: formatDisplayName(
           patientSeed.names,
           patientSeed.displayName,
         ),
         names: patientSeed.names,
+        status: "active",
         ...(snapshot.coveragePayload.geburtsdatum3103
           ? { birthDate: snapshot.coveragePayload.geburtsdatum3103 }
           : patientSeed.birthDate
             ? { birthDate: patientSeed.birthDate }
             : {}),
-        ...(administrativeGenderFromSnapshot(snapshot.coveragePayload.geschlecht3110)
+        ...(administrativeGenderFromSnapshot(
+          snapshot.coveragePayload.geschlecht3110,
+        )
           ? {
               administrativeGender: administrativeGenderFromSnapshot(
                 snapshot.coveragePayload.geschlecht3110,
@@ -1133,148 +1165,149 @@ const adoptSnapshot = ({
     }
 
     const kvid10 =
-      snapshot.versichertenId3119 ?? snapshot.coveragePayload.versichertenId3119;
+      snapshot.versichertenId3119 ??
+      snapshot.coveragePayload.versichertenId3119;
     const patientIdentifierId = kvid10
       ? yield* upsertPatientIdentifier({
-          patientId,
-          system: PatientIdentifierSystem.Kvid10,
-          value: kvid10,
+          capturedAt: snapshot.readAt,
           identifier: {
             system: PatientIdentifierSystem.Kvid10,
-            value: kvid10,
             use: "official",
+            value: kvid10,
           },
-          capturedAt: snapshot.readAt,
+          patientId,
           sourceKind: snapshot.readSource,
+          system: PatientIdentifierSystem.Kvid10,
+          value: kvid10,
         })
       : undefined;
 
     if (snapshot.coveragePayload.versichertennummer3105) {
       yield* upsertPatientIdentifier({
-        patientId,
-        system: PatientIdentifierSystem.LegacyInsuranceNumber,
-        value: snapshot.coveragePayload.versichertennummer3105,
+        capturedAt: snapshot.readAt,
         identifier: {
           system: PatientIdentifierSystem.LegacyInsuranceNumber,
-          value: snapshot.coveragePayload.versichertennummer3105,
           use: "secondary",
+          value: snapshot.coveragePayload.versichertennummer3105,
         },
-        capturedAt: snapshot.readAt,
+        patientId,
         sourceKind: snapshot.readSource,
+        system: PatientIdentifierSystem.LegacyInsuranceNumber,
+        value: snapshot.coveragePayload.versichertennummer3105,
       });
     }
 
-    const { coverageId, coverageCreated } = yield* upsertCoverageFromSnapshot({
+    const { coverageCreated, coverageId } = yield* upsertCoverageFromSnapshot({
       patientId,
       snapshot,
     });
 
     return {
+      coverageId,
       outcome: "adopted" as const,
       patientId,
-      coverageId,
       ...(patientIdentifierId ? { patientIdentifierId } : {}),
-      patientCreated,
       coverageCreated,
+      patientCreated,
     };
   });
 
 const createArtifact = ({
-  ownerKind,
-  ownerId,
-  direction,
   artifactFamily,
   artifactSubtype,
-  transportKind,
-  contentType,
   attachment,
-  immutableAt,
-  profileVersion,
+  contentType,
+  direction,
   externalIdentifier,
+  immutableAt,
+  ownerId,
+  ownerKind,
+  profileVersion,
+  transportKind,
   validationStatus = "pending" as const,
 }: {
-  ownerKind:
-    | "documentRevision"
-    | "billingCase"
-    | "eebInboxItem"
-    | "masterDataPackage"
-    | "integrationJob";
-  ownerId: string;
-  direction: "inbound" | "outbound" | "internal";
   artifactFamily: string;
   artifactSubtype: string;
-  transportKind: string;
-  contentType: string;
   attachment: {
-    readonly storageId: Id<"_storage">;
-    readonly contentType: string;
     readonly byteSize: number;
-    readonly sha256: string;
-    readonly title?: string;
+    readonly contentType: string;
     readonly creationTime?: string;
+    readonly sha256: string;
+    readonly storageId: Id<"_storage">;
+    readonly title?: string;
   };
-  immutableAt: string;
-  profileVersion?: string;
+  contentType: string;
+  direction: "inbound" | "internal" | "outbound";
   externalIdentifier?: string;
-  validationStatus?: "pending" | "valid" | "invalid";
+  immutableAt: string;
+  ownerId: string;
+  ownerKind:
+    | "billingCase"
+    | "documentRevision"
+    | "eebInboxItem"
+    | "integrationJob"
+    | "masterDataPackage";
+  profileVersion?: string;
+  transportKind: string;
+  validationStatus?: "invalid" | "pending" | "valid";
 }) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
     return yield* writer.table("artifacts").insert({
-      ownerKind,
-      ownerId,
-      direction,
       artifactFamily,
       artifactSubtype,
+      direction,
+      ownerId,
+      ownerKind,
       ...(profileVersion ? { profileVersion } : {}),
-      transportKind,
-      contentType,
       attachment,
+      contentType,
+      transportKind,
       ...(externalIdentifier ? { externalIdentifier } : {}),
-      validationStatus,
       immutableAt,
+      validationStatus,
     });
   });
 
 const issueFormInstanceForRevision = ({
-  revisionId,
   patientId,
-  subjectKind,
-  subjectId,
   printForm,
+  revisionId,
+  subjectId,
+  subjectKind,
 }: {
-  revisionId: DocumentRevisionId;
   patientId: PatientId;
-  subjectKind:
-    | "referral"
-    | "heilmittel"
-    | "billing"
-    | "eau"
-    | "prescription-print"
-    | "other";
-  subjectId?: string;
   printForm?: {
     readonly formDefinitionId: Id<"formDefinitions">;
     readonly issueDate: string;
     readonly issuerPractitionerRoleId?: Id<"practitionerRoles">;
     readonly issuingOrganizationId?: Id<"organizations">;
-    readonly renderContextAttachment?: {
-      readonly storageId: Id<"_storage">;
-      readonly contentType: string;
-      readonly byteSize: number;
-      readonly sha256: string;
-      readonly title?: string;
-      readonly creationTime?: string;
-    };
     readonly outputAttachment?: {
-      readonly storageId: Id<"_storage">;
-      readonly contentType: string;
       readonly byteSize: number;
-      readonly sha256: string;
-      readonly title?: string;
+      readonly contentType: string;
       readonly creationTime?: string;
+      readonly sha256: string;
+      readonly storageId: Id<"_storage">;
+      readonly title?: string;
+    };
+    readonly renderContextAttachment?: {
+      readonly byteSize: number;
+      readonly contentType: string;
+      readonly creationTime?: string;
+      readonly sha256: string;
+      readonly storageId: Id<"_storage">;
+      readonly title?: string;
     };
   };
+  revisionId: DocumentRevisionId;
+  subjectId?: string;
+  subjectKind:
+    | "billing"
+    | "eau"
+    | "heilmittel"
+    | "other"
+    | "prescription-print"
+    | "referral";
 }) =>
   Effect.gen(function* () {
     if (!printForm) {
@@ -1284,38 +1317,38 @@ const issueFormInstanceForRevision = ({
     const writer = yield* DatabaseWriter;
     const renderContextArtifactId = printForm.renderContextAttachment
       ? yield* createArtifact({
-          ownerKind: "documentRevision",
-          ownerId: String(revisionId),
-          direction: "internal",
           artifactFamily: "FORM_RENDER_CONTEXT",
           artifactSubtype: "json",
-          transportKind: "print",
-          contentType: printForm.renderContextAttachment.contentType,
           attachment: printForm.renderContextAttachment,
+          contentType: printForm.renderContextAttachment.contentType,
+          direction: "internal",
           immutableAt: `${printForm.issueDate}T00:00:00.000Z`,
+          ownerId: String(revisionId),
+          ownerKind: "documentRevision",
+          transportKind: "print",
         })
       : undefined;
     const outputArtifactId = printForm.outputAttachment
       ? yield* createArtifact({
-          ownerKind: "documentRevision",
-          ownerId: String(revisionId),
-          direction: "outbound",
           artifactFamily: "FORM_OUTPUT",
           artifactSubtype: "print-output",
-          transportKind: "print",
-          contentType: printForm.outputAttachment.contentType,
           attachment: printForm.outputAttachment,
+          contentType: printForm.outputAttachment.contentType,
+          direction: "outbound",
           immutableAt: `${printForm.issueDate}T00:00:00.000Z`,
+          ownerId: String(revisionId),
+          ownerKind: "documentRevision",
+          transportKind: "print",
         })
       : undefined;
 
     const formInstanceId = yield* writer.table("formInstances").insert({
-      patientId,
       formDefinitionId: printForm.formDefinitionId,
+      patientId,
       subjectKind,
       ...(subjectId ? { subjectId } : {}),
-      status: "final",
       issueDate: printForm.issueDate,
+      status: "final",
       ...(printForm.issuerPractitionerRoleId
         ? { issuerPractitionerRoleId: printForm.issuerPractitionerRoleId }
         : {}),
@@ -1334,71 +1367,71 @@ const issueFormInstanceForRevision = ({
   });
 
 const issueDocumentRevision = ({
-  patientId,
-  kind,
-  originInterface,
-  status,
-  effectiveDate,
-  authorPractitionerId,
-  authorOrganizationId,
-  summary,
   artifact,
   artifactFamily,
   artifactSubtype,
-  transportKind,
+  authorOrganizationId,
+  authorPractitionerId,
   contentType,
-  profileVersion,
+  effectiveDate,
+  formSubjectId,
+  formSubjectKind,
+  kind,
+  originInterface,
+  patientId,
   patientPrint,
   printForm,
-  formSubjectKind,
-  formSubjectId,
+  profileVersion,
+  status,
+  summary,
+  transportKind,
 }: {
-  patientId: PatientId;
-  kind:
-    | "erp"
-    | "evdga"
-    | "eau"
-    | "heilmittel"
-    | "bfb-form"
-    | "bmp-plan"
-    | "vos"
-    | "tss"
-    | "archive-import"
-    | "other";
-  originInterface: string;
-  status: "draft" | "final" | "cancelled" | "superseded" | "imported";
-  effectiveDate: string;
-  authorPractitionerId?: Id<"practitioners">;
-  authorOrganizationId?: Id<"organizations">;
-  summary: {
-    readonly title?: string;
-    readonly formCode?: string;
-    readonly externalIdentifier?: string;
-  };
   artifact: {
     readonly attachment: {
-      readonly storageId: Id<"_storage">;
-      readonly contentType: string;
       readonly byteSize: number;
-      readonly sha256: string;
-      readonly title?: string;
+      readonly contentType: string;
       readonly creationTime?: string;
+      readonly sha256: string;
+      readonly storageId: Id<"_storage">;
+      readonly title?: string;
     };
     readonly externalIdentifier?: string;
   };
   artifactFamily: string;
   artifactSubtype: string;
-  transportKind: string;
+  authorOrganizationId?: Id<"organizations">;
+  authorPractitionerId?: Id<"practitioners">;
   contentType: string;
-  profileVersion?: string;
+  effectiveDate: string;
+  formSubjectId?: string;
+  formSubjectKind?:
+    | "billing"
+    | "eau"
+    | "heilmittel"
+    | "other"
+    | "prescription-print"
+    | "referral";
+  kind:
+    | "archive-import"
+    | "bfb-form"
+    | "bmp-plan"
+    | "eau"
+    | "erp"
+    | "evdga"
+    | "heilmittel"
+    | "other"
+    | "tss"
+    | "vos";
+  originInterface: string;
+  patientId: PatientId;
   patientPrint?: {
     readonly attachment: {
-      readonly storageId: Id<"_storage">;
-      readonly contentType: string;
       readonly byteSize: number;
-      readonly sha256: string;
-      readonly title?: string;
+      readonly contentType: string;
       readonly creationTime?: string;
+      readonly sha256: string;
+      readonly storageId: Id<"_storage">;
+      readonly title?: string;
     };
     readonly externalIdentifier?: string;
   };
@@ -1407,62 +1440,62 @@ const issueDocumentRevision = ({
     readonly issueDate: string;
     readonly issuerPractitionerRoleId?: Id<"practitionerRoles">;
     readonly issuingOrganizationId?: Id<"organizations">;
-    readonly renderContextAttachment?: {
-      readonly storageId: Id<"_storage">;
-      readonly contentType: string;
-      readonly byteSize: number;
-      readonly sha256: string;
-      readonly title?: string;
-      readonly creationTime?: string;
-    };
     readonly outputAttachment?: {
-      readonly storageId: Id<"_storage">;
-      readonly contentType: string;
       readonly byteSize: number;
-      readonly sha256: string;
-      readonly title?: string;
+      readonly contentType: string;
       readonly creationTime?: string;
+      readonly sha256: string;
+      readonly storageId: Id<"_storage">;
+      readonly title?: string;
+    };
+    readonly renderContextAttachment?: {
+      readonly byteSize: number;
+      readonly contentType: string;
+      readonly creationTime?: string;
+      readonly sha256: string;
+      readonly storageId: Id<"_storage">;
+      readonly title?: string;
     };
   };
-  formSubjectKind?:
-    | "referral"
-    | "heilmittel"
-    | "billing"
-    | "eau"
-    | "prescription-print"
-    | "other";
-  formSubjectId?: string;
+  profileVersion?: string;
+  status: "cancelled" | "draft" | "final" | "imported" | "superseded";
+  summary: {
+    readonly externalIdentifier?: string;
+    readonly formCode?: string;
+    readonly title?: string;
+  };
+  transportKind: string;
 }) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
     const documentId = yield* writer.table("clinicalDocuments").insert({
-      patientId,
+      currentRevisionNo: 0,
       kind,
       originInterface,
-      currentRevisionNo: 0,
+      patientId,
       status: "draft",
     });
 
     const revisionId = yield* writer.table("documentRevisions").insert({
       documentId,
+      effectiveDate,
       revisionNo: 1,
       status,
-      effectiveDate,
       ...(authorPractitionerId ? { authorPractitionerId } : {}),
       ...(authorOrganizationId ? { authorOrganizationId } : {}),
       summary,
     });
 
     const artifactId = yield* createArtifact({
-      ownerKind: "documentRevision",
-      ownerId: String(revisionId),
-      direction: "outbound",
       artifactFamily,
       artifactSubtype,
+      direction: "outbound",
+      ownerId: String(revisionId),
+      ownerKind: "documentRevision",
       ...(profileVersion ? { profileVersion } : {}),
-      transportKind,
-      contentType,
       attachment: artifact.attachment,
+      contentType,
+      transportKind,
       ...(artifact.externalIdentifier
         ? { externalIdentifier: artifact.externalIdentifier }
         : {}),
@@ -1471,14 +1504,14 @@ const issueDocumentRevision = ({
 
     const patientPrintArtifactId = patientPrint
       ? yield* createArtifact({
-          ownerKind: "documentRevision",
-          ownerId: String(revisionId),
-          direction: "outbound",
           artifactFamily,
           artifactSubtype: "patient-print",
-          transportKind: "print",
-          contentType: patientPrint.attachment.contentType,
           attachment: patientPrint.attachment,
+          contentType: patientPrint.attachment.contentType,
+          direction: "outbound",
+          ownerId: String(revisionId),
+          ownerKind: "documentRevision",
+          transportKind: "print",
           ...(patientPrint.externalIdentifier
             ? { externalIdentifier: patientPrint.externalIdentifier }
             : {}),
@@ -1489,8 +1522,8 @@ const issueDocumentRevision = ({
     const formResult =
       printForm && formSubjectKind
         ? yield* issueFormInstanceForRevision({
-            revisionId,
             patientId,
+            revisionId,
             subjectKind: formSubjectKind,
             ...(formSubjectId ? { subjectId: formSubjectId } : {}),
             printForm,
@@ -1503,45 +1536,47 @@ const issueDocumentRevision = ({
     });
 
     return {
+      artifactId,
       documentId,
       revisionId,
-      artifactId,
       ...(patientPrintArtifactId ? { patientPrintArtifactId } : {}),
       ...formResult,
     };
   });
 
 const medicationFinalizeIssues = (order: {
-  readonly orderKind: "pzn" | "ingredient" | "compounding" | "freetext";
-  readonly medicationCatalogRefId?: Id<"medicationCatalogRefs">;
   readonly freeTextMedication?: string;
+  readonly medicationCatalogRefId?: Id<"medicationCatalogRefs">;
   readonly multiplePrescription?: {
     readonly enabled: boolean;
-    readonly seriesIdentifier?: string;
     readonly redeemFrom?: string;
     readonly redeemUntil?: string;
+    readonly seriesIdentifier?: string;
   };
+  readonly orderKind: "compounding" | "freetext" | "ingredient" | "pzn";
 }) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
-    const issues: Array<typeof WorkflowIssue.Type> = [];
+    const issues: (typeof WorkflowIssue.Type)[] = [];
 
     if (order.orderKind === "pzn" && !order.medicationCatalogRefId) {
       issues.push({
-        code: "ERP_MEDICATION_CATALOG_REF_REQUIRED",
-        message: "PZN-based prescriptions require a medication catalog reference.",
         blocking: true,
+        code: "ERP_MEDICATION_CATALOG_REF_REQUIRED",
+        message:
+          "PZN-based prescriptions require a medication catalog reference.",
       });
     }
 
     if (
       order.orderKind === "freetext" &&
-      (!order.freeTextMedication || order.freeTextMedication.trim().length === 0)
+      (!order.freeTextMedication ||
+        order.freeTextMedication.trim().length === 0)
     ) {
       issues.push({
+        blocking: true,
         code: "ERP_FREETEXT_MEDICATION_REQUIRED",
         message: "Free-text prescriptions require a medication description.",
-        blocking: true,
       });
     }
 
@@ -1552,9 +1587,9 @@ const medicationFinalizeIssues = (order: {
         .pipe(Effect.option);
       if (Option.isNone(catalogRef)) {
         issues.push({
+          blocking: true,
           code: "ERP_MEDICATION_CATALOG_REF_UNKNOWN",
           message: "Medication catalog reference does not exist.",
-          blocking: true,
         });
       }
     }
@@ -1566,10 +1601,10 @@ const medicationFinalizeIssues = (order: {
         !order.multiplePrescription.redeemUntil)
     ) {
       issues.push({
+        blocking: true,
         code: "ERP_MULTIPLE_PRESCRIPTION_METADATA_REQUIRED",
         message:
           "Multiple prescriptions require a series identifier and redeem interval.",
-        blocking: true,
       });
     }
 
@@ -1577,27 +1612,27 @@ const medicationFinalizeIssues = (order: {
   });
 
 const heilmittelFinalizeIssues = (order: {
-  readonly patientId: PatientId;
-  readonly issueDate: string;
-  readonly diagnosegruppe: string;
-  readonly heilmittelbereich: string;
-  readonly diagnosisIds: ReadonlyArray<DiagnosisId>;
-  readonly vorrangigeHeilmittelCodes: ReadonlyArray<string>;
-  readonly ergaenzendeHeilmittelCodes: ReadonlyArray<string>;
-  readonly blankoFlag?: boolean;
-  readonly longTermNeedFlag?: boolean;
-  readonly specialNeedFlag?: boolean;
   readonly approvalId?: Id<"heilmittelApprovals">;
+  readonly blankoFlag?: boolean;
+  readonly diagnosegruppe: string;
+  readonly diagnosisIds: readonly DiagnosisId[];
+  readonly ergaenzendeHeilmittelCodes: readonly string[];
+  readonly heilmittelbereich: string;
+  readonly issueDate: string;
+  readonly longTermNeedFlag?: boolean;
+  readonly patientId: PatientId;
+  readonly specialNeedFlag?: boolean;
+  readonly vorrangigeHeilmittelCodes: readonly string[];
 }) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
-    const issues: Array<typeof WorkflowIssue.Type> = [];
+    const issues: (typeof WorkflowIssue.Type)[] = [];
 
     if (order.diagnosisIds.length === 0) {
       issues.push({
+        blocking: true,
         code: "HEILMITTEL_DIAGNOSIS_REQUIRED",
         message: "Heilmittel orders require at least one linked diagnosis.",
-        blocking: true,
       });
     }
 
@@ -1607,9 +1642,9 @@ const heilmittelFinalizeIssues = (order: {
     ];
     if (requestedCodes.length === 0) {
       issues.push({
+        blocking: true,
         code: "HEILMITTEL_CODE_REQUIRED",
         message: "At least one Heilmittel code is required.",
-        blocking: true,
       });
     }
 
@@ -1633,28 +1668,31 @@ const heilmittelFinalizeIssues = (order: {
       );
       if (!catalogEntry) {
         issues.push({
+          blocking: true,
           code: "HEILMITTEL_CATALOG_ENTRY_MISSING",
           message: `Heilmittel code ${requestedCode} is not available for the selected diagnosegruppe.`,
-          blocking: true,
         });
         continue;
       }
 
       if (order.blankoFlag && catalogEntry.blankoEligible !== true) {
         issues.push({
+          blocking: true,
           code: "HEILMITTEL_BLANKO_NOT_ELIGIBLE",
           message: `Heilmittel code ${requestedCode} is not blanko-eligible.`,
-          blocking: true,
         });
       }
     }
 
-    if ((order.longTermNeedFlag || order.specialNeedFlag) && !order.approvalId) {
+    if (
+      (order.longTermNeedFlag || order.specialNeedFlag) &&
+      !order.approvalId
+    ) {
       issues.push({
+        blocking: true,
         code: "HEILMITTEL_APPROVAL_REQUIRED",
         message:
           "Special-need and long-term Heilmittel orders require an approval record.",
-        blocking: true,
       });
     }
 
@@ -1666,33 +1704,33 @@ const heilmittelFinalizeIssues = (order: {
 
       if (Option.isNone(approvalOption)) {
         issues.push({
+          blocking: true,
           code: "HEILMITTEL_APPROVAL_UNKNOWN",
           message: "Referenced Heilmittel approval does not exist.",
-          blocking: true,
         });
       } else {
         const approval = approvalOption.value;
         if (approval.patientId !== order.patientId) {
           issues.push({
+            blocking: true,
             code: "HEILMITTEL_APPROVAL_PATIENT_MISMATCH",
             message: "Heilmittel approval belongs to a different patient.",
-            blocking: true,
           });
         }
 
         if (approval.validFrom && order.issueDate < approval.validFrom) {
           issues.push({
+            blocking: true,
             code: "HEILMITTEL_APPROVAL_NOT_YET_VALID",
             message: "Heilmittel approval is not yet valid on the issue date.",
-            blocking: true,
           });
         }
 
         if (approval.validTo && order.issueDate > approval.validTo) {
           issues.push({
+            blocking: true,
             code: "HEILMITTEL_APPROVAL_EXPIRED",
             message: "Heilmittel approval has expired for the issue date.",
-            blocking: true,
           });
         }
 
@@ -1701,22 +1739,24 @@ const heilmittelFinalizeIssues = (order: {
           !approval.diagnosegruppen.includes(order.diagnosegruppe)
         ) {
           issues.push({
+            blocking: true,
             code: "HEILMITTEL_APPROVAL_DIAGNOSEGRUPPE_MISMATCH",
             message:
               "Heilmittel approval does not cover the selected diagnosegruppe.",
-            blocking: true,
           });
         }
 
         if (
           approval.heilmittelCodes.length > 0 &&
-          !requestedCodes.some((code) => approval.heilmittelCodes.includes(code))
+          !requestedCodes.some((code) =>
+            approval.heilmittelCodes.includes(code),
+          )
         ) {
           issues.push({
+            blocking: true,
             code: "HEILMITTEL_APPROVAL_CODE_MISMATCH",
             message:
               "Heilmittel approval does not cover any of the selected Heilmittel codes.",
-            blocking: true,
           });
         }
       }
@@ -1726,8 +1766,8 @@ const heilmittelFinalizeIssues = (order: {
   });
 
 const importMedicationCatalogRefs = ({
-  sourcePackageId,
   entries,
+  sourcePackageId,
 }: typeof ImportMedicationCatalogRefsArgs.Type) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
@@ -1742,8 +1782,8 @@ const importMedicationCatalogRefs = ({
     }
 
     return {
-      importedCount: entryIds.length,
       entryIds,
+      importedCount: entryIds.length,
     };
   });
 
@@ -1752,7 +1792,10 @@ const lookupMedicationByPzn = ({
 }: typeof LookupMedicationByPznArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
-    const entries = yield* reader.table("medicationCatalogRefs").index("by_pzn").collect();
+    const entries = yield* reader
+      .table("medicationCatalogRefs")
+      .index("by_pzn")
+      .collect();
     const entry = entries.find((row) => row.pzn === pzn);
 
     if (!entry) {
@@ -1760,14 +1803,14 @@ const lookupMedicationByPzn = ({
     }
 
     return {
-      found: true as const,
       entry,
+      found: true as const,
     };
   });
 
 const importHeilmittelCatalogRefs = ({
-  sourcePackageId,
   entries,
+  sourcePackageId,
 }: typeof ImportHeilmittelCatalogRefsArgs.Type) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
@@ -1782,14 +1825,14 @@ const importHeilmittelCatalogRefs = ({
     }
 
     return {
-      importedCount: entryIds.length,
       entryIds,
+      importedCount: entryIds.length,
     };
   });
 
 const importDigaCatalogRefs = ({
-  sourcePackageId,
   entries,
+  sourcePackageId,
 }: typeof ImportDigaCatalogRefsArgs.Type) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
@@ -1804,8 +1847,8 @@ const importDigaCatalogRefs = ({
     }
 
     return {
-      importedCount: entryIds.length,
       entryIds,
+      importedCount: entryIds.length,
     };
   });
 
@@ -1830,15 +1873,18 @@ const lookupHeilmittelByKey = ({
     }
 
     return {
-      found: true as const,
       entry,
+      found: true as const,
     };
   });
 
 const lookupDigaByPzn = ({ pzn }: typeof LookupDigaByPznArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
-    const entries = yield* reader.table("digaCatalogRefs").index("by_pzn").collect();
+    const entries = yield* reader
+      .table("digaCatalogRefs")
+      .index("by_pzn")
+      .collect();
     const entry = entries.find((row) => row.pzn === pzn);
 
     if (!entry) {
@@ -1846,15 +1892,17 @@ const lookupDigaByPzn = ({ pzn }: typeof LookupDigaByPznArgs.Type) =>
     }
 
     return {
-      found: true as const,
       entry,
+      found: true as const,
     };
   });
 
 const createMedicationOrder = (args: typeof CreateMedicationOrderArgs.Type) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
-    const medicationOrderId = yield* writer.table("medicationOrders").insert(args);
+    const medicationOrderId = yield* writer
+      .table("medicationOrders")
+      .insert(args);
     return { medicationOrderId };
   });
 
@@ -1944,12 +1992,12 @@ const listDigaOrdersByPatient = ({
   });
 
 const finalizeMedicationOrder = ({
-  medicationOrderId,
-  finalizedAt,
-  profileVersion,
   artifact,
+  finalizedAt,
+  medicationOrderId,
   patientPrint,
   printForm,
+  profileVersion,
 }: typeof FinalizeMedicationOrderArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -1966,34 +2014,38 @@ const finalizeMedicationOrder = ({
     const order = orderOption.value;
     if (order.status !== "draft") {
       return {
-        outcome: "not-draft" as const,
         medicationOrderId,
+        outcome: "not-draft" as const,
       };
     }
 
     const issues = yield* medicationFinalizeIssues(order);
     if (issues.some((issue) => issue.blocking)) {
       return {
-        outcome: "blocked" as const,
-        medicationOrderId,
         issues,
+        medicationOrderId,
+        outcome: "blocked" as const,
       };
     }
 
     const issued: {
-      documentId: ClinicalDocumentId;
-      revisionId: DocumentRevisionId;
       artifactId: Id<"artifacts">;
-      patientPrintArtifactId?: Id<"artifacts">;
+      documentId: ClinicalDocumentId;
       formInstanceId?: Id<"formInstances">;
+      patientPrintArtifactId?: Id<"artifacts">;
+      revisionId: DocumentRevisionId;
     } = yield* issueDocumentRevision({
-      patientId: order.patientId,
+      artifact,
+      artifactFamily: "ERP",
+      artifactSubtype: "kbv-bundle-xml",
+      authorOrganizationId: order.organizationId,
+      authorPractitionerId: order.signerPractitionerId ?? order.practitionerId,
+      contentType: artifact.attachment.contentType,
+      effectiveDate: finalizedAt,
       kind: "erp",
       originInterface: "ERP",
+      patientId: order.patientId,
       status: "final",
-      effectiveDate: finalizedAt,
-      authorPractitionerId: order.signerPractitionerId ?? order.practitionerId,
-      authorOrganizationId: order.organizationId,
       summary: {
         title:
           order.freeTextMedication ??
@@ -2002,37 +2054,35 @@ const finalizeMedicationOrder = ({
           ? { externalIdentifier: artifact.externalIdentifier }
           : {}),
       },
-      artifact,
-      artifactFamily: "ERP",
-      artifactSubtype: "kbv-bundle-xml",
       transportKind: "fhir-bundle-xml",
-      contentType: artifact.attachment.contentType,
       ...(profileVersion ? { profileVersion } : {}),
       ...(patientPrint ? { patientPrint } : {}),
       ...(printForm
         ? {
-            printForm,
-            formSubjectKind: "prescription-print" as const,
             formSubjectId: String(medicationOrderId),
+            formSubjectKind: "prescription-print" as const,
+            printForm,
           }
         : {}),
     });
 
     yield* writer.table("medicationOrders").patch(medicationOrderId, {
-      status: "final",
       artifactDocumentId: issued.documentId,
+      status: "final",
     });
 
     return {
-      outcome: "finalized" as const,
-      medicationOrderId,
-      documentId: issued.documentId,
-      revisionId: issued.revisionId,
       artifactId: issued.artifactId,
+      documentId: issued.documentId,
+      medicationOrderId,
+      outcome: "finalized" as const,
+      revisionId: issued.revisionId,
       ...(issued.patientPrintArtifactId
         ? { patientPrintArtifactId: issued.patientPrintArtifactId }
         : {}),
-      ...(issued.formInstanceId ? { formInstanceId: issued.formInstanceId } : {}),
+      ...(issued.formInstanceId
+        ? { formInstanceId: issued.formInstanceId }
+        : {}),
     };
   });
 
@@ -2041,7 +2091,7 @@ const digaFinalizeIssues = (order: {
 }) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
-    const issues: Array<typeof WorkflowIssue.Type> = [];
+    const issues: (typeof WorkflowIssue.Type)[] = [];
     const catalogRef = yield* reader
       .table("digaCatalogRefs")
       .get(order.digaCatalogRefId)
@@ -2049,9 +2099,9 @@ const digaFinalizeIssues = (order: {
 
     if (Option.isNone(catalogRef)) {
       issues.push({
+        blocking: true,
         code: "EVDGA_CATALOG_REF_UNKNOWN",
         message: "Referenced DiGA catalog entry does not exist.",
-        blocking: true,
       });
     }
 
@@ -2059,11 +2109,11 @@ const digaFinalizeIssues = (order: {
   });
 
 const finalizeDigaOrder = ({
+  artifact,
   digaOrderId,
   finalizedAt,
-  profileVersion,
-  artifact,
   patientPrint,
+  profileVersion,
   tokenArtifact,
 }: typeof FinalizeDigaOrderArgs.Type) =>
   Effect.gen(function* () {
@@ -2081,59 +2131,59 @@ const finalizeDigaOrder = ({
     const order = orderOption.value;
     if (order.status !== "draft") {
       return {
-        outcome: "not-draft" as const,
         digaOrderId,
+        outcome: "not-draft" as const,
       };
     }
 
     const issues = yield* digaFinalizeIssues(order);
     if (issues.some((issue) => issue.blocking)) {
       return {
-        outcome: "blocked" as const,
         digaOrderId,
         issues,
+        outcome: "blocked" as const,
       };
     }
 
     const issued: {
-      documentId: ClinicalDocumentId;
-      revisionId: DocumentRevisionId;
       artifactId: Id<"artifacts">;
-      patientPrintArtifactId?: Id<"artifacts">;
+      documentId: ClinicalDocumentId;
       formInstanceId?: Id<"formInstances">;
+      patientPrintArtifactId?: Id<"artifacts">;
+      revisionId: DocumentRevisionId;
     } = yield* issueDocumentRevision({
-      patientId: order.patientId,
+      artifact,
+      artifactFamily: "EVDGA",
+      artifactSubtype: "kbv-device-request-bundle",
+      authorOrganizationId: order.organizationId,
+      authorPractitionerId: order.practitionerId,
+      contentType: artifact.attachment.contentType,
+      effectiveDate: finalizedAt,
       kind: "evdga",
       originInterface: "eVDGA",
+      patientId: order.patientId,
       status: "final",
-      effectiveDate: finalizedAt,
-      authorPractitionerId: order.practitionerId,
-      authorOrganizationId: order.organizationId,
       summary: {
         title: "eVDGA",
         ...(artifact.externalIdentifier
           ? { externalIdentifier: artifact.externalIdentifier }
           : {}),
       },
-      artifact,
-      artifactFamily: "EVDGA",
-      artifactSubtype: "kbv-device-request-bundle",
       transportKind: "fhir-bundle-xml",
-      contentType: artifact.attachment.contentType,
       ...(profileVersion ? { profileVersion } : {}),
       ...(patientPrint ? { patientPrint } : {}),
     });
 
     const tokenArtifactId = tokenArtifact
       ? yield* createArtifact({
-          ownerKind: "documentRevision",
-          ownerId: String(issued.revisionId),
-          direction: "outbound",
           artifactFamily: "EVDGA",
           artifactSubtype: "token",
-          transportKind: "ti-token",
-          contentType: tokenArtifact.attachment.contentType,
           attachment: tokenArtifact.attachment,
+          contentType: tokenArtifact.attachment.contentType,
+          direction: "outbound",
+          ownerId: String(issued.revisionId),
+          ownerKind: "documentRevision",
+          transportKind: "ti-token",
           ...(tokenArtifact.externalIdentifier
             ? { externalIdentifier: tokenArtifact.externalIdentifier }
             : {}),
@@ -2142,16 +2192,16 @@ const finalizeDigaOrder = ({
       : undefined;
 
     yield* writer.table("digaOrders").patch(digaOrderId, {
-      status: "final",
       artifactDocumentId: issued.documentId,
+      status: "final",
     });
 
     return {
-      outcome: "finalized" as const,
+      artifactId: issued.artifactId,
       digaOrderId,
       documentId: issued.documentId,
+      outcome: "finalized" as const,
       revisionId: issued.revisionId,
-      artifactId: issued.artifactId,
       ...(issued.patientPrintArtifactId
         ? { patientPrintArtifactId: issued.patientPrintArtifactId }
         : {}),
@@ -2170,7 +2220,8 @@ const createMedicationPlan = (args: typeof CreateMedicationPlanArgs.Type) =>
       .pipe(
         Effect.map((rows) =>
           rows.filter(
-            (row) => row.patientId === args.patientId && row.status === "current",
+            (row) =>
+              row.patientId === args.patientId && row.status === "current",
           ),
         ),
       );
@@ -2200,7 +2251,9 @@ const getCurrentPlan = ({ patientId }: { readonly patientId: PatientId }) =>
       .index("by_patientId_and_status")
       .collect();
     const currentPlan = plans
-      .filter((plan) => plan.patientId === patientId && plan.status === "current")
+      .filter(
+        (plan) => plan.patientId === patientId && plan.status === "current",
+      )
       .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))
       .at(-1);
 
@@ -2221,13 +2274,15 @@ const getCurrentPlan = ({ patientId }: { readonly patientId: PatientId }) =>
       );
 
     return {
+      entries,
       found: true as const,
       plan: currentPlan,
-      entries,
     };
   });
 
-const createHeilmittelApproval = (args: typeof CreateHeilmittelApprovalArgs.Type) =>
+const createHeilmittelApproval = (
+  args: typeof CreateHeilmittelApprovalArgs.Type,
+) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
     const approvalId = yield* writer.table("heilmittelApprovals").insert(args);
@@ -2237,7 +2292,9 @@ const createHeilmittelApproval = (args: typeof CreateHeilmittelApprovalArgs.Type
 const createHeilmittelOrder = (args: typeof CreateHeilmittelOrderArgs.Type) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
-    const heilmittelOrderId = yield* writer.table("heilmittelOrders").insert(args);
+    const heilmittelOrderId = yield* writer
+      .table("heilmittelOrders")
+      .insert(args);
     return { heilmittelOrderId };
   });
 
@@ -2282,11 +2339,11 @@ const listHeilmittelOrdersByPatient = ({
   });
 
 const finalizeHeilmittelOrder = ({
-  heilmittelOrderId,
-  finalizedAt,
-  profileVersion,
   artifact,
+  finalizedAt,
+  heilmittelOrderId,
   printForm,
+  profileVersion,
 }: typeof FinalizeHeilmittelOrderArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -2303,80 +2360,84 @@ const finalizeHeilmittelOrder = ({
     const order = orderOption.value;
     if (order.status !== "draft") {
       return {
-        outcome: "not-draft" as const,
         heilmittelOrderId,
+        outcome: "not-draft" as const,
       };
     }
 
     const issues = yield* heilmittelFinalizeIssues(order);
     if (issues.some((issue) => issue.blocking)) {
       return {
-        outcome: "blocked" as const,
         heilmittelOrderId,
         issues,
+        outcome: "blocked" as const,
       };
     }
 
     const issued: {
-      documentId: ClinicalDocumentId;
-      revisionId: DocumentRevisionId;
       artifactId: Id<"artifacts">;
-      patientPrintArtifactId?: Id<"artifacts">;
+      documentId: ClinicalDocumentId;
       formInstanceId?: Id<"formInstances">;
+      patientPrintArtifactId?: Id<"artifacts">;
+      revisionId: DocumentRevisionId;
     } = yield* issueDocumentRevision({
-      patientId: order.patientId,
+      artifact,
+      artifactFamily: "Heilmittel",
+      artifactSubtype: "heilmittel-order",
+      authorOrganizationId: order.organizationId,
+      authorPractitionerId: order.practitionerId,
+      contentType: artifact.attachment.contentType,
+      effectiveDate: finalizedAt,
       kind: "heilmittel",
       originInterface: "Heilmittel",
+      patientId: order.patientId,
       status: "final",
-      effectiveDate: finalizedAt,
-      authorPractitionerId: order.practitionerId,
-      authorOrganizationId: order.organizationId,
       summary: {
         title: `Heilmittel ${order.diagnosegruppe}`,
         ...(artifact.externalIdentifier
           ? { externalIdentifier: artifact.externalIdentifier }
           : {}),
       },
-      artifact,
-      artifactFamily: "Heilmittel",
-      artifactSubtype: "heilmittel-order",
       transportKind: printForm ? "print" : "fhir-bundle-xml",
-      contentType: artifact.attachment.contentType,
       ...(profileVersion ? { profileVersion } : {}),
       ...(printForm
         ? {
-            printForm,
-            formSubjectKind: "heilmittel" as const,
             formSubjectId: String(heilmittelOrderId),
+            formSubjectKind: "heilmittel" as const,
+            printForm,
           }
         : {}),
     });
 
     yield* writer.table("heilmittelOrders").patch(heilmittelOrderId, {
-      status: "final",
       artifactDocumentId: issued.documentId,
+      status: "final",
     });
 
     return {
-      outcome: "finalized" as const,
-      heilmittelOrderId,
-      documentId: issued.documentId,
-      revisionId: issued.revisionId,
       artifactId: issued.artifactId,
-      ...(issued.formInstanceId ? { formInstanceId: issued.formInstanceId } : {}),
+      documentId: issued.documentId,
+      heilmittelOrderId,
+      outcome: "finalized" as const,
+      revisionId: issued.revisionId,
+      ...(issued.formInstanceId
+        ? { formInstanceId: issued.formInstanceId }
+        : {}),
     };
   });
 
 const registerFormDefinition = (args: typeof RegisterFormDefinitionArgs.Type) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
-    const formDefinitionId = yield* writer.table("formDefinitions").insert(args);
+    const formDefinitionId = yield* writer
+      .table("formDefinitions")
+      .insert(args);
     return { formDefinitionId };
   });
 
 const listFormDefinitions = ({
-  theme,
   activeOnly,
+  theme,
 }: typeof ListFormDefinitionsArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -2436,7 +2497,9 @@ const getDocument = ({ documentId }: typeof GetDocumentArgs.Type) =>
         ),
       );
 
-    const revisionIds = new Set(revisions.map((revision) => String(revision._id)));
+    const revisionIds = new Set(
+      revisions.map((revision) => String(revision._id)),
+    );
     const artifacts = yield* reader
       .table("artifacts")
       .index("by_ownerKind_and_ownerId")
@@ -2452,16 +2515,16 @@ const getDocument = ({ documentId }: typeof GetDocumentArgs.Type) =>
       );
 
     return {
-      found: true as const,
-      document: documentOption.value,
-      revisions,
       artifacts,
+      document: documentOption.value,
+      found: true as const,
+      revisions,
     };
   });
 
 const listDocumentsByPatient = ({
-  patientId,
   kind,
+  patientId,
 }: typeof ListDocumentsByPatientArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -2478,14 +2541,14 @@ const listDocumentsByPatient = ({
   });
 
 const saveWorkspace = ({
-  ownerKind,
-  ownerId,
-  workflowKind,
-  snapshot,
-  schemaVersion,
   lastTouchedAt,
   lastTouchedBy,
+  ownerId,
+  ownerKind,
+  schemaVersion,
+  snapshot,
   status,
+  workflowKind,
 }: typeof SaveDraftWorkspaceArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -2508,38 +2571,38 @@ const saveWorkspace = ({
 
     if (existingWorkspace) {
       yield* writer.table("draftWorkspaces").patch(existingWorkspace._id, {
-        snapshot,
-        schemaVersion,
         lastTouchedAt,
         lastTouchedBy,
+        schemaVersion,
+        snapshot,
         status: status ?? "open",
       });
       return {
-        draftWorkspaceId: existingWorkspace._id,
         created: false,
+        draftWorkspaceId: existingWorkspace._id,
       };
     }
 
     const draftWorkspaceId = yield* writer.table("draftWorkspaces").insert({
-      ownerKind,
-      ownerId,
-      workflowKind,
-      status: status ?? "open",
-      snapshot,
-      schemaVersion,
       lastTouchedAt,
       lastTouchedBy,
+      ownerId,
+      ownerKind,
+      schemaVersion,
+      snapshot,
+      status: status ?? "open",
+      workflowKind,
     });
 
     return {
-      draftWorkspaceId,
       created: true,
+      draftWorkspaceId,
     };
   });
 
 const getWorkspace = ({
-  ownerKind,
   ownerId,
+  ownerKind,
   workflowKind,
 }: typeof GetDraftWorkspaceArgs.Type) =>
   Effect.gen(function* () {
@@ -2556,7 +2619,9 @@ const getWorkspace = ({
           row.workflowKind === workflowKind &&
           row.status !== "promoted",
       )
-      .sort((left, right) => left.lastTouchedAt.localeCompare(right.lastTouchedAt))
+      .sort((left, right) =>
+        left.lastTouchedAt.localeCompare(right.lastTouchedAt),
+      )
       .at(-1);
 
     if (!workspace) {
@@ -2564,8 +2629,8 @@ const getWorkspace = ({
     }
 
     return {
-      found: true as const,
       draftWorkspace: workspace,
+      found: true as const,
     };
   });
 
@@ -2587,22 +2652,18 @@ const promoteWorkspace = ({
     }
 
     yield* writer.table("draftWorkspaces").patch(draftWorkspaceId, {
-      status: "promoted",
       lastTouchedAt: promotedAt,
       lastTouchedBy: promotedBy,
+      status: "promoted",
     });
 
     return {
-      outcome: "promoted" as const,
       draftWorkspaceId,
+      outcome: "promoted" as const,
     };
   });
 
-const toFhirReference = (
-  table: string,
-  id: string,
-  display?: string,
-) => ({
+const toFhirReference = (table: string, id: string, display?: string) => ({
   reference: `${table}/${id}`,
   ...(display ? { display } : {}),
 });
@@ -2610,8 +2671,8 @@ const toFhirReference = (
 const toCoverageType = (kind: string) => ({
   coding: [
     {
-      system: "urn:coverage-kind",
       code: kind,
+      system: "urn:coverage-kind",
     },
   ],
 });
@@ -2633,14 +2694,22 @@ const buildErpPayload = ({
 
     const order = orderOption.value;
     const patient = yield* reader.table("patients").get(order.patientId);
-    const practitioner = yield* reader.table("practitioners").get(order.practitionerId);
-    const organization = yield* reader.table("organizations").get(order.organizationId);
+    const practitioner = yield* reader
+      .table("practitioners")
+      .get(order.practitionerId);
+    const organization = yield* reader
+      .table("organizations")
+      .get(order.organizationId);
     const coverage = yield* reader.table("coverages").get(order.coverageId);
     const identifiers = yield* reader
       .table("patientIdentifiers")
       .index("by_patientId_and_isPrimary")
       .collect()
-      .pipe(Effect.map((rows) => rows.filter((row) => row.patientId === patient._id)));
+      .pipe(
+        Effect.map((rows) =>
+          rows.filter((row) => row.patientId === patient._id),
+        ),
+      );
 
     const medicationCatalogRef = order.medicationCatalogRefId
       ? yield* reader
@@ -2650,13 +2719,13 @@ const buildErpPayload = ({
       : Option.none();
 
     const patientResource = {
-      resourceType: "Patient" as const,
       id: String(patient._id),
+      identifier: identifiers.map((identifier) => identifier.identifier),
       meta: {
         profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Patient"],
       },
-      identifier: identifiers.map((identifier) => identifier.identifier),
       name: patient.names,
+      resourceType: "Patient" as const,
       ...(patient.birthDate ? { birthDate: patient.birthDate } : {}),
       ...(patient.administrativeGender?.code
         ? { gender: patient.administrativeGender.code }
@@ -2666,13 +2735,7 @@ const buildErpPayload = ({
     };
 
     const practitionerResource = {
-      resourceType: "Practitioner" as const,
       id: String(practitioner._id),
-      meta: {
-        profile: [
-          "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Practitioner",
-        ],
-      },
       identifier: practitioner.lanr
         ? [
             {
@@ -2681,34 +2744,41 @@ const buildErpPayload = ({
             },
           ]
         : [],
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Practitioner",
+        ],
+      },
       name: practitioner.names,
+      resourceType: "Practitioner" as const,
     };
 
     const organizationResource = {
-      resourceType: "Organization" as const,
+      address: organization.addresses,
       id: String(organization._id),
+      identifier: organization.identifiers,
       meta: {
         profile: [
           "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Organization",
         ],
       },
-      identifier: organization.identifiers,
       name: organization.name,
+      resourceType: "Organization" as const,
       telecom: organization.telecom,
-      address: organization.addresses,
     };
 
     const coverageResource = {
-      resourceType: "Coverage" as const,
+      beneficiary: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
       id: String(coverage._id),
       meta: {
         profile: [
           "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Coverage",
         ],
       },
-      status: "active",
-      type: toCoverageType(coverage.kind),
-      beneficiary: toFhirReference("Patient", String(patient._id), patient.displayName),
       payor: [
         toFhirReference(
           "Organization",
@@ -2716,31 +2786,36 @@ const buildErpPayload = ({
           coverage.kostentraegerName ?? organization.name,
         ),
       ],
+      resourceType: "Coverage" as const,
+      status: "active",
+      type: toCoverageType(coverage.kind),
     };
 
-    const medicationDisplay =
-      Option.isSome(medicationCatalogRef)
-        ? medicationCatalogRef.value.displayName
-        : order.freeTextMedication ?? "Medikation";
+    const medicationDisplay = Option.isSome(medicationCatalogRef)
+      ? medicationCatalogRef.value.displayName
+      : (order.freeTextMedication ?? "Medikation");
     const medicationResource = {
-      resourceType: "Medication" as const,
-      id: `medication-${String(medicationOrderId)}`,
-      meta: {
-        profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Medication"],
-      },
       code: {
         coding: [
           {
-            system: Option.isSome(medicationCatalogRef) ? "urn:pzn" : "urn:text",
-            code:
-              Option.isSome(medicationCatalogRef)
-                ? medicationCatalogRef.value.pzn
-                : order.freeTextMedication ?? medicationDisplay,
+            code: Option.isSome(medicationCatalogRef)
+              ? medicationCatalogRef.value.pzn
+              : (order.freeTextMedication ?? medicationDisplay),
             display: medicationDisplay,
+            system: Option.isSome(medicationCatalogRef)
+              ? "urn:pzn"
+              : "urn:text",
           },
         ],
         text: medicationDisplay,
       },
+      id: `medication-${String(medicationOrderId)}`,
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Medication",
+        ],
+      },
+      resourceType: "Medication" as const,
       ...(Option.isSome(medicationCatalogRef) &&
       medicationCatalogRef.value.packageSizeValue !== undefined
         ? {
@@ -2755,28 +2830,7 @@ const buildErpPayload = ({
     };
 
     const medicationRequestResource = {
-      resourceType: "MedicationRequest" as const,
-      id: `medication-request-${String(medicationOrderId)}`,
-      meta: {
-        profile: [
-          "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Medication_Request",
-        ],
-      },
-      status: order.status === "cancelled" ? "cancelled" : "active",
-      intent: "order",
-      subject: toFhirReference("Patient", String(patient._id), patient.displayName),
       authoredOn: order.authoredOn,
-      requester: toFhirReference(
-        "Practitioner",
-        String(practitioner._id),
-        practitioner.displayName,
-      ),
-      insurance: [toFhirReference("Coverage", String(coverage._id))],
-      medicationReference: toFhirReference(
-        "Medication",
-        `medication-${String(medicationOrderId)}`,
-        medicationDisplay,
-      ),
       dosageInstruction: order.dosageText
         ? [
             {
@@ -2784,40 +2838,68 @@ const buildErpPayload = ({
             },
           ]
         : [],
+      id: `medication-request-${String(medicationOrderId)}`,
+      insurance: [toFhirReference("Coverage", String(coverage._id))],
+      intent: "order",
+      medicationReference: toFhirReference(
+        "Medication",
+        `medication-${String(medicationOrderId)}`,
+        medicationDisplay,
+      ),
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Medication_Request",
+        ],
+      },
+      requester: toFhirReference(
+        "Practitioner",
+        String(practitioner._id),
+        practitioner.displayName,
+      ),
+      resourceType: "MedicationRequest" as const,
+      status: order.status === "cancelled" ? "cancelled" : "active",
+      subject: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
     };
 
     const composition = {
-      resourceType: "Composition" as const,
+      author: [
+        toFhirReference(
+          "Practitioner",
+          String(practitioner._id),
+          practitioner.displayName,
+        ),
+      ],
+      date: order.authoredOn,
       id: `composition-${String(medicationOrderId)}`,
       meta: {
-        profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Composition"],
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Composition",
+        ],
       },
+      resourceType: "Composition" as const,
       status: "final",
+      subject: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
+      title: "eRezept",
       type: {
         coding: [
           {
-            system: "http://loinc.org",
             code: "60590-7",
             display: "Medication prescription",
+            system: "http://loinc.org",
           },
         ],
       },
-      date: order.authoredOn,
-      title: "eRezept",
-      subject: toFhirReference("Patient", String(patient._id), patient.displayName),
-      author: [
-        toFhirReference("Practitioner", String(practitioner._id), practitioner.displayName),
-      ],
     };
 
     const bundle = {
-      resourceType: "Bundle" as const,
-      type: "document" as const,
-      identifier: {
-        system: "urn:ietf:rfc:3986",
-        value: `urn:uuid:${String(medicationOrderId)}`,
-      },
-      timestamp: order.authoredOn,
       entry: [
         {
           fullUrl: `urn:uuid:${composition.id}`,
@@ -2848,30 +2930,30 @@ const buildErpPayload = ({
           resource: medicationRequestResource,
         },
       ],
+      identifier: {
+        system: "urn:ietf:rfc:3986",
+        value: `urn:uuid:${String(medicationOrderId)}`,
+      },
+      resourceType: "Bundle" as const,
+      timestamp: order.authoredOn,
+      type: "document" as const,
     };
 
     const payload = {
-      profileVersion: profileVersion ?? "1.4.1",
+      bundle,
       composition,
-      patient: patientResource,
-      practitioner: practitionerResource,
-      organization: organizationResource,
       coverage: coverageResource,
       medication: medicationResource,
       medicationRequest: medicationRequestResource,
-      bundle,
+      organization: organizationResource,
+      patient: patientResource,
+      practitioner: practitionerResource,
+      profileVersion: profileVersion ?? "1.4.1",
     };
 
     return {
       found: true as const,
       payload,
-      xml: {
-        family: "ERP" as const,
-        encoding: "UTF-8" as const,
-        contentType: "application/fhir+xml" as const,
-        boundaryKind: "emit-only" as const,
-        xml: renderErpBundleXml(payload),
-      },
       validationPlan:
         buildOraclePlan({
           family: "eRezept",
@@ -2880,6 +2962,13 @@ const buildErpPayload = ({
             : {}),
           profileVersion: profileVersion ?? "1.4.1",
         }) ?? undefined,
+      xml: {
+        boundaryKind: "emit-only" as const,
+        contentType: "application/fhir+xml" as const,
+        encoding: "UTF-8" as const,
+        family: "ERP" as const,
+        xml: renderErpBundleXml(payload),
+      },
     };
   });
 
@@ -2900,14 +2989,22 @@ const buildEvdgaPayload = ({
 
     const order = orderOption.value;
     const patient = yield* reader.table("patients").get(order.patientId);
-    const practitioner = yield* reader.table("practitioners").get(order.practitionerId);
-    const organization = yield* reader.table("organizations").get(order.organizationId);
+    const practitioner = yield* reader
+      .table("practitioners")
+      .get(order.practitionerId);
+    const organization = yield* reader
+      .table("organizations")
+      .get(order.organizationId);
     const coverage = yield* reader.table("coverages").get(order.coverageId);
     const identifiers = yield* reader
       .table("patientIdentifiers")
       .index("by_patientId_and_isPrimary")
       .collect()
-      .pipe(Effect.map((rows) => rows.filter((row) => row.patientId === patient._id)));
+      .pipe(
+        Effect.map((rows) =>
+          rows.filter((row) => row.patientId === patient._id),
+        ),
+      );
     const catalogRefOption = yield* reader
       .table("digaCatalogRefs")
       .get(order.digaCatalogRefId)
@@ -2920,13 +3017,13 @@ const buildEvdgaPayload = ({
     const catalogRef = catalogRefOption.value;
 
     const patientResource = {
-      resourceType: "Patient" as const,
       id: String(patient._id),
+      identifier: identifiers.map((identifier) => identifier.identifier),
       meta: {
         profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Patient"],
       },
-      identifier: identifiers.map((identifier) => identifier.identifier),
       name: patient.names,
+      resourceType: "Patient" as const,
       ...(patient.birthDate ? { birthDate: patient.birthDate } : {}),
       ...(patient.administrativeGender?.code
         ? { gender: patient.administrativeGender.code }
@@ -2936,44 +3033,45 @@ const buildEvdgaPayload = ({
     };
 
     const practitionerResource = {
-      resourceType: "Practitioner" as const,
       id: String(practitioner._id),
+      identifier: practitioner.lanr
+        ? [{ system: "urn:kbv:lanr", value: practitioner.lanr }]
+        : [],
       meta: {
         profile: [
           "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Practitioner",
         ],
       },
-      identifier: practitioner.lanr
-        ? [{ system: "urn:kbv:lanr", value: practitioner.lanr }]
-        : [],
       name: practitioner.names,
+      resourceType: "Practitioner" as const,
     };
 
     const organizationResource = {
-      resourceType: "Organization" as const,
+      address: organization.addresses,
       id: String(organization._id),
+      identifier: organization.identifiers,
       meta: {
         profile: [
           "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Organization",
         ],
       },
-      identifier: organization.identifiers,
       name: organization.name,
+      resourceType: "Organization" as const,
       telecom: organization.telecom,
-      address: organization.addresses,
     };
 
     const coverageResource = {
-      resourceType: "Coverage" as const,
+      beneficiary: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
       id: String(coverage._id),
       meta: {
         profile: [
           "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Coverage",
         ],
       },
-      status: "active",
-      type: toCoverageType(coverage.kind),
-      beneficiary: toFhirReference("Patient", String(patient._id), patient.displayName),
       payor: [
         toFhirReference(
           "Organization",
@@ -2981,57 +3079,54 @@ const buildEvdgaPayload = ({
           coverage.kostentraegerName ?? organization.name,
         ),
       ],
+      resourceType: "Coverage" as const,
+      status: "active",
+      type: toCoverageType(coverage.kind),
     };
 
     const composition = {
-      resourceType: "Composition" as const,
+      author: [
+        toFhirReference(
+          "Practitioner",
+          String(practitioner._id),
+          practitioner.displayName,
+        ),
+      ],
+      date: order.authoredOn,
       id: `composition-${String(digaOrderId)}`,
       meta: {
-        profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_EVDGA_Composition"],
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_EVDGA_Composition",
+        ],
       },
+      resourceType: "Composition" as const,
       status: "final",
+      subject: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
+      title: "eVDGA",
       type: {
         coding: [
           {
-            system: "urn:kbv:document-kind",
             code: "evdga",
             display: "eVDGA",
+            system: "urn:kbv:document-kind",
           },
         ],
         text: "eVDGA",
       },
-      date: order.authoredOn,
-      title: "eVDGA",
-      subject: toFhirReference("Patient", String(patient._id), patient.displayName),
-      author: [
-        toFhirReference("Practitioner", String(practitioner._id), practitioner.displayName),
-      ],
     };
 
     const deviceRequest = {
-      resourceType: "DeviceRequest" as const,
-      id: `device-request-${String(digaOrderId)}`,
-      meta: {
-        profile: [
-          "https://fhir.kbv.de/StructureDefinition/KBV_PR_EVDGA_DeviceRequest",
-        ],
-      },
-      status: order.status === "cancelled" ? "revoked" : "active",
-      intent: "order",
-      subject: toFhirReference("Patient", String(patient._id), patient.displayName),
       authoredOn: order.authoredOn,
-      requester: toFhirReference(
-        "Practitioner",
-        String(practitioner._id),
-        practitioner.displayName,
-      ),
-      insurance: [toFhirReference("Coverage", String(coverage._id))],
       codeCodeableConcept: {
         coding: [
           {
-            system: "http://fhir.de/CodeSystem/ifa/pzn",
             code: catalogRef.pzn,
             display: catalogRef.verordnungseinheitName,
+            system: "http://fhir.de/CodeSystem/ifa/pzn",
           },
         ],
         text:
@@ -3039,25 +3134,31 @@ const buildEvdgaPayload = ({
           catalogRef.digaName ??
           catalogRef.verordnungseinheitName,
       },
+      id: `device-request-${String(digaOrderId)}`,
+      insurance: [toFhirReference("Coverage", String(coverage._id))],
+      intent: "order",
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_EVDGA_DeviceRequest",
+        ],
+      },
       reasonCode: catalogRef.indikationen,
+      requester: toFhirReference(
+        "Practitioner",
+        String(practitioner._id),
+        practitioner.displayName,
+      ),
+      resourceType: "DeviceRequest" as const,
+      status: order.status === "cancelled" ? "revoked" : "active",
+      subject: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
     };
 
     const payload = {
-      profileVersion: profileVersion ?? "1.2.2",
-      composition,
-      patient: patientResource,
-      practitioner: practitionerResource,
-      organization: organizationResource,
-      coverage: coverageResource,
-      deviceRequest,
       bundle: {
-        resourceType: "Bundle" as const,
-        type: "document" as const,
-        identifier: {
-          system: "urn:ietf:rfc:3986",
-          value: `urn:uuid:${String(digaOrderId)}`,
-        },
-        timestamp: order.authoredOn,
         entry: [
           {
             fullUrl: `urn:uuid:${composition.id}`,
@@ -3084,19 +3185,26 @@ const buildEvdgaPayload = ({
             resource: deviceRequest,
           },
         ],
+        identifier: {
+          system: "urn:ietf:rfc:3986",
+          value: `urn:uuid:${String(digaOrderId)}`,
+        },
+        resourceType: "Bundle" as const,
+        timestamp: order.authoredOn,
+        type: "document" as const,
       },
+      composition,
+      coverage: coverageResource,
+      deviceRequest,
+      organization: organizationResource,
+      patient: patientResource,
+      practitioner: practitionerResource,
+      profileVersion: profileVersion ?? "1.2.2",
     };
 
     return {
       found: true as const,
       payload,
-      xml: {
-        family: "EVDGA" as const,
-        encoding: "UTF-8" as const,
-        contentType: "application/fhir+xml" as const,
-        boundaryKind: "emit-only" as const,
-        xml: renderEvdgaBundleXml(payload),
-      },
       validationPlan:
         buildOraclePlan({
           family: "eVDGA",
@@ -3105,18 +3213,25 @@ const buildEvdgaPayload = ({
             : {}),
           profileVersion: profileVersion ?? "1.2.2",
         }) ?? undefined,
+      xml: {
+        boundaryKind: "emit-only" as const,
+        contentType: "application/fhir+xml" as const,
+        encoding: "UTF-8" as const,
+        family: "EVDGA" as const,
+        xml: renderEvdgaBundleXml(payload),
+      },
     };
   });
 
 const buildEauPayload = ({
+  attesterPractitionerId,
+  coverageId,
+  diagnosisIds,
   documentId,
   encounterId,
-  diagnosisIds,
-  attesterPractitionerId,
-  signerPractitionerId,
   organizationId,
-  coverageId,
   profileVersion,
+  signerPractitionerId,
 }: typeof RenderEauDocumentArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -3130,20 +3245,28 @@ const buildEauPayload = ({
 
     const encounter = yield* reader.table("encounters").get(encounterId);
     const patient = yield* reader.table("patients").get(encounter.patientId);
-    const attester = yield* reader.table("practitioners").get(attesterPractitionerId);
+    const attester = yield* reader
+      .table("practitioners")
+      .get(attesterPractitionerId);
     const signer = signerPractitionerId
       ? yield* reader
           .table("practitioners")
           .get(signerPractitionerId)
           .pipe(Effect.option)
       : Option.none();
-    const organization = yield* reader.table("organizations").get(organizationId);
+    const organization = yield* reader
+      .table("organizations")
+      .get(organizationId);
     const coverage = yield* reader.table("coverages").get(coverageId);
     const identifiers = yield* reader
       .table("patientIdentifiers")
       .index("by_patientId_and_isPrimary")
       .collect()
-      .pipe(Effect.map((rows) => rows.filter((row) => row.patientId === patient._id)));
+      .pipe(
+        Effect.map((rows) =>
+          rows.filter((row) => row.patientId === patient._id),
+        ),
+      );
     const diagnoses = yield* reader
       .table("diagnoses")
       .index("by_patientId_and_recordStatus")
@@ -3160,13 +3283,13 @@ const buildEauPayload = ({
       );
 
     const patientResource = {
-      resourceType: "Patient" as const,
       id: String(patient._id),
+      identifier: identifiers.map((identifier) => identifier.identifier),
       meta: {
         profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Patient"],
       },
-      identifier: identifiers.map((identifier) => identifier.identifier),
       name: patient.names,
+      resourceType: "Patient" as const,
       ...(patient.birthDate ? { birthDate: patient.birthDate } : {}),
       ...(patient.administrativeGender?.code
         ? { gender: patient.administrativeGender.code }
@@ -3176,13 +3299,7 @@ const buildEauPayload = ({
     };
 
     const practitionerResource = {
-      resourceType: "Practitioner" as const,
       id: String(attester._id),
-      meta: {
-        profile: [
-          "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Practitioner",
-        ],
-      },
       identifier: attester.lanr
         ? [
             {
@@ -3191,34 +3308,41 @@ const buildEauPayload = ({
             },
           ]
         : [],
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Practitioner",
+        ],
+      },
       name: attester.names,
+      resourceType: "Practitioner" as const,
     };
 
     const organizationResource = {
-      resourceType: "Organization" as const,
+      address: organization.addresses,
       id: String(organization._id),
+      identifier: organization.identifiers,
       meta: {
         profile: [
           "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Organization",
         ],
       },
-      identifier: organization.identifiers,
       name: organization.name,
+      resourceType: "Organization" as const,
       telecom: organization.telecom,
-      address: organization.addresses,
     };
 
     const coverageResource = {
-      resourceType: "Coverage" as const,
+      beneficiary: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
       id: String(coverage._id),
       meta: {
         profile: [
           "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Coverage",
         ],
       },
-      status: "active",
-      type: toCoverageType(coverage.kind),
-      beneficiary: toFhirReference("Patient", String(patient._id), patient.displayName),
       payor: [
         toFhirReference(
           "Organization",
@@ -3226,64 +3350,65 @@ const buildEauPayload = ({
           coverage.kostentraegerName ?? organization.name,
         ),
       ],
+      resourceType: "Coverage" as const,
+      status: "active",
+      type: toCoverageType(coverage.kind),
     };
 
     const encounterResource = {
-      resourceType: "Encounter" as const,
+      class: {
+        code: "AMB",
+        system: "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+      },
       id: String(encounter._id),
       meta: {
-        profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_AU_Encounter"],
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_AU_Encounter",
+        ],
       },
-      status: encounter.end ? "finished" : "in-progress",
-      class: {
-        system: "http://terminology.hl7.org/CodeSystem/v3-ActCode",
-        code: "AMB",
-      },
-      subject: toFhirReference("Patient", String(patient._id), patient.displayName),
       period: {
         start: encounter.start,
         ...(encounter.end ? { end: encounter.end } : {}),
       },
+      resourceType: "Encounter" as const,
+      status: encounter.end ? "finished" : "in-progress",
+      subject: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
     };
 
     const conditionResources = diagnoses.map((diagnosis) => ({
-      resourceType: "Condition" as const,
-      id: `condition-${String(diagnosis._id)}`,
-      meta: {
-        profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_AU_Condition"],
-      },
       code: {
         coding: [diagnosis.icd10gm],
         ...(diagnosis.diagnoseklartext
           ? { text: diagnosis.diagnoseklartext }
           : {}),
       },
-      subject: toFhirReference("Patient", String(patient._id), patient.displayName),
       encounter: toFhirReference("Encounter", String(encounter._id)),
+      id: `condition-${String(diagnosis._id)}`,
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_AU_Condition",
+        ],
+      },
       recordedDate: encounter.start,
+      resourceType: "Condition" as const,
+      subject: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
     }));
 
     const composition = {
-      resourceType: "Composition" as const,
-      id: `composition-${String(documentId)}`,
-      meta: {
-        profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_EAU_Composition"],
-      },
-      status: "final",
-      type: {
-        coding: [
-          {
-            system: "http://loinc.org",
-            code: "11488-4",
-            display: "Consult note",
-          },
-        ],
-      },
-      date: encounter.start,
-      title: "eAU",
-      subject: toFhirReference("Patient", String(patient._id), patient.displayName),
       author: [
-        toFhirReference("Practitioner", String(attester._id), attester.displayName),
+        toFhirReference(
+          "Practitioner",
+          String(attester._id),
+          attester.displayName,
+        ),
         ...(Option.isSome(signer)
           ? [
               toFhirReference(
@@ -3294,16 +3419,33 @@ const buildEauPayload = ({
             ]
           : []),
       ],
+      date: encounter.start,
+      id: `composition-${String(documentId)}`,
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_EAU_Composition",
+        ],
+      },
+      resourceType: "Composition" as const,
+      status: "final",
+      subject: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
+      title: "eAU",
+      type: {
+        coding: [
+          {
+            code: "11488-4",
+            display: "Consult note",
+            system: "http://loinc.org",
+          },
+        ],
+      },
     };
 
     const bundle = {
-      resourceType: "Bundle" as const,
-      type: "document" as const,
-      identifier: {
-        system: "urn:ietf:rfc:3986",
-        value: `urn:uuid:${String(documentId)}`,
-      },
-      timestamp: encounter.start,
       entry: [
         {
           fullUrl: `urn:uuid:${composition.id}`,
@@ -3334,36 +3476,43 @@ const buildEauPayload = ({
           resource: condition,
         })),
       ],
+      identifier: {
+        system: "urn:ietf:rfc:3986",
+        value: `urn:uuid:${String(documentId)}`,
+      },
+      resourceType: "Bundle" as const,
+      timestamp: encounter.start,
+      type: "document" as const,
     };
 
     const payload = {
-      profileVersion: profileVersion ?? "1.2.1",
+      bundle,
       composition,
-      patient: patientResource,
-      practitioner: practitionerResource,
-      organization: organizationResource,
+      conditions: conditionResources,
       coverage: coverageResource,
       encounter: encounterResource,
-      conditions: conditionResources,
-      bundle,
+      organization: organizationResource,
+      patient: patientResource,
+      practitioner: practitionerResource,
+      profileVersion: profileVersion ?? "1.2.1",
     };
 
     return {
       found: true as const,
       payload,
-      xml: {
-        family: "EAU" as const,
-        encoding: "UTF-8" as const,
-        contentType: "application/fhir+xml" as const,
-        boundaryKind: "emit-only" as const,
-        xml: renderEauBundleXml(payload),
-      },
       validationPlan:
         buildOraclePlan({
-          family: "eAU",
           documentId: String(documentId),
+          family: "eAU",
           profileVersion: profileVersion ?? "1.2.1",
         }) ?? undefined,
+      xml: {
+        boundaryKind: "emit-only" as const,
+        contentType: "application/fhir+xml" as const,
+        encoding: "UTF-8" as const,
+        family: "EAU" as const,
+        xml: renderEauBundleXml(payload),
+      },
     };
   });
 
@@ -3371,53 +3520,53 @@ const renderErpBundle = buildErpPayload;
 const renderEvdgaBundle = buildEvdgaPayload;
 
 const createEauDocument = ({
-    patientId,
-    encounterId,
-    diagnosisIds,
-    attesterPractitionerId,
-    signerPractitionerId,
-    organizationId,
-    coverageId,
-    finalizedAt,
-    profileVersion,
-    artifact,
-    patientView,
-    employerView,
-    insurerView,
-  }: typeof CreateEauDocumentArgs.Type) =>
+  artifact,
+  attesterPractitionerId,
+  coverageId,
+  diagnosisIds,
+  employerView,
+  encounterId,
+  finalizedAt,
+  insurerView,
+  organizationId,
+  patientId,
+  patientView,
+  profileVersion,
+  signerPractitionerId,
+}: typeof CreateEauDocumentArgs.Type) =>
   Effect.gen(function* () {
     const issued = yield* issueDocumentRevision({
-      patientId,
+      artifact,
+      artifactFamily: "EAU",
+      artifactSubtype: "kbv-bundle-xml",
+      authorOrganizationId: organizationId,
+      authorPractitionerId: signerPractitionerId ?? attesterPractitionerId,
+      contentType: artifact.attachment.contentType,
+      effectiveDate: finalizedAt,
       kind: "eau",
       originInterface: "EAU",
+      patientId,
       status: "final",
-      effectiveDate: finalizedAt,
-      authorPractitionerId: signerPractitionerId ?? attesterPractitionerId,
-      authorOrganizationId: organizationId,
       summary: {
         title: "eAU",
         ...(artifact.externalIdentifier
           ? { externalIdentifier: artifact.externalIdentifier }
           : {}),
       },
-      artifact,
-      artifactFamily: "EAU",
-      artifactSubtype: "kbv-bundle-xml",
       transportKind: "fhir-bundle-xml",
-      contentType: artifact.attachment.contentType,
       ...(profileVersion ? { profileVersion } : {}),
     });
 
     const patientViewArtifactId = patientView
       ? yield* createArtifact({
-          ownerKind: "documentRevision",
-          ownerId: String(issued.revisionId),
-          direction: "outbound",
           artifactFamily: "EAU",
           artifactSubtype: "patient-view",
-          transportKind: "pdfa",
-          contentType: patientView.attachment.contentType,
           attachment: patientView.attachment,
+          contentType: patientView.attachment.contentType,
+          direction: "outbound",
+          ownerId: String(issued.revisionId),
+          ownerKind: "documentRevision",
+          transportKind: "pdfa",
           ...(patientView.externalIdentifier
             ? { externalIdentifier: patientView.externalIdentifier }
             : {}),
@@ -3427,14 +3576,14 @@ const createEauDocument = ({
 
     const employerViewArtifactId = employerView
       ? yield* createArtifact({
-          ownerKind: "documentRevision",
-          ownerId: String(issued.revisionId),
-          direction: "outbound",
           artifactFamily: "EAU",
           artifactSubtype: "employer-view",
-          transportKind: "pdfa",
-          contentType: employerView.attachment.contentType,
           attachment: employerView.attachment,
+          contentType: employerView.attachment.contentType,
+          direction: "outbound",
+          ownerId: String(issued.revisionId),
+          ownerKind: "documentRevision",
+          transportKind: "pdfa",
           ...(employerView.externalIdentifier
             ? { externalIdentifier: employerView.externalIdentifier }
             : {}),
@@ -3444,14 +3593,14 @@ const createEauDocument = ({
 
     const insurerViewArtifactId = insurerView
       ? yield* createArtifact({
-          ownerKind: "documentRevision",
-          ownerId: String(issued.revisionId),
-          direction: "outbound",
           artifactFamily: "EAU",
           artifactSubtype: "insurer-view",
-          transportKind: "pdfa",
-          contentType: insurerView.attachment.contentType,
           attachment: insurerView.attachment,
+          contentType: insurerView.attachment.contentType,
+          direction: "outbound",
+          ownerId: String(issued.revisionId),
+          ownerKind: "documentRevision",
+          transportKind: "pdfa",
           ...(insurerView.externalIdentifier
             ? { externalIdentifier: insurerView.externalIdentifier }
             : {}),
@@ -3460,13 +3609,13 @@ const createEauDocument = ({
       : undefined;
 
     const renderResult = yield* buildEauPayload({
+      attesterPractitionerId,
+      diagnosisIds,
       documentId: issued.documentId,
       encounterId,
-      diagnosisIds,
-      attesterPractitionerId,
       ...(signerPractitionerId ? { signerPractitionerId } : {}),
-      organizationId,
       coverageId,
+      organizationId,
       ...(profileVersion ? { profileVersion } : {}),
     });
 
@@ -3482,9 +3631,9 @@ const createEauDocument = ({
     });
 
     return {
+      artifactId: issued.artifactId,
       documentId: issued.documentId,
       revisionId: issued.revisionId,
-      artifactId: issued.artifactId,
       ...(patientViewArtifactId ? { patientViewArtifactId } : {}),
       ...(employerViewArtifactId ? { employerViewArtifactId } : {}),
       ...(insurerViewArtifactId ? { insurerViewArtifactId } : {}),
@@ -3501,11 +3650,11 @@ const listOraclePlugins = ({ family }: typeof ListOraclePluginsArgs.Type) =>
   );
 
 const buildValidationPlan = ({
-    family,
-    artifactId,
-    documentId,
-    profileVersion,
-  }: typeof BuildValidationPlanArgs.Type) =>
+  artifactId,
+  documentId,
+  family,
+  profileVersion,
+}: typeof BuildValidationPlanArgs.Type) =>
   Effect.succeed(
     (() => {
       const plan = buildOraclePlan({
@@ -3521,10 +3670,15 @@ const buildValidationPlan = ({
     })(),
   );
 
-const getValidationSummary = ({ artifactId }: typeof ValidationSummaryArgs.Type) =>
+const getValidationSummary = ({
+  artifactId,
+}: typeof ValidationSummaryArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
-    const artifact = yield* reader.table("artifacts").get(artifactId).pipe(Effect.option);
+    const artifact = yield* reader
+      .table("artifacts")
+      .get(artifactId)
+      .pipe(Effect.option);
     if (Option.isNone(artifact)) {
       return { found: false as const };
     }
@@ -3540,12 +3694,12 @@ const getValidationSummary = ({ artifactId }: typeof ValidationSummaryArgs.Type)
 
 const runValidation = ({
   artifactId,
-  family,
   documentId,
-  profileVersion,
   executionMode,
-  payloadPreviewXml,
+  family,
   payloadPreview,
+  payloadPreviewXml,
+  profileVersion,
 }: typeof RunValidationArgs.Type) =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
@@ -3560,15 +3714,16 @@ const runValidation = ({
     }
 
     const artifact = artifactOption.value;
-    const resolvedFamily = family ?? resolveOracleFamily(artifact.artifactFamily);
+    const resolvedFamily =
+      family ?? resolveOracleFamily(artifact.artifactFamily);
     if (!resolvedFamily) {
       return { outcome: "no-oracle-plan" as const };
     }
 
     const executed = yield* Effect.promise(() =>
       buildAndExecuteOraclePlan({
-        family: resolvedFamily,
         artifactId: String(artifactId),
+        family: resolvedFamily,
         ...(documentId ? { documentId: String(documentId) } : {}),
         ...(profileVersion ? { profileVersion } : {}),
         executionMode: executionMode ?? "local",
@@ -3597,22 +3752,22 @@ const runValidation = ({
 
 const patientsGroup = GroupImpl.make(api, "patients").pipe(
   Layer.provide([
-      FunctionImpl.make(api, "patients", "createManual", createManual),
-      FunctionImpl.make(api, "patients", "getChart", getChart),
+    FunctionImpl.make(api, "patients", "createManual", createManual),
+    FunctionImpl.make(api, "patients", "getChart", getChart),
   ]),
 );
 
 const coveragesGroup = GroupImpl.make(api, "coverages").pipe(
   Layer.provide([
-      FunctionImpl.make(api, "coverages", "listByPatient", listByPatient),
+    FunctionImpl.make(api, "coverages", "listByPatient", listByPatient),
   ]),
 );
 
 const vsdGroup = GroupImpl.make(api, "vsd").pipe(
   Layer.provide([
-      FunctionImpl.make(api, "vsd", "recordSnapshot", recordSnapshot),
-      FunctionImpl.make(api, "vsd", "getSnapshot", getSnapshot),
-      FunctionImpl.make(api, "vsd", "adoptSnapshot", adoptSnapshot),
+    FunctionImpl.make(api, "vsd", "recordSnapshot", recordSnapshot),
+    FunctionImpl.make(api, "vsd", "getSnapshot", getSnapshot),
+    FunctionImpl.make(api, "vsd", "adoptSnapshot", adoptSnapshot),
   ]),
 );
 
@@ -3651,12 +3806,7 @@ const billingGroup = GroupImpl.make(api, "billing").pipe(
   Layer.provide([
     FunctionImpl.make(api, "billing", "createCase", createCase),
     FunctionImpl.make(api, "billing", "addLineItem", addLineItem),
-    FunctionImpl.make(
-      api,
-      "billing",
-      "prepareKvdtExport",
-      prepareKvdtExport,
-    ),
+    FunctionImpl.make(api, "billing", "prepareKvdtExport", prepareKvdtExport),
     FunctionImpl.make(api, "billing", "getCase", getCase),
     FunctionImpl.make(api, "billing", "listCases", listCases),
     FunctionImpl.make(api, "billing", "getKvdtCaseView", getKvdtCaseView),
@@ -3740,7 +3890,12 @@ const digaGroup = GroupImpl.make(api, "diga").pipe(
   Layer.provide([
     FunctionImpl.make(api, "diga", "createOrder", createDigaOrder),
     FunctionImpl.make(api, "diga", "getOrder", getDigaOrder),
-    FunctionImpl.make(api, "diga", "listOrdersByPatient", listDigaOrdersByPatient),
+    FunctionImpl.make(
+      api,
+      "diga",
+      "listOrdersByPatient",
+      listDigaOrdersByPatient,
+    ),
     FunctionImpl.make(api, "diga", "finalizeOrder", finalizeDigaOrder),
     FunctionImpl.make(api, "diga", "renderEvdgaBundle", renderEvdgaBundle),
   ]),
@@ -3748,7 +3903,12 @@ const digaGroup = GroupImpl.make(api, "diga").pipe(
 
 const prescriptionsGroup = GroupImpl.make(api, "prescriptions").pipe(
   Layer.provide([
-    FunctionImpl.make(api, "prescriptions", "createOrder", createMedicationOrder),
+    FunctionImpl.make(
+      api,
+      "prescriptions",
+      "createOrder",
+      createMedicationOrder,
+    ),
     FunctionImpl.make(api, "prescriptions", "getOrder", getMedicationOrder),
     FunctionImpl.make(
       api,
@@ -3756,7 +3916,12 @@ const prescriptionsGroup = GroupImpl.make(api, "prescriptions").pipe(
       "listOrdersByPatient",
       listMedicationOrdersByPatient,
     ),
-    FunctionImpl.make(api, "prescriptions", "finalizeOrder", finalizeMedicationOrder),
+    FunctionImpl.make(
+      api,
+      "prescriptions",
+      "finalizeOrder",
+      finalizeMedicationOrder,
+    ),
     FunctionImpl.make(api, "prescriptions", "renderErpBundle", renderErpBundle),
     FunctionImpl.make(
       api,
@@ -3764,14 +3929,24 @@ const prescriptionsGroup = GroupImpl.make(api, "prescriptions").pipe(
       "createMedicationPlan",
       createMedicationPlan,
     ),
-    FunctionImpl.make(api, "prescriptions", "addPlanEntry", addMedicationPlanEntry),
+    FunctionImpl.make(
+      api,
+      "prescriptions",
+      "addPlanEntry",
+      addMedicationPlanEntry,
+    ),
     FunctionImpl.make(api, "prescriptions", "getCurrentPlan", getCurrentPlan),
   ]),
 );
 
 const heilmittelGroup = GroupImpl.make(api, "heilmittel").pipe(
   Layer.provide([
-    FunctionImpl.make(api, "heilmittel", "createApproval", createHeilmittelApproval),
+    FunctionImpl.make(
+      api,
+      "heilmittel",
+      "createApproval",
+      createHeilmittelApproval,
+    ),
     FunctionImpl.make(api, "heilmittel", "createOrder", createHeilmittelOrder),
     FunctionImpl.make(api, "heilmittel", "getOrder", getHeilmittelOrder),
     FunctionImpl.make(
@@ -3780,7 +3955,12 @@ const heilmittelGroup = GroupImpl.make(api, "heilmittel").pipe(
       "listOrdersByPatient",
       listHeilmittelOrdersByPatient,
     ),
-    FunctionImpl.make(api, "heilmittel", "finalizeOrder", finalizeHeilmittelOrder),
+    FunctionImpl.make(
+      api,
+      "heilmittel",
+      "finalizeOrder",
+      finalizeHeilmittelOrder,
+    ),
   ]),
 );
 
@@ -3792,7 +3972,12 @@ const documentsGroup = GroupImpl.make(api, "documents").pipe(
       "registerFormDefinition",
       registerFormDefinition,
     ),
-    FunctionImpl.make(api, "documents", "listFormDefinitions", listFormDefinitions),
+    FunctionImpl.make(
+      api,
+      "documents",
+      "listFormDefinitions",
+      listFormDefinitions,
+    ),
     FunctionImpl.make(api, "documents", "createEauDocument", createEauDocument),
     FunctionImpl.make(api, "documents", "renderEauDocument", renderEauDocument),
     FunctionImpl.make(
@@ -3802,7 +3987,12 @@ const documentsGroup = GroupImpl.make(api, "documents").pipe(
       listFormInstancesByPatient,
     ),
     FunctionImpl.make(api, "documents", "getDocument", getDocument),
-    FunctionImpl.make(api, "documents", "listByPatient", listDocumentsByPatient),
+    FunctionImpl.make(
+      api,
+      "documents",
+      "listByPatient",
+      listDocumentsByPatient,
+    ),
   ]),
 );
 
@@ -3816,9 +4006,24 @@ const draftsGroup = GroupImpl.make(api, "drafts").pipe(
 
 const integrationGroup = GroupImpl.make(api, "integration").pipe(
   Layer.provide([
-    FunctionImpl.make(api, "integration", "listOraclePlugins", listOraclePlugins),
-    FunctionImpl.make(api, "integration", "buildValidationPlan", buildValidationPlan),
-    FunctionImpl.make(api, "integration", "getValidationSummary", getValidationSummary),
+    FunctionImpl.make(
+      api,
+      "integration",
+      "listOraclePlugins",
+      listOraclePlugins,
+    ),
+    FunctionImpl.make(
+      api,
+      "integration",
+      "buildValidationPlan",
+      buildValidationPlan,
+    ),
+    FunctionImpl.make(
+      api,
+      "integration",
+      "getValidationSummary",
+      getValidationSummary,
+    ),
     FunctionImpl.make(api, "integration", "runValidation", runValidation),
   ]),
 );

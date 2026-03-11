@@ -11,25 +11,25 @@ import {
 } from "./common";
 
 export const EvdgaBundleResource = Schema.Struct({
-  resourceType: Schema.Literal("Bundle"),
-  type: Schema.Literal("document"),
+  entry: Schema.Array(FhirBundleEntry),
   identifier: Schema.optional(
     Schema.Struct({
       system: Schema.String,
       value: Schema.String,
     }),
   ),
+  resourceType: Schema.Literal("Bundle"),
   timestamp: Schema.String,
-  entry: Schema.Array(FhirBundleEntry),
+  type: Schema.Literal("document"),
 });
 
 export const EvdgaPayload = Schema.Struct({
-  profileVersion: Schema.String,
+  bundle: EvdgaBundleResource,
   composition: FhirCompositionResource,
-  patient: FhirPatientResource,
-  practitioner: FhirPractitionerResource,
-  organization: FhirOrganizationResource,
   coverage: FhirCoverageResource,
   deviceRequest: FhirDeviceRequestResource,
-  bundle: EvdgaBundleResource,
+  organization: FhirOrganizationResource,
+  patient: FhirPatientResource,
+  practitioner: FhirPractitionerResource,
+  profileVersion: Schema.String,
 });

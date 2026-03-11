@@ -2,6 +2,12 @@ import { GenericId } from "@confect/core";
 import { Schema } from "effect";
 
 import {
+  CoveragesFields,
+  PatientIdentifiersFields,
+  PatientsFields,
+  VsdSnapshotsFields,
+} from "../../confect/tables/core";
+import {
   AddressValue,
   CodingValue,
   ContactPointValue,
@@ -10,12 +16,6 @@ import {
   IsoDate,
   IsoDateTime,
 } from "../../confect/tables/primitives";
-import {
-  CoveragesFields,
-  PatientIdentifiersFields,
-  PatientsFields,
-  VsdSnapshotsFields,
-} from "../../confect/tables/core";
 import { withSystemFields } from "./shared";
 
 export const PatientDocument = withSystemFields("patients", PatientsFields);
@@ -35,19 +35,19 @@ export const PatientIdentifierSystem = {
 } as const;
 
 export const ManualPatientSeedFields = Schema.Struct({
-  displayName: Schema.optional(Schema.String),
-  names: Schema.Array(HumanNameValue),
-  birthDate: Schema.optional(IsoDate),
-  administrativeGender: Schema.optional(CodingValue),
   addresses: Schema.Array(AddressValue),
-  telecom: Schema.Array(ContactPointValue),
+  administrativeGender: Schema.optional(CodingValue),
+  birthDate: Schema.optional(IsoDate),
+  capturedAt: IsoDateTime,
+  displayName: Schema.optional(Schema.String),
   generalPractitionerRoleId: Schema.optional(
     GenericId.GenericId("practitionerRoles"),
   ),
   managingOrganizationId: Schema.optional(GenericId.GenericId("organizations")),
+  names: Schema.Array(HumanNameValue),
   preferredLanguages: Schema.Array(CodingValue),
   sourcePath: Schema.optional(Schema.String),
-  capturedAt: IsoDateTime,
+  telecom: Schema.Array(ContactPointValue),
 });
 
 export const CreateManualPatientArgs = Schema.Struct({
@@ -57,7 +57,9 @@ export const CreateManualPatientArgs = Schema.Struct({
 
 export const CreateManualPatientResult = Schema.Struct({
   patientId: GenericId.GenericId("patients"),
-  primaryIdentifierId: Schema.optional(GenericId.GenericId("patientIdentifiers")),
+  primaryIdentifierId: Schema.optional(
+    GenericId.GenericId("patientIdentifiers"),
+  ),
 });
 
 export const PatientChartArgs = Schema.Struct({
@@ -65,10 +67,10 @@ export const PatientChartArgs = Schema.Struct({
 });
 
 export const PatientChartFound = Schema.Struct({
-  found: Schema.Literal(true),
-  patient: PatientDocument,
-  identifiers: Schema.Array(PatientIdentifierDocument),
   coverages: Schema.Array(CoverageDocument),
+  found: Schema.Literal(true),
+  identifiers: Schema.Array(PatientIdentifierDocument),
+  patient: PatientDocument,
 });
 
 export const PatientChartMissing = Schema.Struct({
@@ -111,18 +113,20 @@ export const GetVsdSnapshotResult = Schema.Union(
 );
 
 export const AdoptVsdSnapshotArgs = Schema.Struct({
-  snapshotId: GenericId.GenericId("vsdSnapshots"),
   existingPatientId: Schema.optional(GenericId.GenericId("patients")),
   patientSeed: Schema.optional(ManualPatientSeedFields),
+  snapshotId: GenericId.GenericId("vsdSnapshots"),
 });
 
 export const AdoptVsdSnapshotAdopted = Schema.Struct({
-  outcome: Schema.Literal("adopted"),
-  patientId: GenericId.GenericId("patients"),
-  coverageId: GenericId.GenericId("coverages"),
-  patientIdentifierId: Schema.optional(GenericId.GenericId("patientIdentifiers")),
-  patientCreated: Schema.Boolean,
   coverageCreated: Schema.Boolean,
+  coverageId: GenericId.GenericId("coverages"),
+  outcome: Schema.Literal("adopted"),
+  patientCreated: Schema.Boolean,
+  patientId: GenericId.GenericId("patients"),
+  patientIdentifierId: Schema.optional(
+    GenericId.GenericId("patientIdentifiers"),
+  ),
 });
 
 export const AdoptVsdSnapshotNeedsSeed = Schema.Struct({

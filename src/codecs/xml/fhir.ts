@@ -1,6 +1,6 @@
 import { EauPayload } from "../../fhir-r4-effect/resources/eau";
-import { EvdgaPayload } from "../../fhir-r4-effect/resources/evdga";
 import { ErpPayload } from "../../fhir-r4-effect/resources/erp";
+import { EvdgaPayload } from "../../fhir-r4-effect/resources/evdga";
 
 const escapeXml = (value: string) =>
   value
@@ -23,15 +23,15 @@ const identifierXml = (identifier: {
 
 const humanNameXml = (name: {
   readonly family: string;
-  readonly given: ReadonlyArray<string>;
+  readonly given: readonly string[];
 }) =>
   `<name>${textNode("family", name.family)}${name.given
     .map((given) => textNode("given", given))
     .join("")}</name>`;
 
 const addressXml = (address: {
-  readonly line1: string;
   readonly city?: string;
+  readonly line1: string;
   readonly postalCode?: string;
 }) =>
   `<address>${textNode("line", address.line1)}${textNode(
@@ -40,9 +40,9 @@ const addressXml = (address: {
   )}${textNode("postalCode", address.postalCode)}</address>`;
 
 const codingXml = (coding: {
-  readonly system: string;
   readonly code: string;
   readonly display?: string;
+  readonly system: string;
 }) =>
   `<coding>${textNode("system", coding.system)}${textNode(
     "code",
@@ -50,11 +50,11 @@ const codingXml = (coding: {
   )}${textNode("display", coding.display)}</coding>`;
 
 const codeableConceptXml = (concept: {
-  readonly coding: ReadonlyArray<{
-    readonly system: string;
+  readonly coding: readonly {
     readonly code: string;
     readonly display?: string;
-  }>;
+    readonly system: string;
+  }[];
   readonly text?: string;
 }) =>
   `<code>${concept.coding.map(codingXml).join("")}${textNode(
@@ -62,16 +62,20 @@ const codeableConceptXml = (concept: {
     concept.text,
   )}</code>`;
 
-const referenceXml = (tagName: string, reference: {
-  readonly reference: string;
-  readonly display?: string;
-}) =>
+const referenceXml = (
+  tagName: string,
+  reference: {
+    readonly display?: string;
+    readonly reference: string;
+  },
+) =>
   `<${tagName}>${textNode("reference", reference.reference)}${textNode(
     "display",
     reference.display,
   )}</${tagName}>`;
 
-const bundleEntryXml = (resourceXml: string) => `<entry><resource>${resourceXml}</resource></entry>`;
+const bundleEntryXml = (resourceXml: string) =>
+  `<entry><resource>${resourceXml}</resource></entry>`;
 
 const patientXml = (resource: typeof ErpPayload.Type.patient) =>
   `<Patient xmlns="http://hl7.org/fhir">${textNode("id", resource.id)}${resource.identifier
@@ -122,7 +126,9 @@ const medicationXml = (resource: typeof ErpPayload.Type.medication) =>
     resource.code ? codeableConceptXml(resource.code) : ""
   }</Medication>`;
 
-const medicationRequestXml = (resource: typeof ErpPayload.Type.medicationRequest) =>
+const medicationRequestXml = (
+  resource: typeof ErpPayload.Type.medicationRequest,
+) =>
   `<MedicationRequest xmlns="http://hl7.org/fhir">${textNode(
     "id",
     resource.id,
@@ -139,7 +145,10 @@ const medicationRequestXml = (resource: typeof ErpPayload.Type.medicationRequest
       ? referenceXml("medicationReference", resource.medicationReference)
       : ""
   }${resource.dosageInstruction
-    .map((instruction) => `<dosageInstruction>${textNode("text", instruction.text)}</dosageInstruction>`)
+    .map(
+      (instruction) =>
+        `<dosageInstruction>${textNode("text", instruction.text)}</dosageInstruction>`,
+    )
     .join("")}</MedicationRequest>`;
 
 const deviceRequestXml = (resource: typeof EvdgaPayload.Type.deviceRequest) =>
@@ -160,7 +169,9 @@ const deviceRequestXml = (resource: typeof EvdgaPayload.Type.deviceRequest) =>
     resource.codeCodeableConcept
       ? `<codeCodeableConcept>${resource.codeCodeableConcept.coding
           .map(codingXml)
-          .join("")}${textNode("text", resource.codeCodeableConcept.text)}</codeCodeableConcept>`
+          .join(
+            "",
+          )}${textNode("text", resource.codeCodeableConcept.text)}</codeCodeableConcept>`
       : ""
   }${resource.reasonCode
     .map(
@@ -183,7 +194,7 @@ const encounterXml = (resource: typeof EauPayload.Type.encounter) =>
     resource.period.start,
   )}${textNode("end", resource.period.end)}</period></Encounter>`;
 
-const conditionXml = (resource: typeof EauPayload.Type.conditions[number]) =>
+const conditionXml = (resource: (typeof EauPayload.Type.conditions)[number]) =>
   `<Condition xmlns="http://hl7.org/fhir">${textNode("id", resource.id)}${codeableConceptXml(
     resource.code,
   )}${referenceXml("subject", resource.subject)}${
@@ -215,7 +226,9 @@ export const renderEauBundleXml = (payload: typeof EauPayload.Type) =>
   bundleEntryXml(organizationXml(payload.organization)) +
   bundleEntryXml(coverageXml(payload.coverage)) +
   bundleEntryXml(encounterXml(payload.encounter)) +
-  payload.conditions.map((condition) => bundleEntryXml(conditionXml(condition))).join("") +
+  payload.conditions
+    .map((condition) => bundleEntryXml(conditionXml(condition)))
+    .join("") +
   `</Bundle>`;
 
 export const renderEvdgaBundleXml = (payload: typeof EvdgaPayload.Type) =>
