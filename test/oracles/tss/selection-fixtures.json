@@ -1,0 +1,65 @@
+[
+  {
+    "caseId": "TSS-SELECTION-POSITIVE",
+    "sourceReference": "Local TSS fixture: filters should surface only the matching proposed TSS slot",
+    "criteria": {
+      "organizationId": "org-1",
+      "vermittlungscode": "VMC-1000",
+      "tssServiceType": "orthopaedy",
+      "startFrom": "2026-04-01T00:00:00.000Z",
+      "startTo": "2026-04-30T23:59:59.999Z"
+    },
+    "appointments": [
+      {
+        "appointmentId": "apt-1",
+        "organizationId": "org-1",
+        "source": "tss",
+        "status": "proposed",
+        "start": "2026-04-12T09:00:00.000Z",
+        "vermittlungscode": "VMC-1000",
+        "tssServiceType": "orthopaedy",
+        "externalAppointmentId": "tss-1"
+      },
+      {
+        "appointmentId": "apt-2",
+        "organizationId": "org-1",
+        "source": "tss",
+        "status": "booked",
+        "start": "2026-04-12T10:00:00.000Z",
+        "vermittlungscode": "VMC-1000",
+        "tssServiceType": "orthopaedy",
+        "externalAppointmentId": "tss-2"
+      },
+      {
+        "appointmentId": "apt-3",
+        "organizationId": "org-1",
+        "source": "internal",
+        "status": "proposed",
+        "start": "2026-04-12T11:00:00.000Z"
+      }
+    ],
+    "expectedSelectableAppointmentIds": ["apt-1"]
+  },
+  {
+    "caseId": "TSS-SELECTION-NO-MATCH",
+    "sourceReference": "Local TSS fixture: service type mismatch should leave no selectable slot",
+    "criteria": {
+      "organizationId": "org-1",
+      "vermittlungscode": "VMC-1000",
+      "tssServiceType": "cardiology"
+    },
+    "appointments": [
+      {
+        "appointmentId": "apt-1",
+        "organizationId": "org-1",
+        "source": "tss",
+        "status": "proposed",
+        "start": "2026-04-12T09:00:00.000Z",
+        "vermittlungscode": "VMC-1000",
+        "tssServiceType": "orthopaedy",
+        "externalAppointmentId": "tss-1"
+      }
+    ],
+    "expectedSelectableAppointmentIds": []
+  }
+]

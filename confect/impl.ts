@@ -20,6 +20,16 @@ import {
   RegisterMasterDataPackageArgs,
 } from "../src/domain/billing-coding";
 import {
+  BookTssAppointmentArgs,
+  CreateAppointmentArgs,
+  CreateReferralArgs,
+  ListAppointmentsArgs,
+  ListAvailableTssAppointmentsArgs,
+  ListReferralsByPatientArgs,
+  LookupReferralByVermittlungscodeArgs,
+  filterSelectableTssAppointments,
+} from "../src/domain/appointments-referrals";
+import {
   AddMedicationPlanEntryArgs,
   CreateHeilmittelApprovalArgs,
   CreateHeilmittelOrderArgs,
@@ -56,6 +66,7 @@ import {
   ValidationSummaryArgs,
 } from "../src/domain/emission";
 import { renderEauBundleXml, renderErpBundleXml } from "../src/codecs/xml/fhir";
+import { evaluateCodingRules } from "../src/domain/coding-rules";
 import { buildOraclePlan, listOraclePlugins as listRegisteredOraclePlugins } from "../tools/oracles/framework";
 import { buildAndExecuteOraclePlan, resolveOracleFamily } from "../tools/oracles/runtime";
 
@@ -130,32 +141,6 @@ const administrativeGenderFromSnapshot = (genderCode?: string) =>
         code: genderCode,
       }
     : undefined;
-
-const calculateAgeAtDate = (
-  birthDate?: string,
-  referenceDate?: string,
-): number | undefined => {
-  if (!birthDate || !referenceDate) {
-    return undefined;
-  }
-
-  const birth = new Date(birthDate);
-  const reference = new Date(referenceDate);
-  if (Number.isNaN(birth.getTime()) || Number.isNaN(reference.getTime())) {
-    return undefined;
-  }
-
-  let age = reference.getUTCFullYear() - birth.getUTCFullYear();
-  const monthDelta = reference.getUTCMonth() - birth.getUTCMonth();
-  if (
-    monthDelta < 0 ||
-    (monthDelta === 0 && reference.getUTCDate() < birth.getUTCDate())
-  ) {
-    age -= 1;
-  }
-
-  return age;
-};
 
 const kvdtIssuesFromCase = ({
   diagnoses,
@@ -256,126 +241,13 @@ const createCodingEvaluationsForDiagnosis = ({
     const catalogEntry = catalogEntries.find(
       (entry) => entry.code === diagnosis.icdCode,
     );
-
-    const pendingEvaluations: Array<{
-      patientId: PatientId;
-      diagnosisId: DiagnosisId;
-      billingCaseId?: BillingCaseId;
-      ruleFamily: "sdicd" | "sdkh" | "sdkrw";
-      severity: "info" | "warning" | "error";
-      ruleCode: string;
-      message: string;
-      blocking: boolean;
-      createdAt: string;
+    let caseDiagnoses: Array<{
+      readonly billingCaseId?: BillingCaseId;
+      readonly recordStatus: "active" | "cancelled" | "superseded";
+      readonly isPrimary?: boolean;
     }> = [];
-
-    if (!catalogEntry) {
-      pendingEvaluations.push({
-        patientId: diagnosis.patientId,
-        diagnosisId,
-        ...(billingCaseId ? { billingCaseId } : {}),
-        ruleFamily: "sdicd",
-        severity: "error",
-        ruleCode: "SDICD_CODE_UNKNOWN",
-        message: `ICD code ${diagnosis.icdCode} is not present in the imported SDICD catalog.`,
-        blocking: true,
-        createdAt,
-      });
-    } else {
-      if (!catalogEntry.isBillable) {
-        pendingEvaluations.push({
-          patientId: diagnosis.patientId,
-          diagnosisId,
-          ...(billingCaseId ? { billingCaseId } : {}),
-          ruleFamily: "sdicd",
-          severity: "warning",
-          ruleCode: "SDICD_NOT_BILLABLE",
-          message: `ICD code ${diagnosis.icdCode} is not marked billable in SDICD.`,
-          blocking: false,
-          createdAt,
-        });
-      }
-
-      const ageAtReference = calculateAgeAtDate(patient.birthDate, createdAt);
-      if (
-        ageAtReference !== undefined &&
-        catalogEntry.ageLower !== undefined &&
-        ageAtReference < catalogEntry.ageLower
-      ) {
-        pendingEvaluations.push({
-          patientId: diagnosis.patientId,
-          diagnosisId,
-          ...(billingCaseId ? { billingCaseId } : {}),
-          ruleFamily: "sdicd",
-          severity:
-            catalogEntry.ageErrorType === "warning" ? "warning" : "error",
-          ruleCode: "SDICD_AGE_TOO_LOW",
-          message: `Patient age ${ageAtReference} is below the ICD lower bound ${catalogEntry.ageLower}.`,
-          blocking: catalogEntry.ageErrorType !== "warning",
-          createdAt,
-        });
-      }
-
-      if (
-        ageAtReference !== undefined &&
-        catalogEntry.ageUpper !== undefined &&
-        ageAtReference > catalogEntry.ageUpper
-      ) {
-        pendingEvaluations.push({
-          patientId: diagnosis.patientId,
-          diagnosisId,
-          ...(billingCaseId ? { billingCaseId } : {}),
-          ruleFamily: "sdicd",
-          severity:
-            catalogEntry.ageErrorType === "warning" ? "warning" : "error",
-          ruleCode: "SDICD_AGE_TOO_HIGH",
-          message: `Patient age ${ageAtReference} exceeds the ICD upper bound ${catalogEntry.ageUpper}.`,
-          blocking: catalogEntry.ageErrorType !== "warning",
-          createdAt,
-        });
-      }
-
-      const patientGender = patient.administrativeGender?.code;
-      if (
-        patientGender &&
-        catalogEntry.genderConstraint &&
-        catalogEntry.genderConstraint !== patientGender
-      ) {
-        pendingEvaluations.push({
-          patientId: diagnosis.patientId,
-          diagnosisId,
-          ...(billingCaseId ? { billingCaseId } : {}),
-          ruleFamily: "sdicd",
-          severity:
-            catalogEntry.genderErrorType === "warning" ? "warning" : "error",
-          ruleCode: "SDICD_GENDER_MISMATCH",
-          message: `Patient gender ${patientGender} conflicts with ICD constraint ${catalogEntry.genderConstraint}.`,
-          blocking: catalogEntry.genderErrorType !== "warning",
-          createdAt,
-        });
-      }
-    }
-
-    if (
-      diagnosis.category === "dauerdiagnose" &&
-      diagnosis.diagnosensicherheit === undefined
-    ) {
-      pendingEvaluations.push({
-        patientId: diagnosis.patientId,
-        diagnosisId,
-        ...(billingCaseId ? { billingCaseId } : {}),
-        ruleFamily: "sdkh",
-        severity: "warning",
-        ruleCode: "SDKH_CHRONIC_CERTAINTY_MISSING",
-        message:
-          "Chronic diagnosis was recorded without diagnosensicherheit metadata.",
-        blocking: false,
-        createdAt,
-      });
-    }
-
     if (billingCaseId) {
-      const caseDiagnoses = yield* reader
+      caseDiagnoses = yield* reader
         .table("diagnoses")
         .index("by_patientId_and_recordStatus")
         .collect()
@@ -384,37 +256,26 @@ const createCodingEvaluationsForDiagnosis = ({
             rows.filter((row) => row.billingCaseId === billingCaseId),
           ),
         );
-
-      const activeCaseDiagnoses = [
-        ...caseDiagnoses,
-        {
-          billingCaseId,
-          recordStatus: "active" as const,
-          isPrimary: diagnosis.isPrimary,
-        },
-      ].filter((row) => row.recordStatus === "active");
-
-      if (!activeCaseDiagnoses.some((row) => row.isPrimary === true)) {
-        pendingEvaluations.push({
-          patientId: diagnosis.patientId,
-          diagnosisId,
-          billingCaseId,
-          ruleFamily: "sdkrw",
-          severity: "warning",
-          ruleCode: "SDKRW_PRIMARY_DIAGNOSIS_MISSING",
-          message:
-            "No active primary diagnosis is currently attached to this billing case.",
-          blocking: false,
-          createdAt,
-        });
-      }
     }
+
+    const pendingEvaluations = evaluateCodingRules({
+      patientId: diagnosis.patientId,
+      patient,
+      diagnosis,
+      ...(billingCaseId ? { billingCaseId } : {}),
+      caseDiagnoses,
+      ...(catalogEntry ? { catalogEntry } : {}),
+      createdAt,
+    });
 
     const evaluationIds = [];
     for (const evaluation of pendingEvaluations) {
       const evaluationId = yield* writer
         .table("codingEvaluations")
-        .insert(evaluation);
+        .insert({
+          ...evaluation,
+          diagnosisId,
+        });
       evaluationIds.push(evaluationId);
     }
 
@@ -758,6 +619,196 @@ const addLineItem = (lineItem: typeof AddBillingLineItemArgs.Type) =>
       .table("billingLineItems")
       .insert(lineItem);
     return { billingLineItemId };
+  });
+
+const createAppointment = (appointment: typeof CreateAppointmentArgs.Type) =>
+  Effect.gen(function* () {
+    const writer = yield* DatabaseWriter;
+    const appointmentId = yield* writer.table("appointments").insert(appointment);
+    return { appointmentId };
+  });
+
+const listAppointmentsByOrganization = ({
+  organizationId,
+  patientId,
+  source,
+  status,
+  vermittlungscode,
+  tssServiceType,
+  startFrom,
+  startTo,
+}: typeof ListAppointmentsArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const appointments = yield* reader
+      .table("appointments")
+      .index("by_organizationId_and_start")
+      .collect();
+
+    return appointments
+      .filter((row) => row.organizationId === organizationId)
+      .filter((row) => (patientId === undefined ? true : row.patientId === patientId))
+      .filter((row) => (source === undefined ? true : row.source === source))
+      .filter((row) => (status === undefined ? true : row.status === status))
+      .filter((row) =>
+        vermittlungscode === undefined ? true : row.vermittlungscode === vermittlungscode,
+      )
+      .filter((row) =>
+        tssServiceType === undefined ? true : row.tssServiceType === tssServiceType,
+      )
+      .filter((row) => (startFrom === undefined ? true : row.start >= startFrom))
+      .filter((row) => (startTo === undefined ? true : row.start <= startTo))
+      .sort((left, right) => left.start.localeCompare(right.start));
+  });
+
+const listAvailableTssAppointments = ({
+  organizationId,
+  vermittlungscode,
+  tssServiceType,
+  startFrom,
+  startTo,
+  displayBucket,
+}: typeof ListAvailableTssAppointmentsArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const appointments = yield* reader
+      .table("appointments")
+      .index("by_organizationId_and_start")
+      .collect();
+
+    const selected = filterSelectableTssAppointments(
+      appointments.map((appointment) => ({
+        appointmentId: String(appointment._id),
+        organizationId: String(appointment.organizationId),
+        ...(appointment.patientId ? { patientId: String(appointment.patientId) } : {}),
+        source: appointment.source,
+        status: appointment.status,
+        start: appointment.start,
+        ...(appointment.end ? { end: appointment.end } : {}),
+        ...(appointment.vermittlungscode
+          ? { vermittlungscode: appointment.vermittlungscode }
+          : {}),
+        ...(appointment.tssServiceType
+          ? { tssServiceType: appointment.tssServiceType }
+          : {}),
+        ...(appointment.displayBucket
+          ? { displayBucket: appointment.displayBucket }
+          : {}),
+        ...(appointment.externalAppointmentId
+          ? { externalAppointmentId: appointment.externalAppointmentId }
+          : {}),
+      })),
+      {
+        organizationId: String(organizationId),
+        ...(vermittlungscode ? { vermittlungscode } : {}),
+        ...(tssServiceType ? { tssServiceType } : {}),
+        ...(startFrom ? { startFrom } : {}),
+        ...(startTo ? { startTo } : {}),
+        ...(displayBucket ? { displayBucket } : {}),
+      },
+    );
+
+    return selected
+      .map((candidate) =>
+        appointments.find((appointment) => String(appointment._id) === candidate.appointmentId),
+      )
+      .filter((appointment): appointment is NonNullable<typeof appointment> => appointment !== undefined);
+  });
+
+const bookTssAppointment = ({
+  appointmentId,
+  patientId,
+  vermittlungscode,
+}: typeof BookTssAppointmentArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const writer = yield* DatabaseWriter;
+    const appointmentOption = yield* reader
+      .table("appointments")
+      .get(appointmentId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(appointmentOption)) {
+      return { outcome: "appointment-not-found" as const };
+    }
+
+    const appointment = appointmentOption.value;
+    if (appointment.source !== "tss") {
+      return {
+        outcome: "not-bookable" as const,
+        reason: "Only TSS appointments can be booked through this workflow.",
+      };
+    }
+
+    if (appointment.status !== "proposed") {
+      return {
+        outcome: "not-bookable" as const,
+        reason: "Only proposed TSS appointments are bookable.",
+      };
+    }
+
+    if (
+      vermittlungscode !== undefined &&
+      appointment.vermittlungscode !== undefined &&
+      appointment.vermittlungscode !== vermittlungscode
+    ) {
+      return {
+        outcome: "not-bookable" as const,
+        reason: "Vermittlungscode does not match the selected TSS slot.",
+      };
+    }
+
+    yield* writer.table("appointments").patch(appointmentId, {
+      patientId,
+      status: "booked",
+    });
+
+    return {
+      outcome: "booked" as const,
+      appointmentId,
+    };
+  });
+
+const createReferral = (referral: typeof CreateReferralArgs.Type) =>
+  Effect.gen(function* () {
+    const writer = yield* DatabaseWriter;
+    const referralId = yield* writer.table("referrals").insert(referral);
+    return { referralId };
+  });
+
+const listReferralsByPatient = ({
+  patientId,
+  status,
+}: typeof ListReferralsByPatientArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const referrals = yield* reader
+      .table("referrals")
+      .index("by_patientId_and_issueDate")
+      .collect();
+
+    return referrals
+      .filter((row) => row.patientId === patientId)
+      .filter((row) => (status === undefined ? true : row.status === status))
+      .sort((left, right) => left.issueDate.localeCompare(right.issueDate));
+  });
+
+const lookupReferralByVermittlungscode = ({
+  vermittlungscode,
+}: typeof LookupReferralByVermittlungscodeArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const referrals = yield* reader.table("referrals").index("by_vermittlungscode").collect();
+    const referral = referrals.find((row) => row.vermittlungscode === vermittlungscode);
+
+    if (!referral) {
+      return { found: false as const };
+    }
+
+    return {
+      found: true as const,
+      referral,
+    };
   });
 
 const createDiagnosis = ({
@@ -3166,6 +3217,43 @@ const billingGroup = GroupImpl.make(api, "billing").pipe(
   ]),
 );
 
+const appointmentsGroup = GroupImpl.make(api, "appointments").pipe(
+  Layer.provide([
+    FunctionImpl.make(api, "appointments", "create", createAppointment),
+    FunctionImpl.make(
+      api,
+      "appointments",
+      "listByOrganization",
+      listAppointmentsByOrganization,
+    ),
+    FunctionImpl.make(
+      api,
+      "appointments",
+      "listAvailableTss",
+      listAvailableTssAppointments,
+    ),
+    FunctionImpl.make(api, "appointments", "bookTss", bookTssAppointment),
+  ]),
+);
+
+const referralsGroup = GroupImpl.make(api, "referrals").pipe(
+  Layer.provide([
+    FunctionImpl.make(api, "referrals", "create", createReferral),
+    FunctionImpl.make(
+      api,
+      "referrals",
+      "listByPatient",
+      listReferralsByPatient,
+    ),
+    FunctionImpl.make(
+      api,
+      "referrals",
+      "lookupByVermittlungscode",
+      lookupReferralByVermittlungscode,
+    ),
+  ]),
+);
+
 const catalogGroup = GroupImpl.make(api, "catalog").pipe(
   Layer.provide([
     FunctionImpl.make(
@@ -3279,6 +3367,8 @@ const unfinalizedImpl = Impl.make(api).pipe(
     vsdGroup,
     codingGroup,
     billingGroup,
+    appointmentsGroup,
+    referralsGroup,
     catalogGroup,
     prescriptionsGroup,
     heilmittelGroup,

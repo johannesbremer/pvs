@@ -1,0 +1,116 @@
+[
+  {
+    "caseId": "BFB-M16-POSITIVE",
+    "sourceReference": "Local BFB render-context fixture: printable Muster 16 context with barcode and positioned fields",
+    "templateId": "Muster16",
+    "templateVersion": "2026.1",
+    "subjectKind": "prescription-print",
+    "pageCount": 1,
+    "fields": [
+      {
+        "fieldCode": "patient-name",
+        "page": 1,
+        "x": 12.5,
+        "y": 18.2,
+        "width": 72,
+        "height": 5,
+        "value": "Erika Mustermann",
+        "required": true
+      },
+      {
+        "fieldCode": "insurance-id",
+        "page": 1,
+        "x": 14.1,
+        "y": 27.4,
+        "width": 45,
+        "height": 5,
+        "value": "A123456789",
+        "required": true
+      },
+      {
+        "fieldCode": "issue-date",
+        "page": 1,
+        "x": 160,
+        "y": 18.2,
+        "width": 22,
+        "height": 5,
+        "value": "2026-03-11",
+        "required": true
+      }
+    ],
+    "barcodes": [
+      {
+        "barcodeType": "datamatrix",
+        "page": 1,
+        "x": 156,
+        "y": 232,
+        "width": 24,
+        "height": 24,
+        "payload": "ERP|160.123.456.789.123.58|TOKEN|2026-03-11"
+      }
+    ],
+    "expectedPassed": true
+  },
+  {
+    "caseId": "BFB-M16-BARCODE-PAYLOAD-MISSING",
+    "sourceReference": "Local BFB render-context fixture: barcode payload omission must fail",
+    "templateId": "Muster16",
+    "templateVersion": "2026.1",
+    "subjectKind": "prescription-print",
+    "pageCount": 1,
+    "fields": [
+      {
+        "fieldCode": "patient-name",
+        "page": 1,
+        "x": 12.5,
+        "y": 18.2,
+        "value": "Erika Mustermann",
+        "required": true
+      }
+    ],
+    "barcodes": [
+      {
+        "barcodeType": "datamatrix",
+        "page": 1,
+        "x": 156,
+        "y": 232,
+        "width": 24,
+        "height": 24,
+        "payload": ""
+      }
+    ],
+    "expectedPassed": false,
+    "expectedErrorCodes": ["BFB_BARCODE_PAYLOAD_MISSING"]
+  },
+  {
+    "caseId": "BFB-M16-FIELD-PAGE-INVALID",
+    "sourceReference": "Local BFB render-context fixture: field outside declared page range must fail",
+    "templateId": "Muster16",
+    "templateVersion": "2026.1",
+    "subjectKind": "prescription-print",
+    "pageCount": 1,
+    "fields": [
+      {
+        "fieldCode": "patient-name",
+        "page": 2,
+        "x": 12.5,
+        "y": 18.2,
+        "value": "Erika Mustermann",
+        "required": true
+      }
+    ],
+    "barcodes": [
+      {
+        "barcodeType": "datamatrix",
+        "page": 1,
+        "x": 156,
+        "y": 232,
+        "width": 24,
+        "height": 24,
+        "payload": "ERP|160.123.456.789.123.58|TOKEN|2026-03-11"
+      }
+    ],
+    "expectedPassed": false,
+    "expectedErrorCodes": ["BFB_FIELD_PAGE_INVALID"]
+  }
+]

@@ -1,0 +1,144 @@
+[
+  {
+    "caseId": "SDICD-A00-BILLABLE",
+    "sourceReference": "KBV SDICD/SDKH/SDKRW rule coverage fixture: billable acute diagnosis",
+    "patientId": "fixture-patient-1",
+    "patient": {
+      "birthDate": "1988-04-12",
+      "administrativeGender": { "code": "female" }
+    },
+    "diagnosis": {
+      "patientId": "fixture-patient-1",
+      "icdCode": "A00.0",
+      "category": "acute",
+      "isPrimary": true
+    },
+    "billingCaseId": "fixture-case-1",
+    "caseDiagnoses": [],
+    "catalogEntry": {
+      "code": "A00.0",
+      "text": "Cholera",
+      "isBillable": true
+    },
+    "createdAt": "2026-03-11T10:00:00.000Z",
+    "expectedPassed": true
+  },
+  {
+    "caseId": "SDICD-CODE-UNKNOWN",
+    "sourceReference": "KBV SDICD rule coverage fixture: unknown ICD code",
+    "patientId": "fixture-patient-2",
+    "patient": {
+      "birthDate": "1988-04-12",
+      "administrativeGender": { "code": "female" }
+    },
+    "diagnosis": {
+      "patientId": "fixture-patient-2",
+      "icdCode": "UNKNOWN.CODE",
+      "category": "acute"
+    },
+    "createdAt": "2026-03-11T10:01:00.000Z",
+    "expectedPassed": false,
+    "expectedErrorCodes": ["SDICD_CODE_UNKNOWN"]
+  },
+  {
+    "caseId": "SDICD-GENDER-MISMATCH",
+    "sourceReference": "KBV SDICD rule coverage fixture: gender mismatch",
+    "patientId": "fixture-patient-3",
+    "patient": {
+      "birthDate": "1990-01-01",
+      "administrativeGender": { "code": "male" }
+    },
+    "diagnosis": {
+      "patientId": "fixture-patient-3",
+      "icdCode": "B99.9",
+      "category": "acute"
+    },
+    "catalogEntry": {
+      "code": "B99.9",
+      "text": "Gender-constrained diagnosis",
+      "isBillable": true,
+      "genderConstraint": "female",
+      "genderErrorType": "error"
+    },
+    "createdAt": "2026-03-11T10:02:00.000Z",
+    "expectedPassed": false,
+    "expectedErrorCodes": ["SDICD_GENDER_MISMATCH"]
+  },
+  {
+    "caseId": "SDICD-AGE-WARNING",
+    "sourceReference": "KBV SDICD rule coverage fixture: lower age warning",
+    "patientId": "fixture-patient-4",
+    "patient": {
+      "birthDate": "2020-01-01",
+      "administrativeGender": { "code": "female" }
+    },
+    "diagnosis": {
+      "patientId": "fixture-patient-4",
+      "icdCode": "C10.1",
+      "category": "acute"
+    },
+    "catalogEntry": {
+      "code": "C10.1",
+      "text": "Age-limited diagnosis",
+      "isBillable": true,
+      "ageLower": 18,
+      "ageErrorType": "warning"
+    },
+    "createdAt": "2026-03-11T10:03:00.000Z",
+    "expectedPassed": true,
+    "expectedWarningCodes": ["SDICD_AGE_TOO_LOW"]
+  },
+  {
+    "caseId": "SDKH-CHRONIC-CERTAINTY",
+    "sourceReference": "KBV SDKH rule coverage fixture: chronic diagnosis without certainty",
+    "patientId": "fixture-patient-5",
+    "patient": {
+      "birthDate": "1975-08-17",
+      "administrativeGender": { "code": "female" }
+    },
+    "diagnosis": {
+      "patientId": "fixture-patient-5",
+      "icdCode": "M54.5",
+      "category": "dauerdiagnose"
+    },
+    "catalogEntry": {
+      "code": "M54.5",
+      "text": "Low back pain",
+      "isBillable": true
+    },
+    "createdAt": "2026-03-11T10:04:00.000Z",
+    "expectedPassed": true,
+    "expectedWarningCodes": ["SDKH_CHRONIC_CERTAINTY_MISSING"]
+  },
+  {
+    "caseId": "SDKRW-PRIMARY-MISSING",
+    "sourceReference": "KBV SDKRW rule coverage fixture: no primary diagnosis in billing case",
+    "patientId": "fixture-patient-6",
+    "patient": {
+      "birthDate": "1975-08-17",
+      "administrativeGender": { "code": "female" }
+    },
+    "diagnosis": {
+      "patientId": "fixture-patient-6",
+      "icdCode": "J06.9",
+      "category": "acute",
+      "isPrimary": false
+    },
+    "billingCaseId": "fixture-case-6",
+    "caseDiagnoses": [
+      {
+        "billingCaseId": "fixture-case-6",
+        "recordStatus": "active",
+        "isPrimary": false
+      }
+    ],
+    "catalogEntry": {
+      "code": "J06.9",
+      "text": "Upper respiratory infection",
+      "isBillable": true
+    },
+    "createdAt": "2026-03-11T10:05:00.000Z",
+    "expectedPassed": true,
+    "expectedWarningCodes": ["SDKRW_PRIMARY_DIAGNOSIS_MISSING"]
+  }
+]

@@ -1,9 +1,11 @@
 import { runBmpOracle } from "./bmp/run";
 import { runBfbOracle } from "./bfb/run";
+import { runCodingOracle } from "./coding/run";
 import { runExecutableFhirOracle, runFhirOracle } from "./fhir/run";
 import { runHeilmittelOracle } from "./heilmittel/run";
 import { runExecutableBmpOracle } from "./bmp/run";
 import { runExecutableKvdtOracle, runKvdtOracle } from "./kvdt/run";
+import { runTssOracle } from "./tss/run";
 import { buildOraclePlan } from "./framework";
 import type { OracleExecutionResult, OraclePlan } from "./types";
 
@@ -15,8 +17,12 @@ export const resolveOracleFamily = (artifactFamily: string) => {
       return "eAU";
     case "KVDT":
       return "KVDT";
+    case "ICD":
+      return "ICD";
     case "BMP":
       return "BMP";
+    case "TSS":
+      return "TSS";
     case "Heilmittel":
       return "Heilmittel";
     case "BFB":
@@ -82,10 +88,14 @@ export const executeOraclePlan = ({
       return executionMode === "executable"
         ? runExecutableKvdtOracle({ payloadPreview })
         : Promise.resolve(runKvdtOracle({ payloadPreview }));
+    case "ICD":
+      return Promise.resolve(runCodingOracle({ payloadPreview }));
     case "BMP":
       return executionMode === "executable"
         ? runExecutableBmpOracle({ xml: payloadPreviewXml })
         : Promise.resolve(runBmpOracle({ xml: payloadPreviewXml }));
+    case "TSS":
+      return Promise.resolve(runTssOracle({ payloadPreview }));
     case "BFB":
       return Promise.resolve(runBfbOracle({ payloadPreview }));
     case "Heilmittel":

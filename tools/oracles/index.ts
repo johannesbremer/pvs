@@ -4,6 +4,26 @@ export const oraclePluginRegistry = {
   schema: OraclePluginFields,
   plugins: [
     {
+      family: "ICD",
+      kind: "fixture-backed",
+      inputKind: "coding-preview",
+      fixtureRoot: "test/oracles/coding",
+      workingDirectory: ".",
+      expectedOutputs: ["comparison.json"],
+      normalizationRules: ["normalizePaths", "normalizeTimestamps"],
+      passFailRule: "Coding evaluation matches SDICD/SDKH/SDKRW fixture expectations.",
+    },
+    {
+      family: "TSS",
+      kind: "fixture-backed",
+      inputKind: "tss-selection",
+      fixtureRoot: "test/oracles/tss",
+      workingDirectory: ".",
+      expectedOutputs: ["comparison.json"],
+      normalizationRules: ["normalizePaths", "normalizeTimestamps"],
+      passFailRule: "TSS appointment listing and selection behavior matches fixture expectations.",
+    },
+    {
       family: "KVDT",
       kind: "executable-backed",
       inputKind: "kvdt-export",

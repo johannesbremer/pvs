@@ -16,9 +16,9 @@
       "sourceQuarterOrVersion": "n/a",
       "canonicalModel": true,
       "runtimeWorkflow": true,
-      "oracleStatus": "local-only",
+      "oracleStatus": "fixture-backed-local",
       "testStatus": "covered",
-      "currentNote": "Diagnosis lifecycle and persisted coding evaluations exist; no SDICD/SDKH/SDKRW executable oracle yet."
+      "currentNote": "Diagnosis lifecycle and persisted coding evaluations exist, and fixture-backed SDICD/SDKH/SDKRW coverage now checks both rule outcomes and package-integrity metadata through a shared local oracle. No executable package oracle exists yet."
     },
     {
       "family": "KVDT",
@@ -71,8 +71,8 @@
       "canonicalModel": "schema-only",
       "runtimeWorkflow": "partial",
       "oracleStatus": "fixture-backed-local",
-      "testStatus": "minimal",
-      "currentNote": "Registry and form instances exist, but there is no real BFB renderer or barcode oracle yet."
+      "testStatus": "covered",
+      "currentNote": "Local BFB oracle coverage now validates template declaration, positioned fields, and barcode payload metadata from deterministic render-context fixtures. No full certified PDF renderer exists yet."
     },
     {
       "family": "Documents",
@@ -114,10 +114,10 @@
       "family": "TSS",
       "sourceQuarterOrVersion": "3.0.0",
       "canonicalModel": true,
-      "runtimeWorkflow": "minimal",
-      "oracleStatus": "none",
-      "testStatus": "not-covered",
-      "currentNote": "Appointments and billing seam exist, but no TSS adapter or oracle implementation exists."
+      "runtimeWorkflow": "partial",
+      "oracleStatus": "fixture-backed-local",
+      "testStatus": "covered",
+      "currentNote": "Public appointments/referrals workflows now support TSS-style listing, filtering, vermittlungscode lookup, and booking semantics, with local fixture-backed oracle coverage for selection behavior."
     },
     {
       "family": "AW-SST",

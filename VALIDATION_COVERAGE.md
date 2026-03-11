@@ -9,18 +9,18 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 | Area | Canonical model | Runtime workflow | Oracle status | Test status | Current note |
 | --- | --- | --- | --- | --- | --- |
 | VSD / eGK / eEB adoption | Yes | Yes | None | Yes | Patient, identifier, coverage, and VSD snapshot workflows are covered by unit-style integration tests. |
-| ICD / coding | Yes | Yes | Local only | Yes | Diagnosis lifecycle and persisted coding evaluations exist; no SDICD/SDKH/SDKRW executable oracle yet. |
+| ICD / coding | Yes | Yes | Fixture-backed local | Yes | Diagnosis lifecycle and persisted coding evaluations exist, and SDICD/SDKH/SDKRW fixtures now cover both rule outcomes and package-integrity metadata through a shared local oracle. No executable package oracle exists yet. |
 | KVDT billing seam | Yes | Partial | Executable XPM + XKM | Yes | Official `.con` fixtures from the XPM package are covered in automated cold-start and warm-cache tests, including both positive and negative validator cases. |
 | Arzneimittel / eRezept canonical order | Yes | Yes | Executable FHIR | Yes | The full official Q3_2026 ERP XML archive now runs through the real validator and completes without error findings in the automated suite. |
 | eAU canonical documents | Yes | Yes | Executable FHIR | Yes | Official eAU examples validate via the executable FHIR path from an empty cache. |
 | BMP | Yes | Partial | Executable XSD | Yes | Official BMP example XMLs are covered through the downloaded KBV XSD package and example archive. |
 | Heilmittel canonical orders | Yes | Yes | Official fixture-backed | Yes | Local oracle checks now run official KBV Heilmittel Prüfpaket-derived fixtures for blanko handling, approvals, and quantity limits. |
-| BFB / form rendering | Schema only | Partial | Fixture-backed local | Minimal | Registry and form instances exist, but there is no real BFB renderer/barcode oracle yet. |
+| BFB / form rendering | Schema only | Partial | Fixture-backed local | Yes | Local BFB oracle fixtures now validate template declaration, print positions, required field values, and barcode payload metadata from deterministic render-context previews. No full certified PDF renderer exists yet. |
 | Documents / revisions / artifacts | Yes | Yes | Indirect | Yes | Immutability and issuance flows are tested through medication/eAU/heilmittel flows. |
 | Ti / KIM / mailboxes | Yes | Minimal | None | No | Schema is present; production workflows are largely unimplemented. |
 | eVDGA | Yes | Minimal | None | No | Schema is present; emitter/oracle work is not implemented. |
 | VoS | Yes | Minimal | None | No | Schema is present; transport/runtime behavior is not implemented. |
-| TSS | Yes | Minimal | None | No | Appointments and billing seam exist, but no TSS adapter/oracle implementation yet. |
+| TSS | Yes | Partial | Fixture-backed local | Yes | Public appointments/referrals workflows now cover TSS-style listing, filtering, vermittlungscode lookup, and booking semantics, with local fixture-backed oracle checks for selection behavior. |
 | AW-SST | Yes | Minimal | None | No | Historical import/export architecture is modeled, but no validator/import implementation exists. |
 | LDT / eArztbrief / 1-Click KIM | Minimal | No | None | No | Out of current implementation scope. |
 
@@ -67,12 +67,37 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
     - blanko orders
     - quantity-limit failures
     - nutrition therapy
+- `ICD / coding`
+  - local fixture-backed coverage exercises the shared SDICD / SDKH / SDKRW evaluator for:
+    - billable imported codes
+    - unknown codes
+    - gender mismatch handling
+    - age-bound warnings
+    - chronic-diagnosis certainty warnings
+    - missing primary diagnosis warnings
+  - local fixture-backed package-integrity checks cover:
+    - package family/version/source metadata
+    - empty package rejection
+    - duplicate code rejection
+    - invalid effective date ranges
+    - invalid age/gender metadata modes
+- `BFB`
+  - local fixture-backed coverage exercises deterministic render-context checks for:
+    - template declaration
+    - required positioned fields
+    - print-position validity
+    - barcode presence and payload integrity
+- `TSS`
+  - local fixture-backed coverage exercises:
+    - TSS appointment filtering by vermittlungscode, service type, and time range
+    - selectable-slot determination for proposed TSS appointments
+    - booking semantics through the public appointments/referrals seam
 
 ## Highest-Value Remaining Gaps
 
-1. Replace the BFB placeholder with real renderer/barcode oracle checks.
-2. Replace the BFB placeholder with real renderer/barcode oracle checks.
-3. Add executable or official-fixture coverage for SDICD/SDKH/SDKRW coding master-data validation.
+1. Upgrade the local BFB checker from render-context parity to a real golden-output/template comparison layer.
+2. Add executable or package-level provenance validation for SDICD/SDKH/SDKRW coding master-data imports.
+3. Move TSS from local fixture-backed selection semantics to a real transport adapter and Prüfpaket-backed exchange flow.
 
 ## Machine-Readable Inventory
 

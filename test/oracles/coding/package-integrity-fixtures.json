@@ -1,0 +1,106 @@
+[
+  {
+    "caseId": "ICD-PACKAGE-POSITIVE",
+    "sourceReference": "Local SDICD/SDKH/SDKRW package-integrity fixture: well-formed package metadata and entries",
+    "package": {
+      "family": "SDICD",
+      "version": "2026.2",
+      "effectiveFrom": "2026-04-01",
+      "effectiveTo": "2026-06-30",
+      "sourcePath": "Abrechnung/ICD/SDICD_2026_2.txt",
+      "importedAt": "2026-03-11T10:00:00.000Z",
+      "status": "active"
+    },
+    "entries": [
+      {
+        "code": "A00.0",
+        "text": "Cholera due to Vibrio cholerae 01, biovar cholerae",
+        "isBillable": true,
+        "ageLower": 0,
+        "ageUpper": 120,
+        "ageErrorType": "warning",
+        "genderConstraint": "female",
+        "genderErrorType": "warning"
+      },
+      {
+        "code": "B99.9",
+        "text": "Other infectious disease",
+        "isBillable": false
+      }
+    ],
+    "expectedPassed": true
+  },
+  {
+    "caseId": "ICD-PACKAGE-DUPLICATE-CODE",
+    "sourceReference": "Local SDICD package-integrity fixture: duplicate codes must fail",
+    "package": {
+      "family": "SDICD",
+      "version": "2026.2",
+      "sourcePath": "Abrechnung/ICD/SDICD_2026_2.txt",
+      "importedAt": "2026-03-11T10:01:00.000Z",
+      "status": "active"
+    },
+    "entries": [
+      {
+        "code": "A00.0",
+        "text": "Cholera",
+        "isBillable": true
+      },
+      {
+        "code": "A00.0",
+        "text": "Cholera duplicate",
+        "isBillable": true
+      }
+    ],
+    "expectedPassed": false,
+    "expectedErrorCodes": ["ICD_ENTRY_CODE_DUPLICATE"]
+  },
+  {
+    "caseId": "ICD-PACKAGE-EMPTY",
+    "sourceReference": "Local SDICD package-integrity fixture: empty packages must fail",
+    "package": {
+      "family": "SDKH",
+      "version": "2026.2",
+      "sourcePath": "Abrechnung/ICD/SDKH_2026_2.txt",
+      "importedAt": "2026-03-11T10:02:00.000Z",
+      "status": "active"
+    },
+    "entries": [],
+    "expectedPassed": false,
+    "expectedErrorCodes": ["ICD_PACKAGE_EMPTY"]
+  },
+  {
+    "caseId": "ICD-PACKAGE-ENTRY-METADATA-INVALID",
+    "sourceReference": "Local SDICD package-integrity fixture: invalid range and metadata must fail",
+    "package": {
+      "family": "SDKRW",
+      "version": "2026.2",
+      "effectiveFrom": "2026-07-01",
+      "effectiveTo": "2026-06-30",
+      "sourcePath": "Abrechnung/ICD/SDKRW_2026_2.txt",
+      "importedAt": "2026-03-11T10:03:00.000Z",
+      "status": "active"
+    },
+    "entries": [
+      {
+        "code": "C10.1",
+        "text": "",
+        "isBillable": true,
+        "ageLower": 18,
+        "ageUpper": 4,
+        "ageErrorType": "fatal",
+        "genderConstraint": "robot",
+        "genderErrorType": "fatal"
+      }
+    ],
+    "expectedPassed": false,
+    "expectedErrorCodes": [
+      "ICD_PACKAGE_EFFECTIVE_RANGE_INVALID",
+      "ICD_ENTRY_TEXT_MISSING",
+      "ICD_ENTRY_AGE_RANGE_INVALID",
+      "ICD_ENTRY_AGE_ERROR_TYPE_INVALID",
+      "ICD_ENTRY_GENDER_CONSTRAINT_INVALID",
+      "ICD_ENTRY_GENDER_ERROR_TYPE_INVALID"
+    ]
+  }
+]

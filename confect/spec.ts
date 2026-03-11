@@ -40,6 +40,22 @@ import {
   RegisterMasterDataPackageResult,
 } from "../src/domain/billing-coding";
 import {
+  BookTssAppointmentArgs,
+  BookTssAppointmentResult,
+  CreateAppointmentArgs,
+  CreateAppointmentResult,
+  CreateReferralArgs,
+  CreateReferralResult,
+  ListAppointmentsArgs,
+  ListAppointmentsResult,
+  ListAvailableTssAppointmentsArgs,
+  ListAvailableTssAppointmentsResult,
+  ListReferralsByPatientArgs,
+  ListReferralsByPatientResult,
+  LookupReferralByVermittlungscodeArgs,
+  LookupReferralByVermittlungscodeResult,
+} from "../src/domain/appointments-referrals";
+import {
   AddMedicationPlanEntryArgs,
   AddMedicationPlanEntryResult,
   CreateHeilmittelApprovalArgs,
@@ -247,6 +263,59 @@ export const BillingGroup = GroupSpec.make("billing")
       name: "getKvdtCaseView",
       args: GetKvdtCaseViewArgs,
       returns: GetKvdtCaseViewResult,
+    }),
+  );
+
+export const AppointmentsGroup = GroupSpec.make("appointments")
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "create",
+      args: CreateAppointmentArgs,
+      returns: CreateAppointmentResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "listByOrganization",
+      args: ListAppointmentsArgs,
+      returns: ListAppointmentsResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "listAvailableTss",
+      args: ListAvailableTssAppointmentsArgs,
+      returns: ListAvailableTssAppointmentsResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "bookTss",
+      args: BookTssAppointmentArgs,
+      returns: BookTssAppointmentResult,
+    }),
+  );
+
+export const ReferralsGroup = GroupSpec.make("referrals")
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "create",
+      args: CreateReferralArgs,
+      returns: CreateReferralResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "listByPatient",
+      args: ListReferralsByPatientArgs,
+      returns: ListReferralsByPatientResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "lookupByVermittlungscode",
+      args: LookupReferralByVermittlungscodeArgs,
+      returns: LookupReferralByVermittlungscodeResult,
     }),
   );
 
@@ -485,6 +554,8 @@ const spec = Spec.make()
   .add(VsdGroup)
   .add(CodingGroup)
   .add(BillingGroup)
+  .add(AppointmentsGroup)
+  .add(ReferralsGroup)
   .add(CatalogGroup)
   .add(PrescriptionsGroup)
   .add(HeilmittelGroup)
