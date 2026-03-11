@@ -5,7 +5,10 @@ import {
   AppointmentsFields,
   ReferralsFields,
 } from "../../confect/tables/core-encounters";
-import { IsoDateTime } from "../../confect/tables/primitives";
+import {
+  AttachmentRefValue,
+  IsoDateTime,
+} from "../../confect/tables/primitives";
 import { withSystemFields } from "./shared";
 
 export const AppointmentDocument = withSystemFields(
@@ -44,6 +47,36 @@ export const ListAvailableTssAppointmentsArgs = Schema.Struct({
 export const ListAvailableTssAppointmentsResult =
   Schema.Array(AppointmentDocument);
 
+export const TssExchangeArtifactInput = Schema.Struct({
+  attachment: AttachmentRefValue,
+  externalIdentifier: Schema.optional(Schema.String),
+});
+
+export const ImportTssSlotInput = Schema.Struct({
+  displayBucket: Schema.optional(Schema.String),
+  end: Schema.optional(IsoDateTime),
+  externalAppointmentId: Schema.String,
+  start: IsoDateTime,
+  status: Schema.optional(
+    Schema.Literal("proposed", "cancelled", "fulfilled", "noshow"),
+  ),
+  tssServiceType: Schema.optional(Schema.String),
+  vermittlungscode: Schema.optional(Schema.String),
+});
+
+export const ImportTssSlotsArgs = Schema.Struct({
+  artifact: TssExchangeArtifactInput,
+  importedAt: IsoDateTime,
+  organizationId: GenericId.GenericId("organizations"),
+  slots: Schema.Array(ImportTssSlotInput),
+});
+export const ImportTssSlotsResult = Schema.Struct({
+  appointmentIds: Schema.Array(GenericId.GenericId("appointments")),
+  artifactId: GenericId.GenericId("artifacts"),
+  importedCount: Schema.Number,
+  jobId: GenericId.GenericId("integrationJobs"),
+});
+
 export const BookTssAppointmentArgs = Schema.Struct({
   appointmentId: GenericId.GenericId("appointments"),
   patientId: GenericId.GenericId("patients"),
@@ -51,6 +84,9 @@ export const BookTssAppointmentArgs = Schema.Struct({
 });
 export const BookTssAppointmentBooked = Schema.Struct({
   appointmentId: GenericId.GenericId("appointments"),
+  billingCaseId: GenericId.GenericId("billingCases"),
+  encounterId: GenericId.GenericId("encounters"),
+  integrationJobId: GenericId.GenericId("integrationJobs"),
   outcome: Schema.Literal("booked"),
 });
 export const BookTssAppointmentBlocked = Schema.Struct({

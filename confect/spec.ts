@@ -7,6 +7,8 @@ import {
   CreateAppointmentResult,
   CreateReferralArgs,
   CreateReferralResult,
+  ImportTssSlotsArgs,
+  ImportTssSlotsResult,
   ListAppointmentsArgs,
   ListAppointmentsResult,
   ListAvailableTssAppointmentsArgs,
@@ -297,6 +299,13 @@ export const AppointmentsGroup = GroupSpec.make("appointments")
       args: CreateAppointmentArgs,
       name: "create",
       returns: CreateAppointmentResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      args: ImportTssSlotsArgs,
+      name: "importTssSlots",
+      returns: ImportTssSlotsResult,
     }),
   )
   .addFunction(

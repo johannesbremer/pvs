@@ -117,7 +117,7 @@
       "runtimeWorkflow": "partial",
       "oracleStatus": "fixture-backed-local",
       "testStatus": "covered",
-      "currentNote": "Public appointments/referrals workflows now support TSS-style listing, filtering, vermittlungscode lookup, and booking semantics, with local fixture-backed oracle coverage for selection behavior."
+      "currentNote": "Public workflows now cover simulated TSS slot import, listing/filtering/selection, booking, referral consumption, and automatic billing-case plus encounter mapping, with local fixture-backed oracle coverage for selection behavior."
     },
     {
       "family": "AW-SST",

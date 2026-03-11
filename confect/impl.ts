@@ -13,6 +13,7 @@ import {
   CreateAppointmentArgs,
   CreateReferralArgs,
   filterSelectableTssAppointments,
+  ImportTssSlotsArgs,
   ListAppointmentsArgs,
   ListAvailableTssAppointmentsArgs,
   ListReferralsByPatientArgs,
@@ -130,6 +131,13 @@ const formatDisplayName = (
   return (
     [given, primaryName.family].filter(Boolean).join(" ").trim() || "Unbekannt"
   );
+};
+
+const quarterFromIsoDateTime = (timestamp: string) => {
+  const year = Number.parseInt(timestamp.slice(0, 4), 10);
+  const month = Number.parseInt(timestamp.slice(5, 7), 10);
+  const quarter = Math.floor((month - 1) / 3) + 1;
+  return `${year}Q${quarter}`;
 };
 
 const sourceStampFromSeed = (
@@ -661,6 +669,207 @@ const createAppointment = (appointment: typeof CreateAppointmentArgs.Type) =>
     return { appointmentId };
   });
 
+const importTssSlots = ({
+  artifact,
+  importedAt,
+  organizationId,
+  slots,
+}: typeof ImportTssSlotsArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const writer = yield* DatabaseWriter;
+    const jobId = yield* writer.table("integrationJobs").insert({
+      attemptCount: 1,
+      counterparty: "TSS",
+      direction: "inbound",
+      idempotencyKey: artifact.externalIdentifier
+        ? `tss-import:${artifact.externalIdentifier}`
+        : `tss-import:${organizationId}:${importedAt}`,
+      jobType: "tss-slot-import",
+      ownerId: String(organizationId),
+      ownerKind: "organization",
+      status: "running",
+    });
+
+    const artifactId = yield* createArtifact({
+      artifactFamily: "TSS",
+      artifactSubtype: "slot-import",
+      attachment: artifact.attachment,
+      contentType: artifact.attachment.contentType,
+      direction: "inbound",
+      ...(artifact.externalIdentifier
+        ? { externalIdentifier: artifact.externalIdentifier }
+        : {}),
+      immutableAt: importedAt,
+      ownerId: String(jobId),
+      ownerKind: "integrationJob",
+      transportKind: artifact.attachment.contentType,
+      validationStatus: "valid",
+    });
+
+    yield* writer.table("integrationJobs").patch(jobId, {
+      payloadArtifactId: artifactId,
+    });
+
+    const existingAppointments = yield* reader
+      .table("appointments")
+      .index("by_source_and_externalAppointmentId")
+      .collect();
+
+    const appointmentIds: Id<"appointments">[] = [];
+    for (const slot of slots) {
+      const existing = existingAppointments.find(
+        (appointment) =>
+          appointment.source === "tss" &&
+          appointment.externalAppointmentId === slot.externalAppointmentId,
+      );
+
+      if (existing) {
+        yield* writer.table("appointments").patch(existing._id, {
+          ...(slot.displayBucket ? { displayBucket: slot.displayBucket } : {}),
+          ...(slot.end ? { end: slot.end } : {}),
+          organizationId,
+          start: slot.start,
+          ...(slot.tssServiceType
+            ? { tssServiceType: slot.tssServiceType }
+            : {}),
+          ...(slot.vermittlungscode
+            ? { vermittlungscode: slot.vermittlungscode }
+            : {}),
+          ...(existing.status === "proposed"
+            ? { status: slot.status ?? "proposed" }
+            : {}),
+        });
+        appointmentIds.push(existing._id);
+        continue;
+      }
+
+      const appointmentId = yield* writer.table("appointments").insert({
+        ...(slot.displayBucket ? { displayBucket: slot.displayBucket } : {}),
+        ...(slot.end ? { end: slot.end } : {}),
+        externalAppointmentId: slot.externalAppointmentId,
+        organizationId,
+        source: "tss",
+        start: slot.start,
+        status: slot.status ?? "proposed",
+        ...(slot.tssServiceType ? { tssServiceType: slot.tssServiceType } : {}),
+        ...(slot.vermittlungscode
+          ? { vermittlungscode: slot.vermittlungscode }
+          : {}),
+      });
+      appointmentIds.push(appointmentId);
+    }
+
+    yield* writer.table("integrationJobs").patch(jobId, {
+      status: "done",
+    });
+    yield* writer.table("integrationEvents").insert({
+      artifactId,
+      eventType: "tss-slots-imported",
+      jobId,
+      message: `Imported ${appointmentIds.length} TSS slots.`,
+      occurredAt: importedAt,
+    });
+
+    return {
+      appointmentIds,
+      artifactId,
+      importedCount: appointmentIds.length,
+      jobId,
+    };
+  });
+
+const ensureTssBillingContext = ({
+  appointment,
+  patientId,
+}: {
+  appointment: {
+    readonly _id: Id<"appointments">;
+    readonly end?: string;
+    readonly locationId?: Id<"practiceLocations">;
+    readonly organizationId: Id<"organizations">;
+    readonly start: string;
+  };
+  patientId: PatientId;
+}) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const writer = yield* DatabaseWriter;
+    const quarter = quarterFromIsoDateTime(appointment.start);
+    const coverages = yield* reader
+      .table("coverages")
+      .index("by_patientId")
+      .collect();
+    const coverage = coverages
+      .filter((entry) => entry.patientId === patientId)
+      .sort((left, right) => left._creationTime - right._creationTime)
+      .at(-1);
+
+    const billingCases = yield* reader
+      .table("billingCases")
+      .index("by_patientId_and_quarter")
+      .collect();
+    const existingCase = billingCases.find(
+      (billingCase) =>
+        billingCase.patientId === patientId &&
+        billingCase.quarter === quarter &&
+        billingCase.tssAppointmentId === appointment._id,
+    );
+
+    const billingCaseId =
+      existingCase?._id ??
+      (yield* writer.table("billingCases").insert({
+        ...(coverage ? { coverageId: coverage._id } : {}),
+        ...(coverage?.kostentraegerkennung
+          ? { kostentraegerkennung4133: coverage.kostentraegerkennung }
+          : {}),
+        ...(coverage?.kostentraegerName
+          ? { kostentraegername4134: coverage.kostentraegerName }
+          : {}),
+        ...(appointment.locationId
+          ? { locationId: appointment.locationId }
+          : {}),
+        organizationId: appointment.organizationId,
+        patientId,
+        quarter,
+        status: "open",
+        tssAppointmentId: appointment._id,
+        tssRelevant: true,
+      }));
+
+    const encounters = yield* reader
+      .table("encounters")
+      .index("by_billingCaseId")
+      .collect();
+    const existingEncounter = encounters.find(
+      (encounter) =>
+        encounter.billingCaseId === billingCaseId &&
+        encounter.appointmentId === appointment._id,
+    );
+
+    const encounterId =
+      existingEncounter?._id ??
+      (yield* writer.table("encounters").insert({
+        appointmentId: appointment._id,
+        billingCaseId,
+        caseType: "tss",
+        ...(coverage ? { coverageId: coverage._id } : {}),
+        ...(appointment.end ? { end: appointment.end } : {}),
+        ...(appointment.locationId
+          ? { locationId: appointment.locationId }
+          : {}),
+        organizationId: appointment.organizationId,
+        patientId,
+        quarter,
+        start: appointment.start,
+      }));
+
+    return {
+      billingCaseId,
+      encounterId,
+    };
+  });
+
 const listAppointmentsByOrganization = ({
   organizationId,
   patientId,
@@ -811,8 +1020,57 @@ const bookTssAppointment = ({
       status: "booked",
     });
 
+    const bookingCode = vermittlungscode ?? appointment.vermittlungscode;
+    if (bookingCode) {
+      const referrals = yield* reader
+        .table("referrals")
+        .index("by_vermittlungscode")
+        .collect();
+      const matchingReferral = referrals.find(
+        (referral) =>
+          referral.patientId === patientId &&
+          referral.status === "active" &&
+          referral.vermittlungscode === bookingCode,
+      );
+      if (matchingReferral) {
+        yield* writer.table("referrals").patch(matchingReferral._id, {
+          status: "used",
+        });
+      }
+    }
+
+    const { billingCaseId, encounterId } = yield* ensureTssBillingContext({
+      appointment,
+      patientId,
+    });
+    const integrationJobId = yield* writer.table("integrationJobs").insert({
+      attemptCount: 1,
+      counterparty: "TSS",
+      direction: "outbound",
+      idempotencyKey: `tss-book:${String(appointmentId)}`,
+      jobType: "tss-booking",
+      ownerId: String(appointmentId),
+      ownerKind: "appointment",
+      status: "done",
+    });
+    yield* writer.table("integrationEvents").insert({
+      eventType: "tss-booking-recorded",
+      jobId: integrationJobId,
+      message: `Booked TSS appointment ${String(appointmentId)} for patient ${String(patientId)}.`,
+      occurredAt: appointment.start,
+    });
+    yield* writer.table("integrationEvents").insert({
+      eventType: "tss-billing-mapped",
+      jobId: integrationJobId,
+      message: `Mapped TSS booking to billing case ${String(billingCaseId)} and encounter ${String(encounterId)}.`,
+      occurredAt: appointment.start,
+    });
+
     return {
       appointmentId,
+      billingCaseId,
+      encounterId,
+      integrationJobId,
       outcome: "booked" as const,
     };
   });
@@ -4588,6 +4846,7 @@ const billingGroup = GroupImpl.make(api, "billing").pipe(
 const appointmentsGroup = GroupImpl.make(api, "appointments").pipe(
   Layer.provide([
     FunctionImpl.make(api, "appointments", "create", createAppointment),
+    FunctionImpl.make(api, "appointments", "importTssSlots", importTssSlots),
     FunctionImpl.make(
       api,
       "appointments",
