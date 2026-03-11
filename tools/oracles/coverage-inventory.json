@@ -117,7 +117,7 @@
       "runtimeWorkflow": "partial",
       "oracleStatus": "fixture-backed-local",
       "testStatus": "covered",
-      "currentNote": "Public workflows now cover simulated TSS slot import, listing/filtering/selection, booking, referral consumption, and automatic billing-case plus encounter mapping, with local fixture-backed oracle coverage for selection behavior."
+      "currentNote": "Public workflows now cover simulated and official-searchset TSS import, listing/filtering/selection, booking, referral consumption, and automatic billing-case plus encounter mapping. Pinned KBV response XML, VSD, and test-patient ZIP assets from update.kbv.de are exercised in the TSS tests."
     },
     {
       "family": "AW-SST",

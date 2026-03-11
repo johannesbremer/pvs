@@ -1,5 +1,6 @@
 import type { OracleExecutionResult } from "../types";
 
+import { parseOfficialTssSearchsetXml } from "../../../src/codecs/xml/tss";
 import {
   filterSelectableTssAppointments,
   type TssAppointmentPreview,
@@ -26,9 +27,57 @@ const makeFinding = (
 
 export const runTssOracle = ({
   payloadPreview,
+  payloadPreviewXml,
 }: {
   payloadPreview?: string;
+  payloadPreviewXml?: string;
 }): OracleExecutionResult => {
+  if (payloadPreviewXml && payloadPreviewXml.trim().length > 0) {
+    const parsed = parseOfficialTssSearchsetXml(payloadPreviewXml);
+    const findings = [
+      makeFinding(
+        "TSS_OFFICIAL_XML_PARSED",
+        "info",
+        `Parsed ${parsed.appointments.length} appointment(s) from official TSS XML.`,
+      ),
+    ];
+
+    if (parsed.appointments.length === 0) {
+      findings.push(
+        makeFinding(
+          "TSS_OFFICIAL_XML_NO_APPOINTMENTS",
+          "error",
+          "No Appointment resources were found in the official TSS XML payload.",
+        ),
+      );
+    }
+
+    if (
+      parsed.appointments.some(
+        (appointment) =>
+          appointment.start.length === 0 ||
+          appointment.externalAppointmentId.length === 0,
+      )
+    ) {
+      findings.push(
+        makeFinding(
+          "TSS_OFFICIAL_XML_REQUIRED_FIELDS_MISSING",
+          "error",
+          "At least one parsed TSS appointment is missing its id or start timestamp.",
+        ),
+      );
+    }
+
+    return {
+      family: "TSS",
+      findings,
+      passed: findings.every((finding) => finding.severity !== "error"),
+      summary: findings.every((finding) => finding.severity !== "error")
+        ? "Official TSS XML satisfied the parser checks."
+        : "Official TSS XML failed the parser checks.",
+    };
+  }
+
   if (!payloadPreview || payloadPreview.trim().length === 0) {
     return {
       family: "TSS",

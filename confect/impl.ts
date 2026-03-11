@@ -8,11 +8,13 @@ import {
   renderErpBundleXml,
   renderEvdgaBundleXml,
 } from "../src/codecs/xml/fhir";
+import { parseOfficialTssSearchsetXml } from "../src/codecs/xml/tss";
 import {
   BookTssAppointmentArgs,
   CreateAppointmentArgs,
   CreateReferralArgs,
   filterSelectableTssAppointments,
+  ImportTssSearchsetBundleArgs,
   ImportTssSlotsArgs,
   ListAppointmentsArgs,
   ListAvailableTssAppointmentsArgs,
@@ -777,6 +779,37 @@ const importTssSlots = ({
       importedCount: appointmentIds.length,
       jobId,
     };
+  });
+
+const importTssSearchsetBundle = ({
+  artifact,
+  importedAt,
+  organizationId,
+  xml,
+}: typeof ImportTssSearchsetBundleArgs.Type) =>
+  Effect.gen(function* () {
+    const parsed = parseOfficialTssSearchsetXml(xml);
+    const slots = parsed.appointments.map((appointment) => ({
+      ...(appointment.end ? { end: appointment.end } : {}),
+      externalAppointmentId: appointment.externalAppointmentId,
+      start: appointment.start,
+      status: appointment.status,
+      ...(appointment.serviceTypeCode
+        ? { tssServiceType: appointment.serviceTypeCode }
+        : appointment.serviceTypeDisplay
+          ? { tssServiceType: appointment.serviceTypeDisplay }
+          : {}),
+      ...(appointment.vermittlungscode
+        ? { vermittlungscode: appointment.vermittlungscode }
+        : {}),
+    }));
+
+    return yield* importTssSlots({
+      artifact,
+      importedAt,
+      organizationId,
+      slots,
+    });
   });
 
 const ensureTssBillingContext = ({
@@ -4847,6 +4880,12 @@ const appointmentsGroup = GroupImpl.make(api, "appointments").pipe(
   Layer.provide([
     FunctionImpl.make(api, "appointments", "create", createAppointment),
     FunctionImpl.make(api, "appointments", "importTssSlots", importTssSlots),
+    FunctionImpl.make(
+      api,
+      "appointments",
+      "importTssSearchsetBundle",
+      importTssSearchsetBundle,
+    ),
     FunctionImpl.make(
       api,
       "appointments",

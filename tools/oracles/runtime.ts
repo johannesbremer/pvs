@@ -102,7 +102,9 @@ export const executeOraclePlan = ({
         ? runExecutableKvdtOracle({ payloadPreview })
         : Promise.resolve(runKvdtOracle({ payloadPreview }));
     case "TSS":
-      return Promise.resolve(runTssOracle({ payloadPreview }));
+      return Promise.resolve(
+        runTssOracle({ payloadPreview, payloadPreviewXml }),
+      );
     default:
       return Promise.resolve(
         fallbackResult(

@@ -9,6 +9,59 @@ import { refs } from "../confect/refs";
 import { runWithTestConfect, TestConfect } from "./TestConfect";
 
 const seedStorageId = "seed;_storage" as Id<"_storage">;
+const officialTssSearchsetXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Bundle xmlns="http://hl7.org/fhir">
+  <type value="searchset"/>
+  <timestamp value="2025-09-06T05:51:32+02:00"/>
+  <total value="1"/>
+  <entry>
+    <resource>
+      <Appointment>
+        <id value="0286855c-b49c-48b4-9775-58b6cb031aed"/>
+        <status value="booked"/>
+        <serviceType>
+          <coding>
+            <code value="09"/>
+            <display value="Kinderarzt / Kinderärztin"/>
+          </coding>
+        </serviceType>
+        <start value="2025-09-10T10:00:00+02:00"/>
+        <end value="2025-09-10T10:20:00+02:00"/>
+        <basedOn>
+          <identifier>
+            <value value="XN6P-F4HP-Z5KX"/>
+          </identifier>
+        </basedOn>
+      </Appointment>
+    </resource>
+  </entry>
+  <entry>
+    <resource>
+      <PractitionerRole>
+        <organization>
+          <identifier>
+            <value value="241234601"/>
+          </identifier>
+        </organization>
+      </PractitionerRole>
+    </resource>
+  </entry>
+  <entry>
+    <resource>
+      <Patient>
+        <identifier>
+          <value value="5040464113"/>
+        </identifier>
+        <name>
+          <family value="Schaumberg"/>
+          <given value="Karl-Frieder"/>
+        </name>
+        <gender value="male"/>
+        <birthDate value="1964-04-04"/>
+      </Patient>
+    </resource>
+  </entry>
+</Bundle>`;
 
 const seedTssContext = () =>
   Effect.gen(function* () {
@@ -369,19 +422,22 @@ describe("appointments, referrals, and TSS workflows", () => {
           throw new Error("expected booked TSS appointment");
         }
 
-        const diagnosis = yield* test.mutation(refs.public.coding.createDiagnosis, {
-          billingCaseId: booked.billingCaseId,
-          category: "acute",
-          createdAt: "2026-04-15T14:30:00.000Z",
-          icd10gm: {
-            code: "M54.5",
-            display: "Low back pain",
-            system: "urn:icd10gm",
+        const diagnosis = yield* test.mutation(
+          refs.public.coding.createDiagnosis,
+          {
+            billingCaseId: booked.billingCaseId,
+            category: "acute",
+            createdAt: "2026-04-15T14:30:00.000Z",
+            icd10gm: {
+              code: "M54.5",
+              display: "Low back pain",
+              system: "urn:icd10gm",
+            },
+            icdCode: "M54.5",
+            isPrimary: true,
+            patientId: patient.patientId,
           },
-          icdCode: "M54.5",
-          isPrimary: true,
-          patientId: patient.patientId,
-        });
+        );
 
         yield* test.mutation(refs.public.billing.addLineItem, {
           billingCaseId: booked.billingCaseId,
@@ -464,5 +520,60 @@ describe("appointments, referrals, and TSS workflows", () => {
     expect(result.referral.referral.status).toBe("used");
     expect(result.persisted.encounterCaseType).toBe("tss");
     expect(result.persisted.encounterId).toBe(result.booked.encounterId);
+  });
+
+  it("imports official-style TSS searchset XML into canonical appointments", async () => {
+    const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const test = yield* TestConfect;
+        const { organizationId } = yield* test.run(
+          seedTssContext(),
+          Schema.Struct({
+            organizationId: GenericId.GenericId("organizations"),
+            requesterRoleId: GenericId.GenericId("practitionerRoles"),
+          }),
+        );
+
+        const imported = yield* test.mutation(
+          refs.public.appointments.importTssSearchsetBundle,
+          {
+            artifact: {
+              attachment: {
+                byteSize: officialTssSearchsetXml.length,
+                contentType: "application/fhir+xml",
+                sha256: "tss-official-xml",
+                storageId: seedStorageId,
+              },
+              externalIdentifier: "official-response-1",
+            },
+            importedAt: "2026-03-11T10:00:00.000Z",
+            organizationId,
+            xml: officialTssSearchsetXml,
+          },
+        );
+
+        const appointments = yield* test.query(
+          refs.public.appointments.listByOrganization,
+          {
+            organizationId,
+            source: "tss",
+          },
+        );
+
+        return {
+          appointments,
+          imported,
+        };
+      }),
+    );
+
+    expect(result.imported.importedCount).toBe(1);
+    expect(result.appointments).toHaveLength(1);
+    expect(result.appointments[0]?.externalAppointmentId).toBe(
+      "0286855c-b49c-48b4-9775-58b6cb031aed",
+    );
+    expect(result.appointments[0]?.status).toBe("booked");
+    expect(result.appointments[0]?.vermittlungscode).toBe("XN6PF4HPZ5KX");
+    expect(result.appointments[0]?.tssServiceType).toBe("09");
   });
 });

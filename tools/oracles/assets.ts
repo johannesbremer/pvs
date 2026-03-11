@@ -140,6 +140,27 @@ export const kbvOracleAssets = {
     sha256: "24242cc761b02929ba9092d420aa6c74decf840985cbc7bd3f0419cdff068c8a",
     url: "https://update.kbv.de/ita-update/KBV-Software/Pruefassistent/KBV-Pruefassistent_V2026.2.1.jar",
   },
+  tssResponseExamples_7_2: {
+    assetId: "tssResponseExamples_7_2",
+    extract: true,
+    fileName: "Daten_Terminservicestelle_V7.2.zip",
+    sha256: "5641fbbc61cc327b029cbbc2696451dbe47da5b9c1d4bfdd559d5acf5063b84f",
+    url: "https://update.kbv.de/ita-update/TSS/3_0_0/Daten_Terminservicestelle_V7.2.zip",
+  },
+  tssTestpatientXml_2025_07_14: {
+    assetId: "tssTestpatientXml_2025_07_14",
+    extract: true,
+    fileName: "Testpatient_XML.zip",
+    sha256: "bee6a54d695f1107f991d76968f6706b50ec18653b7aa3b264e245b6a8399f5c",
+    url: "https://update.kbv.de/ita-update/TSS/3_0_0/Testpatient_XML.zip",
+  },
+  tssVsdTestfaelle_2_0: {
+    assetId: "tssVsdTestfaelle_2_0",
+    extract: true,
+    fileName: "VSD_Testfaelle_TSS_ABR_V2.0.zip",
+    sha256: "43f5688edcb3879962f4ea2655c61d1714b36a0e7db55dbb47668891e8edd76b",
+    url: "https://update.kbv.de/ita-update/TSS/3_0_0/VSD_Testfaelle_TSS_ABR_V2.0.zip",
+  },
   xkm_1_44_0: {
     assetId: "xkm_1_44_0",
     extract: true,
@@ -644,6 +665,32 @@ export const ensureBmpAssets = async ({
     bmpDir,
     bmpExamplesDir,
     bmpXsd,
+  };
+};
+
+export const ensureTssAssets = async ({
+  cacheDir = getKbvOracleCacheDir(),
+}: {
+  cacheDir?: string;
+}) => {
+  const resolvedCacheDir = resolve(cacheDir);
+  const responseExamplesDir = await ensureExtractedAsset(
+    kbvOracleAssets.tssResponseExamples_7_2,
+    resolvedCacheDir,
+  );
+  const vsdTestfaelleDir = await ensureExtractedAsset(
+    kbvOracleAssets.tssVsdTestfaelle_2_0,
+    resolvedCacheDir,
+  );
+  const testpatientXmlDir = await ensureExtractedAsset(
+    kbvOracleAssets.tssTestpatientXml_2025_07_14,
+    resolvedCacheDir,
+  );
+
+  return {
+    responseExamplesDir,
+    testpatientXmlDir,
+    vsdTestfaelleDir,
   };
 };
 
