@@ -12,7 +12,7 @@ type BfbFixture = {
 };
 
 describe("official BFB fixture sweeps", () => {
-  it("validates local BFB render-context fixtures", async () => {
+  it("validates local BFB golden render-context fixtures", async () => {
     const fixturePath = join(
       process.cwd(),
       "test",
@@ -24,7 +24,7 @@ describe("official BFB fixture sweeps", () => {
       await readFile(fixturePath, "utf8"),
     ) as ReadonlyArray<BfbFixture>;
 
-    expect(fixtures.length).toBeGreaterThanOrEqual(3);
+    expect(fixtures.length).toBeGreaterThanOrEqual(4);
 
     for (const fixture of fixtures) {
       const result = runBfbOracle({

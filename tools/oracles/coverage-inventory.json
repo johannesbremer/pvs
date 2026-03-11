@@ -18,7 +18,7 @@
       "runtimeWorkflow": true,
       "oracleStatus": "fixture-backed-local",
       "testStatus": "covered",
-      "currentNote": "Diagnosis lifecycle and persisted coding evaluations exist, and fixture-backed SDICD/SDKH/SDKRW coverage now checks both rule outcomes and package-integrity metadata through a shared local oracle. No executable package oracle exists yet."
+      "currentNote": "Diagnosis lifecycle and persisted coding evaluations exist, and fixture-backed SDICD/SDKH/SDKRW coverage now checks rule outcomes plus package integrity, provenance metadata, byte-level sha256 verification, and signature or trust metadata through a shared local oracle. No executable package oracle exists yet."
     },
     {
       "family": "KVDT",
@@ -67,12 +67,12 @@
     },
     {
       "family": "BFB",
-      "sourceQuarterOrVersion": "n/a",
+      "sourceQuarterOrVersion": "Muster.zip / BFB docs as published on update.kbv.de",
       "canonicalModel": "schema-only",
       "runtimeWorkflow": "partial",
       "oracleStatus": "fixture-backed-local",
       "testStatus": "covered",
-      "currentNote": "Local BFB oracle coverage now validates template declaration, positioned fields, and barcode payload metadata from deterministic render-context fixtures. No full certified PDF renderer exists yet."
+      "currentNote": "Local BFB oracle coverage now validates deterministic golden template snapshots for field layout, required values, and barcode payload or placement semantics, anchored to the published KBV Blankoformulare assets on update.kbv.de. No full certified PDF renderer exists yet."
     },
     {
       "family": "Documents",

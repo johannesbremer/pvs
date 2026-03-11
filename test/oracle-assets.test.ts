@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,6 +9,7 @@ import {
   downloadManagedAsset,
   getAssetCacheEntry,
   getKbvOracleCacheManifestPath,
+  kbvOracleAssets,
 } from "../tools/oracles/assets";
 
 const tempDirs: Array<string> = [];
@@ -20,6 +21,31 @@ afterEach(async () => {
 });
 
 describe("oracle asset downloader", () => {
+  it("pins sha256 digests for the core downloaded KBV assets used in the suite", () => {
+    const pinnedAssetIds = [
+      "fhirValidatorService_2_2_0",
+      "kbvFhirEau_1_2_1",
+      "kbvEauExamples_1_2",
+      "kbvFhirErp_1_4_1",
+      "kbvErpExamples_1_4",
+      "xpmKvdtPraxis_2026_2_1",
+      "kbvPruefassistent_2026_2_1",
+      "xkm_1_44_0",
+      "xkmPublicKeys_2026_02",
+      "xkmTestKeys_2026_02",
+      "bmp_2_8_q3_2026",
+      "bmpExamples_2_8_q3_2026",
+      "bfbMuster_2025_11_14",
+      "bfbTechnicalHandbook_2025_11_14",
+      "bfbPruefpaket_2024_10_04",
+      "bfbDirectory_2026_03_10",
+    ] as const;
+
+    for (const assetId of pinnedAssetIds) {
+      expect(kbvOracleAssets[assetId].sha256).toMatch(/^[a-f0-9]{64}$/);
+    }
+  });
+
   it("downloads an asset into the cache and verifies its SHA-256", async () => {
     const payload = Buffer.from("kbv-test-payload");
     const sha256 = createHash("sha256").update(payload).digest("hex");
@@ -46,6 +72,70 @@ describe("oracle asset downloader", () => {
 
     const cacheEntry = await getAssetCacheEntry({
       assetId: "test-asset",
+      cacheDir: tempDir,
+    });
+    expect(cacheEntry?.downloadPath).toBe(downloadedPath);
+  });
+
+  it("re-downloads a cached asset automatically when the cached hash no longer matches", async () => {
+    const payload = Buffer.from("kbv-test-payload");
+    const sha256 = createHash("sha256").update(payload).digest("hex");
+    const tempDir = await mkdtemp(join(tmpdir(), "kbv-asset-test-"));
+    tempDirs.push(tempDir);
+
+    const downloadedPath = await downloadManagedAsset(
+      {
+        assetId: "test-asset-corruption",
+        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
+        fileName: "asset.bin",
+        sha256,
+      },
+      tempDir,
+    );
+
+    await writeFile(downloadedPath, "corrupted-cache", "utf8");
+
+    const redownloadedPath = await downloadManagedAsset(
+      {
+        assetId: "test-asset-corruption",
+        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
+        fileName: "asset.bin",
+        sha256,
+      },
+      tempDir,
+    );
+
+    const redownloaded = await readFile(redownloadedPath);
+    expect(redownloaded.equals(payload)).toBe(true);
+  });
+
+  it("recovers from a malformed asset-cache manifest by rewriting it on the next update", async () => {
+    const payload = Buffer.from("kbv-test-payload");
+    const sha256 = createHash("sha256").update(payload).digest("hex");
+    const tempDir = await mkdtemp(join(tmpdir(), "kbv-asset-test-"));
+    tempDirs.push(tempDir);
+
+    await writeFile(
+      getKbvOracleCacheManifestPath(tempDir),
+      '{"broken": true}\n}',
+      "utf8",
+    );
+
+    const downloadedPath = await downloadManagedAsset(
+      {
+        assetId: "test-asset-broken-manifest",
+        url: `data:application/octet-stream;base64,${payload.toString("base64")}`,
+        fileName: "asset.bin",
+        sha256,
+      },
+      tempDir,
+    );
+
+    const downloaded = await readFile(downloadedPath);
+    expect(downloaded.equals(payload)).toBe(true);
+
+    const cacheEntry = await getAssetCacheEntry({
+      assetId: "test-asset-broken-manifest",
       cacheDir: tempDir,
     });
     expect(cacheEntry?.downloadPath).toBe(downloadedPath);

@@ -9,13 +9,13 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 | Area | Canonical model | Runtime workflow | Oracle status | Test status | Current note |
 | --- | --- | --- | --- | --- | --- |
 | VSD / eGK / eEB adoption | Yes | Yes | None | Yes | Patient, identifier, coverage, and VSD snapshot workflows are covered by unit-style integration tests. |
-| ICD / coding | Yes | Yes | Fixture-backed local | Yes | Diagnosis lifecycle and persisted coding evaluations exist, and SDICD/SDKH/SDKRW fixtures now cover both rule outcomes and package-integrity metadata through a shared local oracle. No executable package oracle exists yet. |
+| ICD / coding | Yes | Yes | Fixture-backed local | Yes | Diagnosis lifecycle and persisted coding evaluations exist, and SDICD/SDKH/SDKRW fixtures now cover rule outcomes plus package integrity, provenance metadata, byte-level sha256 verification, and signature or trust metadata through a shared local oracle. No executable package oracle exists yet. |
 | KVDT billing seam | Yes | Partial | Executable XPM + XKM | Yes | Official `.con` fixtures from the XPM package are covered in automated cold-start and warm-cache tests, including both positive and negative validator cases. |
 | Arzneimittel / eRezept canonical order | Yes | Yes | Executable FHIR | Yes | The full official Q3_2026 ERP XML archive now runs through the real validator and completes without error findings in the automated suite. |
 | eAU canonical documents | Yes | Yes | Executable FHIR | Yes | Official eAU examples validate via the executable FHIR path from an empty cache. |
 | BMP | Yes | Partial | Executable XSD | Yes | Official BMP example XMLs are covered through the downloaded KBV XSD package and example archive. |
 | Heilmittel canonical orders | Yes | Yes | Official fixture-backed | Yes | Local oracle checks now run official KBV Heilmittel Prüfpaket-derived fixtures for blanko handling, approvals, and quantity limits. |
-| BFB / form rendering | Schema only | Partial | Fixture-backed local | Yes | Local BFB oracle fixtures now validate template declaration, print positions, required field values, and barcode payload metadata from deterministic render-context previews. No full certified PDF renderer exists yet. |
+| BFB / form rendering | Schema only | Partial | Fixture-backed local | Yes | Local BFB oracle fixtures now validate deterministic golden template snapshots for field layout, required values, and barcode payload or placement semantics, anchored to the published KBV Blankoformulare assets on `update.kbv.de`. No full certified PDF renderer exists yet. |
 | Documents / revisions / artifacts | Yes | Yes | Indirect | Yes | Immutability and issuance flows are tested through medication/eAU/heilmittel flows. |
 | Ti / KIM / mailboxes | Yes | Minimal | None | No | Schema is present; production workflows are largely unimplemented. |
 | eVDGA | Yes | Minimal | None | No | Schema is present; emitter/oracle work is not implemented. |
@@ -29,6 +29,7 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 - TypeScript compiles.
 - Confect public workflows used in the repo tests behave consistently.
 - KBV/HL7 assets are downloaded automatically into `.cache/`.
+- Core downloaded KBV assets used in the executable suite, including the registered BFB source assets, are hash-pinned and are re-fetched automatically if cached bytes do not match the pinned digest.
 - Official executable-backed FHIR validation runs from a cold cache.
 - A good chunk of official KBV XML examples is validated end to end.
 
@@ -81,12 +82,16 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
     - duplicate code rejection
     - invalid effective date ranges
     - invalid age/gender metadata modes
+    - artifact content-type, byte-size, and sha256 provenance checks
+    - decoded package-byte sha256 and byte-size verification when fixture bytes are present
+    - signature status, detached-signature path, expected signer, trust anchor, and certificate digest checks
+    - sourcePath alignment with package family and version
 - `BFB`
-  - local fixture-backed coverage exercises deterministic render-context checks for:
-    - template declaration
-    - required positioned fields
-    - print-position validity
-    - barcode presence and payload integrity
+  - local fixture-backed coverage exercises deterministic golden template checks for:
+    - template id and version parity
+    - required positioned fields and exact layout boxes
+    - page-count parity
+    - barcode placement and payload-prefix expectations
 - `TSS`
   - local fixture-backed coverage exercises:
     - TSS appointment filtering by vermittlungscode, service type, and time range
@@ -95,8 +100,8 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 
 ## Highest-Value Remaining Gaps
 
-1. Upgrade the local BFB checker from render-context parity to a real golden-output/template comparison layer.
-2. Add executable or package-level provenance validation for SDICD/SDKH/SDKRW coding master-data imports.
+1. Add executable package authenticity or signature validation for SDICD/SDKH/SDKRW coding master-data imports.
+2. Move BFB from golden template parity to actual renderer or artifact comparison against certified output.
 3. Move TSS from local fixture-backed selection semantics to a real transport adapter and Prüfpaket-backed exchange flow.
 
 ## Machine-Readable Inventory

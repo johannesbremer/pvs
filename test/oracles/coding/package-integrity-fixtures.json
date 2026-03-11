@@ -9,7 +9,23 @@
       "effectiveTo": "2026-06-30",
       "sourcePath": "Abrechnung/ICD/SDICD_2026_2.txt",
       "importedAt": "2026-03-11T10:00:00.000Z",
-      "status": "active"
+      "status": "active",
+      "authenticity": {
+        "signatureStatus": "verified",
+        "signatureAlgorithm": "cms-detached-sha256",
+        "detachedSignaturePath": "Abrechnung/ICD/SDICD_2026_2.p7s",
+        "signerOrganization": "KBV",
+        "trustAnchor": "KBV_UPDATE",
+        "certificateSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "verifiedAt": "2026-03-11T10:00:01.000Z"
+      },
+      "artifact": {
+        "storageId": "seed;_storage",
+        "contentType": "text/plain",
+        "byteSize": 98,
+        "sha256": "03eebb79a062876dab6ef8e3365df7e5f4035d4ea54ef91e39386b10243e73c8",
+        "bytesBase64": "Q09ERTtBMDAuMDtDaG9sZXJhIGR1ZSB0byBWaWJyaW8gY2hvbGVyYWUgMDEsIGJpb3ZhciBjaG9sZXJhZQpDT0RFO0I5OS45O090aGVyIGluZmVjdGlvdXMgZGlzZWFzZQo="
+      }
     },
     "entries": [
       {
@@ -38,7 +54,23 @@
       "version": "2026.2",
       "sourcePath": "Abrechnung/ICD/SDICD_2026_2.txt",
       "importedAt": "2026-03-11T10:01:00.000Z",
-      "status": "active"
+      "status": "active",
+      "authenticity": {
+        "signatureStatus": "verified",
+        "signatureAlgorithm": "cms-detached-sha256",
+        "detachedSignaturePath": "Abrechnung/ICD/SDICD_2026_2.p7s",
+        "signerOrganization": "KBV",
+        "trustAnchor": "KBV_UPDATE",
+        "certificateSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "verifiedAt": "2026-03-11T10:01:01.000Z"
+      },
+      "artifact": {
+        "storageId": "seed;_storage",
+        "contentType": "text/plain",
+        "byteSize": 48,
+        "sha256": "011c9c67f60ebb4b854cb603edcf618ba8096f4ebfa8ea61856a3ea295dd4492",
+        "bytesBase64": "Q09ERTtBMDAuMDtDaG9sZXJhCkNPREU7QTAwLjA7Q2hvbGVyYSBkdXBsaWNhdGUK"
+      }
     },
     "entries": [
       {
@@ -63,7 +95,23 @@
       "version": "2026.2",
       "sourcePath": "Abrechnung/ICD/SDKH_2026_2.txt",
       "importedAt": "2026-03-11T10:02:00.000Z",
-      "status": "active"
+      "status": "active",
+      "authenticity": {
+        "signatureStatus": "verified",
+        "signatureAlgorithm": "cms-detached-sha256",
+        "detachedSignaturePath": "Abrechnung/ICD/SDKH_2026_2.p7s",
+        "signerOrganization": "KBV",
+        "trustAnchor": "KBV_UPDATE",
+        "certificateSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "verifiedAt": "2026-03-11T10:02:01.000Z"
+      },
+      "artifact": {
+        "storageId": "seed;_storage",
+        "contentType": "text/plain",
+        "byteSize": 12,
+        "sha256": "82961c791b0253fe76f8f4858bef2040ddc3b70c3f900eda48ae7c832c7a09cd",
+        "bytesBase64": "SEVBREVSO1NES0gK"
+      }
     },
     "entries": [],
     "expectedPassed": false,
@@ -79,7 +127,23 @@
       "effectiveTo": "2026-06-30",
       "sourcePath": "Abrechnung/ICD/SDKRW_2026_2.txt",
       "importedAt": "2026-03-11T10:03:00.000Z",
-      "status": "active"
+      "status": "active",
+      "authenticity": {
+        "signatureStatus": "verified",
+        "signatureAlgorithm": "cms-detached-sha256",
+        "detachedSignaturePath": "Abrechnung/ICD/SDKRW_2026_2.p7s",
+        "signerOrganization": "KBV",
+        "trustAnchor": "KBV_UPDATE",
+        "certificateSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "verifiedAt": "2026-03-11T10:03:01.000Z"
+      },
+      "artifact": {
+        "storageId": "seed;_storage",
+        "contentType": "text/plain",
+        "byteSize": 12,
+        "sha256": "9bfebd9f67e9d7800317e4aee1133e1e89eb2784796638417649dec5c51935ec",
+        "bytesBase64": "Q09ERTtDMTAuMTsK"
+      }
     },
     "entries": [
       {
@@ -101,6 +165,122 @@
       "ICD_ENTRY_AGE_ERROR_TYPE_INVALID",
       "ICD_ENTRY_GENDER_CONSTRAINT_INVALID",
       "ICD_ENTRY_GENDER_ERROR_TYPE_INVALID"
+    ]
+  },
+  {
+    "caseId": "ICD-PACKAGE-ARTIFACT-HASH-MISMATCH",
+    "sourceReference": "Local SDICD package provenance fixture: artifact hash must match the provided bytes",
+    "package": {
+      "family": "SDICD",
+      "version": "2026.2",
+      "sourcePath": "Abrechnung/ICD/SDICD_2026_2.txt",
+      "importedAt": "2026-03-11T10:03:30.000Z",
+      "status": "active",
+      "authenticity": {
+        "signatureStatus": "verified",
+        "signatureAlgorithm": "cms-detached-sha256",
+        "detachedSignaturePath": "Abrechnung/ICD/SDICD_2026_2.p7s",
+        "signerOrganization": "KBV",
+        "trustAnchor": "KBV_UPDATE",
+        "certificateSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "verifiedAt": "2026-03-11T10:03:31.000Z"
+      },
+      "artifact": {
+        "storageId": "seed;_storage",
+        "contentType": "text/plain",
+        "byteSize": 19,
+        "sha256": "03eebb79a062876dab6ef8e3365df7e5f4035d4ea54ef91e39386b10243e73c8",
+        "bytesBase64": "Q09ERTtBMDAuMDtDaG9sZXJhCg=="
+      }
+    },
+    "entries": [
+      {
+        "code": "A00.0",
+        "text": "Cholera",
+        "isBillable": true
+      }
+    ],
+    "expectedPassed": false,
+    "expectedErrorCodes": ["ICD_PACKAGE_ARTIFACT_SHA256_MISMATCH"]
+  },
+  {
+    "caseId": "ICD-PACKAGE-AUTHENTICITY-INVALID",
+    "sourceReference": "Local SDICD package authenticity fixture: signature and trust metadata must align with active KBV packages",
+    "package": {
+      "family": "SDICD",
+      "version": "2026.2",
+      "sourcePath": "Abrechnung/ICD/SDICD_2026_2.txt",
+      "importedAt": "2026-03-11T10:03:45.000Z",
+      "status": "active",
+      "authenticity": {
+        "signatureStatus": "failed",
+        "signatureAlgorithm": "md5",
+        "detachedSignaturePath": "Abrechnung/ICD/SDKH_2026_1.json",
+        "signerOrganization": "OtherIssuer",
+        "trustAnchor": "UNKNOWN_CA",
+        "certificateSha256": "invalid-cert",
+        "verifiedAt": "2026-03-11T10:03:44.000Z"
+      },
+      "artifact": {
+        "storageId": "seed;_storage",
+        "contentType": "text/plain",
+        "byteSize": 19,
+        "sha256": "9589c5b90e81329f7ffa074ffee01e27767850b03b23327bc6b3fa227d5c1622",
+        "bytesBase64": "Q09ERTtBMDAuMDtDaG9sZXJhCg=="
+      }
+    },
+    "entries": [
+      {
+        "code": "A00.0",
+        "text": "Cholera",
+        "isBillable": true
+      }
+    ],
+    "expectedPassed": false,
+    "expectedErrorCodes": [
+      "ICD_PACKAGE_SIGNATURE_NOT_VERIFIED",
+      "ICD_PACKAGE_SIGNATURE_ALGORITHM_INVALID",
+      "ICD_PACKAGE_SIGNATURE_PATH_EXTENSION_INVALID",
+      "ICD_PACKAGE_SIGNATURE_PATH_FAMILY_MISMATCH",
+      "ICD_PACKAGE_SIGNATURE_PATH_VERSION_MISMATCH",
+      "ICD_PACKAGE_SIGNER_UNEXPECTED",
+      "ICD_PACKAGE_CERTIFICATE_SHA256_INVALID",
+      "ICD_PACKAGE_VERIFIED_AT_BEFORE_IMPORT"
+    ]
+  },
+  {
+    "caseId": "ICD-PACKAGE-PROVENANCE-INVALID",
+    "sourceReference": "Local SDICD package provenance fixture: source path and artifact metadata must align with package metadata",
+    "package": {
+      "family": "SDICD",
+      "version": "2026.2",
+      "sourcePath": "Abrechnung/ICD/SDKH_2026_1.json",
+      "importedAt": "2026-03-11T10:04:00.000Z",
+      "status": "active",
+      "artifact": {
+        "storageId": "seed;_storage",
+        "contentType": "application/json",
+        "byteSize": 0,
+        "sha256": "not-a-real-digest",
+        "bytesBase64": "Q09ERTtBMDAuMDtDaG9sZXJhCg=="
+      }
+    },
+    "entries": [
+      {
+        "code": "A00.0",
+        "text": "Cholera",
+        "isBillable": true
+      }
+    ],
+    "expectedPassed": false,
+    "expectedErrorCodes": [
+      "ICD_PACKAGE_SOURCE_PATH_FAMILY_MISMATCH",
+      "ICD_PACKAGE_SOURCE_PATH_VERSION_MISMATCH",
+      "ICD_PACKAGE_SOURCE_PATH_EXTENSION_INVALID",
+      "ICD_PACKAGE_ARTIFACT_CONTENT_TYPE_INVALID",
+      "ICD_PACKAGE_ARTIFACT_BYTESIZE_INVALID",
+      "ICD_PACKAGE_ARTIFACT_BYTESIZE_MISMATCH",
+      "ICD_PACKAGE_ARTIFACT_SHA256_INVALID"
     ]
   }
 ]

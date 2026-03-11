@@ -1,4 +1,7 @@
+import { Buffer } from "node:buffer";
+
 import { evaluateCodingRules } from "../../../src/domain/coding-rules";
+import { computeBufferSha256 } from "../assets";
 import type { OracleExecutionResult } from "../types";
 
 type CodingOraclePreview = {
@@ -50,6 +53,23 @@ type CodingPackagePreview = {
     readonly sourcePath: string;
     readonly importedAt: string;
     readonly status: string;
+    readonly authenticity?: {
+      readonly signatureStatus: "verified" | "missing" | "failed" | "unverified";
+      readonly signatureAlgorithm?: string;
+      readonly detachedSignaturePath?: string;
+      readonly signerOrganization?: string;
+      readonly trustAnchor?: string;
+      readonly certificateSha256?: string;
+      readonly verifiedAt?: string;
+    };
+    readonly artifact?: {
+      readonly storageId?: string;
+      readonly contentType?: string;
+      readonly byteSize?: number;
+      readonly sha256?: string;
+      readonly title?: string;
+      readonly bytesBase64?: string;
+    };
   };
   readonly entries: ReadonlyArray<{
     readonly code?: string;
@@ -78,12 +98,30 @@ const makeFinding = (
 const allowedPackageFamilies = new Set(["SDICD", "SDKH", "SDKRW"]);
 const allowedPackageStatuses = new Set(["active", "superseded", "failed"]);
 const allowedSeverityModes = new Set(["warning", "error"]);
+const allowedArtifactContentTypes = new Set([
+  "application/zip",
+  "application/octet-stream",
+  "text/plain",
+  "text/csv",
+]);
+const allowedSignatureAlgorithms = new Set([
+  "cms-detached-sha256",
+  "rsa-sha256",
+  "sha256withrsa",
+]);
+const expectedSignerByFamily: Record<string, string> = {
+  SDICD: "KBV",
+  SDKH: "KBV",
+  SDKRW: "KBV",
+};
 const allowedGenderConstraints = new Set([
   "male",
   "female",
   "diverse",
   "unknown",
 ]);
+
+const sha256Pattern = /^[a-f0-9]{64}$/i;
 
 const isIsoLikeDate = (value: string | undefined) =>
   value !== undefined &&
@@ -192,6 +230,361 @@ const runCodingPackageOracle = (
         `Unsupported coding package status ${preview.package.status}.`,
       ),
     );
+  }
+
+  if (!preview.package.sourcePath.includes(preview.package.family)) {
+    findings.push(
+      makeFinding(
+        "ICD_PACKAGE_SOURCE_PATH_FAMILY_MISMATCH",
+        "error",
+        `Coding package sourcePath ${preview.package.sourcePath} does not contain family ${preview.package.family}.`,
+      ),
+    );
+  }
+
+  const normalizedVersionToken = preview.package.version.replace(/[^\dA-Za-z]+/g, "_");
+  if (
+    normalizedVersionToken.length > 0 &&
+    !preview.package.sourcePath.includes(normalizedVersionToken) &&
+    !preview.package.sourcePath.includes(preview.package.version)
+  ) {
+    findings.push(
+      makeFinding(
+        "ICD_PACKAGE_SOURCE_PATH_VERSION_MISMATCH",
+        "error",
+        `Coding package sourcePath ${preview.package.sourcePath} does not reflect version ${preview.package.version}.`,
+      ),
+    );
+  }
+
+  if (!/\.(txt|zip|csv)$/i.test(preview.package.sourcePath)) {
+    findings.push(
+      makeFinding(
+        "ICD_PACKAGE_SOURCE_PATH_EXTENSION_INVALID",
+        "error",
+        `Coding package sourcePath ${preview.package.sourcePath} does not use a supported package extension.`,
+      ),
+    );
+  }
+
+  if (!preview.package.artifact) {
+    findings.push(
+      makeFinding(
+        "ICD_PACKAGE_ARTIFACT_MISSING",
+        "error",
+        "Coding package metadata does not include artifact provenance.",
+      ),
+    );
+  } else {
+    const artifact = preview.package.artifact;
+
+    if (
+      !artifact.contentType ||
+      !allowedArtifactContentTypes.has(artifact.contentType)
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_ARTIFACT_CONTENT_TYPE_INVALID",
+          "error",
+          "Coding package artifact does not declare a supported content type.",
+        ),
+      );
+    }
+
+    if (
+      artifact.byteSize === undefined ||
+      !Number.isFinite(artifact.byteSize) ||
+      artifact.byteSize <= 0
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_ARTIFACT_BYTESIZE_INVALID",
+          "error",
+          "Coding package artifact byteSize must be a positive number.",
+        ),
+      );
+    }
+
+    if (!artifact.sha256 || !sha256Pattern.test(artifact.sha256)) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_ARTIFACT_SHA256_INVALID",
+          "error",
+          "Coding package artifact sha256 must be a 64-character hex digest.",
+        ),
+      );
+    }
+
+    if (artifact.bytesBase64 !== undefined) {
+      let decodedBytes: Buffer | undefined;
+
+      try {
+        decodedBytes = Buffer.from(artifact.bytesBase64, "base64");
+      } catch {
+        findings.push(
+          makeFinding(
+            "ICD_PACKAGE_ARTIFACT_BYTES_INVALID",
+            "error",
+            "Coding package artifact bytesBase64 is not valid base64.",
+          ),
+        );
+      }
+
+      if (
+        decodedBytes &&
+        Buffer.from(decodedBytes).toString("base64") !== artifact.bytesBase64
+      ) {
+        findings.push(
+          makeFinding(
+            "ICD_PACKAGE_ARTIFACT_BYTES_INVALID",
+            "error",
+            "Coding package artifact bytesBase64 is not canonical base64 content.",
+          ),
+        );
+      }
+
+      if (decodedBytes && artifact.byteSize !== undefined && decodedBytes.byteLength !== artifact.byteSize) {
+        findings.push(
+          makeFinding(
+            "ICD_PACKAGE_ARTIFACT_BYTESIZE_MISMATCH",
+            "error",
+            `Coding package artifact byteSize ${artifact.byteSize} does not match decoded content length ${decodedBytes.byteLength}.`,
+          ),
+        );
+      }
+
+      if (decodedBytes && artifact.sha256 && sha256Pattern.test(artifact.sha256)) {
+        const actualSha256 = computeBufferSha256(decodedBytes);
+        if (actualSha256 !== artifact.sha256.toLowerCase()) {
+          findings.push(
+            makeFinding(
+              "ICD_PACKAGE_ARTIFACT_SHA256_MISMATCH",
+              "error",
+              `Coding package artifact sha256 ${artifact.sha256} does not match decoded content hash ${actualSha256}.`,
+            ),
+          );
+        } else {
+          findings.push(
+            makeFinding(
+              "ICD_PACKAGE_ARTIFACT_SHA256_VERIFIED",
+              "info",
+              "Coding package artifact sha256 matches the provided package bytes.",
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  if (!preview.package.authenticity) {
+    if (preview.package.status === "active") {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_AUTHENTICITY_MISSING",
+          "error",
+          "Active coding package metadata does not include authenticity or signature verification metadata.",
+        ),
+      );
+    }
+  } else {
+    const authenticity = preview.package.authenticity;
+
+    if (
+      preview.package.status === "active" &&
+      authenticity.signatureStatus !== "verified"
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_SIGNATURE_NOT_VERIFIED",
+          "error",
+          `Active coding package must be signatureStatus=verified, got ${authenticity.signatureStatus}.`,
+        ),
+      );
+    }
+
+    if (
+      authenticity.signatureAlgorithm !== undefined &&
+      !allowedSignatureAlgorithms.has(
+        authenticity.signatureAlgorithm.toLowerCase(),
+      )
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_SIGNATURE_ALGORITHM_INVALID",
+          "error",
+          "Coding package authenticity metadata does not declare a supported signature algorithm.",
+        ),
+      );
+    }
+
+    if (
+      authenticity.signatureStatus === "verified" &&
+      !authenticity.signatureAlgorithm
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_SIGNATURE_ALGORITHM_MISSING",
+          "error",
+          "Verified coding package authenticity metadata is missing signatureAlgorithm.",
+        ),
+      );
+    }
+
+    if (authenticity.detachedSignaturePath) {
+      const normalizedVersionToken = preview.package.version.replace(
+        /[^\dA-Za-z]+/g,
+        "_",
+      );
+      if (
+        !/\.(p7s|sig|asc)$/i.test(authenticity.detachedSignaturePath)
+      ) {
+        findings.push(
+          makeFinding(
+            "ICD_PACKAGE_SIGNATURE_PATH_EXTENSION_INVALID",
+            "error",
+            `Detached signature path ${authenticity.detachedSignaturePath} does not use a supported signature extension.`,
+          ),
+        );
+      }
+
+      if (
+        !authenticity.detachedSignaturePath.includes(preview.package.family)
+      ) {
+        findings.push(
+          makeFinding(
+            "ICD_PACKAGE_SIGNATURE_PATH_FAMILY_MISMATCH",
+            "error",
+            `Detached signature path ${authenticity.detachedSignaturePath} does not contain family ${preview.package.family}.`,
+          ),
+        );
+      }
+
+      if (
+        normalizedVersionToken.length > 0 &&
+        !authenticity.detachedSignaturePath.includes(normalizedVersionToken) &&
+        !authenticity.detachedSignaturePath.includes(preview.package.version)
+      ) {
+        findings.push(
+          makeFinding(
+            "ICD_PACKAGE_SIGNATURE_PATH_VERSION_MISMATCH",
+            "error",
+            `Detached signature path ${authenticity.detachedSignaturePath} does not reflect version ${preview.package.version}.`,
+          ),
+        );
+      }
+    } else if (authenticity.signatureStatus === "verified") {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_SIGNATURE_PATH_MISSING",
+          "error",
+          "Verified coding package authenticity metadata is missing detachedSignaturePath.",
+        ),
+      );
+    }
+
+    const expectedSigner = expectedSignerByFamily[preview.package.family];
+    if (
+      expectedSigner &&
+      authenticity.signerOrganization !== undefined &&
+      authenticity.signerOrganization !== expectedSigner
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_SIGNER_UNEXPECTED",
+          "error",
+          `Coding package signer ${authenticity.signerOrganization} does not match expected signer ${expectedSigner}.`,
+        ),
+      );
+    }
+
+    if (
+      authenticity.signatureStatus === "verified" &&
+      authenticity.trustAnchor !== "KBV_UPDATE"
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_TRUST_ANCHOR_INVALID",
+          "error",
+          `Verified coding package must use trustAnchor KBV_UPDATE, got ${authenticity.trustAnchor ?? "<missing>"}.`,
+        ),
+      );
+    }
+
+    if (
+      authenticity.certificateSha256 !== undefined &&
+      !sha256Pattern.test(authenticity.certificateSha256)
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_CERTIFICATE_SHA256_INVALID",
+          "error",
+          "Coding package certificateSha256 must be a 64-character hex digest.",
+        ),
+      );
+    }
+
+    if (
+      authenticity.signatureStatus === "verified" &&
+      !authenticity.certificateSha256
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_CERTIFICATE_SHA256_MISSING",
+          "error",
+          "Verified coding package authenticity metadata is missing certificateSha256.",
+        ),
+      );
+    }
+
+    if (
+      authenticity.verifiedAt !== undefined &&
+      !isIsoLikeDate(authenticity.verifiedAt)
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_VERIFIED_AT_INVALID",
+          "error",
+          "Coding package authenticity metadata contains an invalid verifiedAt timestamp.",
+        ),
+      );
+    }
+
+    if (
+      authenticity.signatureStatus === "verified" &&
+      !authenticity.verifiedAt
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_VERIFIED_AT_MISSING",
+          "error",
+          "Verified coding package authenticity metadata is missing verifiedAt.",
+        ),
+      );
+    }
+
+    if (
+      authenticity.verifiedAt &&
+      isIsoLikeDate(authenticity.verifiedAt) &&
+      authenticity.verifiedAt < preview.package.importedAt
+    ) {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_VERIFIED_AT_BEFORE_IMPORT",
+          "error",
+          "Coding package authenticity metadata verifies the package before importedAt.",
+        ),
+      );
+    }
+
+    if (authenticity.signatureStatus === "verified") {
+      findings.push(
+        makeFinding(
+          "ICD_PACKAGE_SIGNATURE_VERIFIED",
+          "info",
+          `Coding package authenticity metadata reports a verified signature via ${authenticity.signatureAlgorithm ?? "<missing>"}.`,
+        ),
+      );
+    }
   }
 
   if (preview.entries.length === 0) {

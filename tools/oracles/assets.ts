@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
@@ -56,30 +56,35 @@ export const kbvOracleAssets = {
     assetId: "fhirValidatorService_2_2_0",
     url: "https://update.kbv.de/ita-update/371-Schnittstellen/Verordnungssoftware-Schnittstelle/Service_zur_Validierung_2.2.0.zip",
     fileName: "Service_zur_Validierung_2.2.0.zip",
+    sha256: "43ab705304df7ecab6cafdcf1f42cb62da3138f7177dac0c6a1ba19469276487",
     extract: true,
   },
   kbvFhirEau_1_2_1: {
     assetId: "kbvFhirEau_1_2_1",
     url: "https://update.kbv.de/ita-update/DigitaleMuster/eAU/KBV_FHIR_eAU_V1.2.1_zur_Validierung.zip",
     fileName: "KBV_FHIR_eAU_V1.2.1_zur_Validierung.zip",
+    sha256: "b3ceb402ca661c9c441a1cc0dbfc7fb0509bdf4466c7eeeca49c91c014b0c975",
     extract: true,
   },
   kbvEauExamples_1_2: {
     assetId: "kbvEauExamples_1_2",
     url: "https://update.kbv.de/ita-update/DigitaleMuster/eAU/eAU_Beispiele_V1.2.zip",
     fileName: "eAU_Beispiele_V1.2.zip",
+    sha256: "aa17891cd9ac6b0959cc99f8276df835f7b8c6e14cd418d053f68f4c39490f49",
     extract: true,
   },
   kbvFhirErp_1_4_1: {
     assetId: "kbvFhirErp_1_4_1",
     url: "https://update.kbv.de/ita-update/DigitaleMuster/ERP/Q3_2026/KBV_FHIR_eRP_V1.4.1_zur_Validierung.zip",
     fileName: "KBV_FHIR_eRP_V1.4.1_zur_Validierung.zip",
+    sha256: "cd61993d705cb538072f46a53eaa5545afd97bc4f48845ef953d19564914500d",
     extract: true,
   },
   kbvErpExamples_1_4: {
     assetId: "kbvErpExamples_1_4",
     url: "https://update.kbv.de/ita-update/DigitaleMuster/ERP/Q3_2026/eRP_Beispiele_V1.4.zip",
     fileName: "eRP_Beispiele_V1.4.zip",
+    sha256: "1f63589313841a9f7735b0ba28f861a8e9a97014f8e6a062ca50611ff89dfe62",
     extract: true,
   },
   xpmKvdtPraxis_2026_2_1: {
@@ -120,13 +125,40 @@ export const kbvOracleAssets = {
     assetId: "bmp_2_8_q3_2026",
     url: "https://update.kbv.de/ita-update/Verordnungen/Arzneimittel/BMP/BMP_2.8_Q3_2026/BMP_V2.8.zip",
     fileName: "BMP_V2.8.zip",
+    sha256: "fa47de8307a463e7737ded00559191b8deb9380dda4eabb2718ec1161880a6b3",
     extract: true,
   },
   bmpExamples_2_8_q3_2026: {
     assetId: "bmpExamples_2_8_q3_2026",
     url: "https://update.kbv.de/ita-update/Verordnungen/Arzneimittel/BMP/BMP_2.8_Q3_2026/BMP_Beispieldateien_V2.8.zip",
     fileName: "BMP_Beispieldateien_V2.8.zip",
+    sha256: "32e7234426a6c3ab941e4cded67e9a8886aa530061ab8cfdcaa79777ac6429a0",
     extract: true,
+  },
+  bfbMuster_2025_11_14: {
+    assetId: "bfbMuster_2025_11_14",
+    url: "https://update.kbv.de/ita-update/Blankoformulare/Muster.zip",
+    fileName: "Muster.zip",
+    sha256: "cb96dc1d13f4c85dd19c6731e911d1054ece4480c670272236ed5ba78631032b",
+    extract: true,
+  },
+  bfbTechnicalHandbook_2025_11_14: {
+    assetId: "bfbTechnicalHandbook_2025_11_14",
+    url: "https://update.kbv.de/ita-update/Blankoformulare/KBV_ITA_VGEX_Technisches_Handbuch_BFB.pdf",
+    fileName: "KBV_ITA_VGEX_Technisches_Handbuch_BFB.pdf",
+    sha256: "239ceab2bece174bdc30cf90e706ea4448b01fbabb45c2d62adbd6c5a65c3458",
+  },
+  bfbPruefpaket_2024_10_04: {
+    assetId: "bfbPruefpaket_2024_10_04",
+    url: "https://update.kbv.de/ita-update/Blankoformulare/KBV_ITA_AHEX_Pruefpaket_BFB.pdf",
+    fileName: "KBV_ITA_AHEX_Pruefpaket_BFB.pdf",
+    sha256: "4e19ee866da0e2983c443bd8b5f4cb0ed1ed5ee3c64dbdff0efd787704d0ff2a",
+  },
+  bfbDirectory_2026_03_10: {
+    assetId: "bfbDirectory_2026_03_10",
+    url: "https://update.kbv.de/ita-update/Service-Informationen/Zulassungsverzeichnisse/KBV_ITA_SIEX_Verzeichnis_BFB.pdf",
+    fileName: "KBV_ITA_SIEX_Verzeichnis_BFB.pdf",
+    sha256: "abe78e966631460291f9f40f919a24b4dd6590c4768cb8d42b7e3e9e3888ce0b",
   },
 } as const satisfies Record<string, KbvOracleAsset>;
 
@@ -197,12 +229,12 @@ export const getKbvOracleCacheManifestPath = (
   cacheDir = getKbvOracleCacheDir(),
 ) => join(resolve(cacheDir), "asset-cache.json");
 
-const hashBuffer = (buffer: Buffer) =>
+export const computeBufferSha256 = (buffer: Buffer) =>
   createHash("sha256").update(buffer).digest("hex");
 
 export const computeFileSha256 = async (filePath: string) => {
   const content = await readFile(filePath);
-  return hashBuffer(content);
+  return computeBufferSha256(content);
 };
 
 const verifyFileHash = async (filePath: string, expectedSha256?: string) => {
@@ -226,7 +258,11 @@ const readAssetCacheManifest = async (
   }
 
   const content = await readFile(manifestPath, "utf8");
-  return JSON.parse(content) as Record<string, KbvOracleAssetCacheEntry>;
+  try {
+    return JSON.parse(content) as Record<string, KbvOracleAssetCacheEntry>;
+  } catch {
+    return {};
+  }
 };
 
 const writeAssetCacheManifest = async ({
@@ -237,11 +273,14 @@ const writeAssetCacheManifest = async ({
   manifest: Record<string, KbvOracleAssetCacheEntry>;
 }) => {
   await mkdir(cacheDir, { recursive: true });
+  const manifestPath = getKbvOracleCacheManifestPath(cacheDir);
+  const tempPath = `${manifestPath}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(
-    getKbvOracleCacheManifestPath(cacheDir),
+    tempPath,
     JSON.stringify(manifest, null, 2),
     "utf8",
   );
+  await rename(tempPath, manifestPath);
 };
 
 const updateAssetCacheManifest = async ({
@@ -293,13 +332,17 @@ export const downloadManagedAsset = async (
   await mkdir(downloadDir, { recursive: true });
 
   if (existsSync(downloadPath)) {
-    await verifyFileHash(downloadPath, asset.sha256);
-    await updateAssetCacheManifest({
-      cacheDir: resolvedCacheDir,
-      asset,
-      downloadPath,
-    });
-    return downloadPath;
+    try {
+      await verifyFileHash(downloadPath, asset.sha256);
+      await updateAssetCacheManifest({
+        cacheDir: resolvedCacheDir,
+        asset,
+        downloadPath,
+      });
+      return downloadPath;
+    } catch {
+      await rm(downloadPath, { force: true });
+    }
   }
 
   const response = await fetch(asset.url);
@@ -309,7 +352,7 @@ export const downloadManagedAsset = async (
 
   const content = Buffer.from(await response.arrayBuffer());
   if (asset.sha256) {
-    const actualSha256 = hashBuffer(content);
+    const actualSha256 = computeBufferSha256(content);
     if (actualSha256 !== asset.sha256) {
       throw new Error(
         `SHA-256 mismatch for ${asset.url}: expected ${asset.sha256}, got ${actualSha256}`,
@@ -344,9 +387,16 @@ export const ensureExtractedAsset = async (
     return archivePath;
   }
 
+  const archivePath = await downloadManagedAsset(asset, resolvedCacheDir);
   const extractDir = join(resolvedCacheDir, "extracted", asset.assetId);
   const markerPath = join(extractDir, ".ok");
   if (existsSync(markerPath)) {
+    await updateAssetCacheManifest({
+      cacheDir: resolvedCacheDir,
+      asset,
+      downloadPath: archivePath,
+      extractedPath: extractDir,
+    });
     return extractDir;
   }
 
@@ -358,14 +408,12 @@ export const ensureExtractedAsset = async (
       await updateAssetCacheManifest({
         cacheDir: resolvedCacheDir,
         asset,
-        downloadPath: join(resolvedCacheDir, "downloads", asset.fileName),
+        downloadPath: archivePath,
         extractedPath: extractDir,
       });
       return extractDir;
     }
   }
-
-  const archivePath = await downloadManagedAsset(asset, resolvedCacheDir);
 
   await rm(extractDir, { recursive: true, force: true });
   await mkdir(extractDir, { recursive: true });
@@ -683,8 +731,12 @@ const downloadExternalFhirPackage = async ({
   await mkdir(dirname(archivePath), { recursive: true });
 
   if (existsSync(archivePath)) {
-    await verifyFileHash(archivePath, sha256);
-    return archivePath;
+    try {
+      await verifyFileHash(archivePath, sha256);
+      return archivePath;
+    } catch {
+      await rm(archivePath, { force: true });
+    }
   }
 
   const packageUrl =
@@ -696,7 +748,7 @@ const downloadExternalFhirPackage = async ({
 
   const content = Buffer.from(await response.arrayBuffer());
   if (sha256) {
-    const actualSha256 = hashBuffer(content);
+    const actualSha256 = computeBufferSha256(content);
     if (actualSha256 !== sha256) {
       throw new Error(
         `SHA-256 mismatch for ${packageUrl}: expected ${sha256}, got ${actualSha256}`,

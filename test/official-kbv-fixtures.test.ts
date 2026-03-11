@@ -14,6 +14,16 @@ import { runExecutableFhirOracle } from "../tools/oracles/fhir/run";
 const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
 const execFileAsync = promisify(execFile);
 
+const coerceExecOutput = (value: unknown) => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Buffer.isBuffer(value)) {
+    return value.toString("utf8");
+  }
+  return "";
+};
+
 const runStandaloneFhirValidation = async ({
   family,
   xmlPath,
@@ -34,8 +44,8 @@ const runStandaloneFhirValidation = async ({
           VITEST_POOL_ID: "",
           VITEST_WORKER_ID: "",
         },
-        timeout: 60_000,
-        maxBuffer: 16 * 1024 * 1024,
+        timeout: 300_000,
+        maxBuffer: 64 * 1024 * 1024,
       },
     );
 
@@ -58,16 +68,14 @@ const runStandaloneFhirValidation = async ({
       stdout:
         typeof error === "object" &&
         error !== null &&
-        "stdout" in error &&
-        typeof error.stdout === "string"
-          ? error.stdout
+        "stdout" in error
+          ? coerceExecOutput(error.stdout)
           : "",
       stderr:
         typeof error === "object" &&
         error !== null &&
-        "stderr" in error &&
-        typeof error.stderr === "string"
-          ? error.stderr
+        "stderr" in error
+          ? coerceExecOutput(error.stderr)
           : error instanceof Error
             ? error.message
             : String(error),
@@ -80,6 +88,10 @@ const parseValidatorErrorLines = (stdout: string) =>
     .split("\n")
     .map((line) => line.replace(/\x1B\[[0-9;]*m/g, "").trim())
     .filter((line) => line.startsWith("Error @"));
+
+const logArchiveProgress = (message: string) => {
+  process.stderr.write(`[erp-archive] ${message}\n`);
+};
 
 describe("official KBV fixture sweeps", () => {
   it(
@@ -138,7 +150,8 @@ describe("official KBV fixture sweeps", () => {
 
       expect(xmlExamples.length).toBeGreaterThan(50);
 
-      for (const exampleName of xmlExamples) {
+      for (const [index, exampleName] of xmlExamples.entries()) {
+        logArchiveProgress(`start ${index + 1}/${xmlExamples.length} ${exampleName}`);
         const xmlPath = join(erpExamplesDir, exampleName);
         const result = await runStandaloneFhirValidation({
           family: "eRezept",
@@ -154,6 +167,7 @@ describe("official KBV fixture sweeps", () => {
           result.stdout.includes("Success: 0 errors"),
           `eRezept example ${exampleName} should complete with Success: 0 errors.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
         ).toBe(true);
+        logArchiveProgress(`done ${index + 1}/${xmlExamples.length} ${exampleName}`);
       }
     },
     900_000,

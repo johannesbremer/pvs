@@ -6,6 +6,56 @@
     "templateVersion": "2026.1",
     "subjectKind": "prescription-print",
     "pageCount": 1,
+    "goldenTemplate": {
+      "snapshotId": "Muster16-2026.1-golden",
+      "templateId": "Muster16",
+      "templateVersion": "2026.1",
+      "subjectKind": "prescription-print",
+      "pageCount": 1,
+      "fields": [
+        {
+          "fieldCode": "patient-name",
+          "page": 1,
+          "x": 12.5,
+          "y": 18.2,
+          "width": 72,
+          "height": 5,
+          "required": true,
+          "exactValue": "Erika Mustermann"
+        },
+        {
+          "fieldCode": "insurance-id",
+          "page": 1,
+          "x": 14.1,
+          "y": 27.4,
+          "width": 45,
+          "height": 5,
+          "required": true,
+          "exactValue": "A123456789"
+        },
+        {
+          "fieldCode": "issue-date",
+          "page": 1,
+          "x": 160,
+          "y": 18.2,
+          "width": 22,
+          "height": 5,
+          "required": true,
+          "exactValue": "2026-03-11"
+        }
+      ],
+      "barcodes": [
+        {
+          "barcodeType": "datamatrix",
+          "page": 1,
+          "x": 156,
+          "y": 232,
+          "width": 24,
+          "height": 24,
+          "payloadPrefix": "ERP|160.123.456.789.123.58|"
+        }
+      ]
+    },
     "fields": [
       {
         "fieldCode": "patient-name",
@@ -58,6 +108,33 @@
     "templateVersion": "2026.1",
     "subjectKind": "prescription-print",
     "pageCount": 1,
+    "goldenTemplate": {
+      "snapshotId": "Muster16-2026.1-golden",
+      "templateId": "Muster16",
+      "templateVersion": "2026.1",
+      "subjectKind": "prescription-print",
+      "pageCount": 1,
+      "fields": [
+        {
+          "fieldCode": "patient-name",
+          "page": 1,
+          "x": 12.5,
+          "y": 18.2,
+          "required": true
+        }
+      ],
+      "barcodes": [
+        {
+          "barcodeType": "datamatrix",
+          "page": 1,
+          "x": 156,
+          "y": 232,
+          "width": 24,
+          "height": 24,
+          "payloadPrefix": "ERP|"
+        }
+      ]
+    },
     "fields": [
       {
         "fieldCode": "patient-name",
@@ -89,6 +166,33 @@
     "templateVersion": "2026.1",
     "subjectKind": "prescription-print",
     "pageCount": 1,
+    "goldenTemplate": {
+      "snapshotId": "Muster16-2026.1-golden",
+      "templateId": "Muster16",
+      "templateVersion": "2026.1",
+      "subjectKind": "prescription-print",
+      "pageCount": 1,
+      "fields": [
+        {
+          "fieldCode": "patient-name",
+          "page": 1,
+          "x": 12.5,
+          "y": 18.2,
+          "required": true
+        }
+      ],
+      "barcodes": [
+        {
+          "barcodeType": "datamatrix",
+          "page": 1,
+          "x": 156,
+          "y": 232,
+          "width": 24,
+          "height": 24,
+          "payloadPrefix": "ERP|"
+        }
+      ]
+    },
     "fields": [
       {
         "fieldCode": "patient-name",
@@ -111,6 +215,67 @@
       }
     ],
     "expectedPassed": false,
-    "expectedErrorCodes": ["BFB_FIELD_PAGE_INVALID"]
+    "expectedErrorCodes": [
+      "BFB_FIELD_PAGE_INVALID",
+      "BFB_GOLDEN_FIELD_LAYOUT_MISMATCH"
+    ]
+  },
+  {
+    "caseId": "BFB-M16-GOLDEN-BARCODE-PREFIX-MISMATCH",
+    "sourceReference": "Local BFB render-context fixture: barcode payload must match the golden BFB snapshot prefix",
+    "templateId": "Muster16",
+    "templateVersion": "2026.1",
+    "subjectKind": "prescription-print",
+    "pageCount": 1,
+    "goldenTemplate": {
+      "snapshotId": "Muster16-2026.1-golden",
+      "templateId": "Muster16",
+      "templateVersion": "2026.1",
+      "subjectKind": "prescription-print",
+      "pageCount": 1,
+      "fields": [
+        {
+          "fieldCode": "patient-name",
+          "page": 1,
+          "x": 12.5,
+          "y": 18.2,
+          "required": true
+        }
+      ],
+      "barcodes": [
+        {
+          "barcodeType": "datamatrix",
+          "page": 1,
+          "x": 156,
+          "y": 232,
+          "width": 24,
+          "height": 24,
+          "payloadPrefix": "ERP|160.123.456.789.123.58|"
+        }
+      ]
+    },
+    "fields": [
+      {
+        "fieldCode": "patient-name",
+        "page": 1,
+        "x": 12.5,
+        "y": 18.2,
+        "value": "Erika Mustermann",
+        "required": true
+      }
+    ],
+    "barcodes": [
+      {
+        "barcodeType": "datamatrix",
+        "page": 1,
+        "x": 156,
+        "y": 232,
+        "width": 24,
+        "height": 24,
+        "payload": "BFB|wrong-prefix"
+      }
+    ],
+    "expectedPassed": false,
+    "expectedErrorCodes": ["BFB_GOLDEN_BARCODE_PAYLOAD_PREFIX_MISMATCH"]
   }
 ]

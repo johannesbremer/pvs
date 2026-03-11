@@ -54,6 +54,36 @@ describe("oracle runtime", () => {
           templateVersion: "2026.1",
           subjectKind: "prescription-print",
           pageCount: 1,
+          goldenTemplate: {
+            snapshotId: "Muster16-runtime-golden",
+            templateId: "Muster16",
+            templateVersion: "2026.1",
+            subjectKind: "prescription-print",
+            pageCount: 1,
+            fields: [
+              {
+                fieldCode: "patient-name",
+                page: 1,
+                x: 12.5,
+                y: 18.2,
+                width: 72,
+                height: 5,
+                required: true,
+                exactValue: "Erika Mustermann",
+              },
+            ],
+            barcodes: [
+              {
+                barcodeType: "datamatrix",
+                page: 1,
+                x: 156,
+                y: 232,
+                width: 24,
+                height: 24,
+                payloadPrefix: "ERP|runtime|",
+              },
+            ],
+          },
           fields: [
             {
               fieldCode: "patient-name",
@@ -109,6 +139,23 @@ describe("oracle runtime", () => {
             sourcePath: "Abrechnung/ICD/SDICD_2026_2.txt",
             importedAt: "2026-03-11T10:05:00.000Z",
             status: "active",
+            authenticity: {
+              signatureStatus: "verified",
+              signatureAlgorithm: "cms-detached-sha256",
+              detachedSignaturePath: "Abrechnung/ICD/SDICD_2026_2.p7s",
+              signerOrganization: "KBV",
+              trustAnchor: "KBV_UPDATE",
+              certificateSha256:
+                "6666666666666666666666666666666666666666666666666666666666666666",
+              verifiedAt: "2026-03-11T10:05:01.000Z",
+            },
+            artifact: {
+              storageId: "seed;_storage",
+              contentType: "text/plain",
+              byteSize: 19,
+              sha256: "9589c5b90e81329f7ffa074ffee01e27767850b03b23327bc6b3fa227d5c1622",
+              bytesBase64: "Q09ERTtBMDAuMDtDaG9sZXJhCg==",
+            },
           },
           entries: [
             {
