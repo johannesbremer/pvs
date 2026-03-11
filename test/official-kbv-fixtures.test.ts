@@ -89,10 +89,6 @@ const parseValidatorErrorLines = (stdout: string) =>
     .map((line) => line.replace(/\x1B\[[0-9;]*m/g, "").trim())
     .filter((line) => line.startsWith("Error @"));
 
-const logArchiveProgress = (message: string) => {
-  process.stderr.write(`[erp-archive] ${message}\n`);
-};
-
 describe("official KBV fixture sweeps", () => {
   it(
     "validates all official non-error eAU XML examples with the executable oracle",
@@ -150,8 +146,7 @@ describe("official KBV fixture sweeps", () => {
 
       expect(xmlExamples.length).toBeGreaterThan(50);
 
-      for (const [index, exampleName] of xmlExamples.entries()) {
-        logArchiveProgress(`start ${index + 1}/${xmlExamples.length} ${exampleName}`);
+      for (const exampleName of xmlExamples) {
         const xmlPath = join(erpExamplesDir, exampleName);
         const result = await runStandaloneFhirValidation({
           family: "eRezept",
@@ -167,7 +162,6 @@ describe("official KBV fixture sweeps", () => {
           result.stdout.includes("Success: 0 errors"),
           `eRezept example ${exampleName} should complete with Success: 0 errors.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
         ).toBe(true);
-        logArchiveProgress(`done ${index + 1}/${xmlExamples.length} ${exampleName}`);
       }
     },
     900_000,

@@ -15,6 +15,8 @@ export const resolveOracleFamily = (artifactFamily: string) => {
       return "eRezept";
     case "EAU":
       return "eAU";
+    case "EVDGA":
+      return "eVDGA";
     case "KVDT":
       return "KVDT";
     case "ICD":

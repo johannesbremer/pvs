@@ -56,6 +56,22 @@ import {
   LookupReferralByVermittlungscodeResult,
 } from "../src/domain/appointments-referrals";
 import {
+  CreateDigaOrderArgs,
+  CreateDigaOrderResult,
+  FinalizeDigaOrderArgs,
+  FinalizeDigaOrderResult,
+  GetDigaOrderArgs,
+  GetDigaOrderResult,
+  ImportDigaCatalogRefsArgs,
+  ImportDigaCatalogRefsResult,
+  ListDigaOrdersArgs,
+  ListDigaOrdersResult,
+  LookupDigaByPznArgs,
+  LookupDigaByPznResult,
+  RenderEvdgaBundleArgs,
+  RenderEvdgaBundleResult,
+} from "../src/domain/diga-evdga";
+import {
   AddMedicationPlanEntryArgs,
   AddMedicationPlanEntryResult,
   CreateHeilmittelApprovalArgs,
@@ -336,6 +352,20 @@ export const CatalogGroup = GroupSpec.make("catalog")
   )
   .addFunction(
     FunctionSpec.publicMutation({
+      name: "importDigaCatalogRefs",
+      args: ImportDigaCatalogRefsArgs,
+      returns: ImportDigaCatalogRefsResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "lookupDigaByPzn",
+      args: LookupDigaByPznArgs,
+      returns: LookupDigaByPznResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
       name: "importHeilmittelCatalogRefs",
       args: ImportHeilmittelCatalogRefsArgs,
       returns: ImportHeilmittelCatalogRefsResult,
@@ -346,6 +376,43 @@ export const CatalogGroup = GroupSpec.make("catalog")
       name: "lookupHeilmittelByKey",
       args: LookupHeilmittelByKeyArgs,
       returns: LookupHeilmittelByKeyResult,
+    }),
+  );
+
+export const DigaGroup = GroupSpec.make("diga")
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "createOrder",
+      args: CreateDigaOrderArgs,
+      returns: CreateDigaOrderResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "getOrder",
+      args: GetDigaOrderArgs,
+      returns: GetDigaOrderResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "listOrdersByPatient",
+      args: ListDigaOrdersArgs,
+      returns: ListDigaOrdersResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "finalizeOrder",
+      args: FinalizeDigaOrderArgs,
+      returns: FinalizeDigaOrderResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      name: "renderEvdgaBundle",
+      args: RenderEvdgaBundleArgs,
+      returns: RenderEvdgaBundleResult,
     }),
   );
 
@@ -557,6 +624,7 @@ const spec = Spec.make()
   .add(AppointmentsGroup)
   .add(ReferralsGroup)
   .add(CatalogGroup)
+  .add(DigaGroup)
   .add(PrescriptionsGroup)
   .add(HeilmittelGroup)
   .add(DocumentsGroup)

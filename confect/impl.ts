@@ -30,6 +30,15 @@ import {
   filterSelectableTssAppointments,
 } from "../src/domain/appointments-referrals";
 import {
+  CreateDigaOrderArgs,
+  FinalizeDigaOrderArgs,
+  GetDigaOrderArgs,
+  ImportDigaCatalogRefsArgs,
+  ListDigaOrdersArgs,
+  LookupDigaByPznArgs,
+  RenderEvdgaBundleArgs,
+} from "../src/domain/diga-evdga";
+import {
   AddMedicationPlanEntryArgs,
   CreateHeilmittelApprovalArgs,
   CreateHeilmittelOrderArgs,
@@ -65,7 +74,11 @@ import {
   RunValidationArgs,
   ValidationSummaryArgs,
 } from "../src/domain/emission";
-import { renderEauBundleXml, renderErpBundleXml } from "../src/codecs/xml/fhir";
+import {
+  renderEauBundleXml,
+  renderErpBundleXml,
+  renderEvdgaBundleXml,
+} from "../src/codecs/xml/fhir";
 import { evaluateCodingRules } from "../src/domain/coding-rules";
 import { buildOraclePlan, listOraclePlugins as listRegisteredOraclePlugins } from "../tools/oracles/framework";
 import { buildAndExecuteOraclePlan, resolveOracleFamily } from "../tools/oracles/runtime";
@@ -76,6 +89,7 @@ type BillingCaseId = Id<"billingCases">;
 type DiagnosisId = Id<"diagnoses">;
 type MedicationOrderId = Id<"medicationOrders">;
 type MedicationPlanId = Id<"medicationPlans">;
+type DigaOrderId = Id<"digaOrders">;
 type HeilmittelOrderId = Id<"heilmittelOrders">;
 type ClinicalDocumentId = Id<"clinicalDocuments">;
 type DocumentRevisionId = Id<"documentRevisions">;
@@ -1773,6 +1787,28 @@ const importHeilmittelCatalogRefs = ({
     };
   });
 
+const importDigaCatalogRefs = ({
+  sourcePackageId,
+  entries,
+}: typeof ImportDigaCatalogRefsArgs.Type) =>
+  Effect.gen(function* () {
+    const writer = yield* DatabaseWriter;
+    const entryIds = [];
+
+    for (const entry of entries) {
+      const entryId = yield* writer.table("digaCatalogRefs").insert({
+        sourcePackageId,
+        ...entry,
+      });
+      entryIds.push(entryId);
+    }
+
+    return {
+      importedCount: entryIds.length,
+      entryIds,
+    };
+  });
+
 const lookupHeilmittelByKey = ({
   heilmittelbereich,
   heilmittelCode,
@@ -1799,11 +1835,34 @@ const lookupHeilmittelByKey = ({
     };
   });
 
+const lookupDigaByPzn = ({ pzn }: typeof LookupDigaByPznArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const entries = yield* reader.table("digaCatalogRefs").index("by_pzn").collect();
+    const entry = entries.find((row) => row.pzn === pzn);
+
+    if (!entry) {
+      return { found: false as const };
+    }
+
+    return {
+      found: true as const,
+      entry,
+    };
+  });
+
 const createMedicationOrder = (args: typeof CreateMedicationOrderArgs.Type) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
     const medicationOrderId = yield* writer.table("medicationOrders").insert(args);
     return { medicationOrderId };
+  });
+
+const createDigaOrder = (args: typeof CreateDigaOrderArgs.Type) =>
+  Effect.gen(function* () {
+    const writer = yield* DatabaseWriter;
+    const digaOrderId = yield* writer.table("digaOrders").insert(args);
+    return { digaOrderId };
   });
 
 const getMedicationOrder = ({
@@ -1826,6 +1885,24 @@ const getMedicationOrder = ({
     };
   });
 
+const getDigaOrder = ({ digaOrderId }: typeof GetDigaOrderArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const orderOption = yield* reader
+      .table("digaOrders")
+      .get(digaOrderId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(orderOption)) {
+      return { found: false as const };
+    }
+
+    return {
+      found: true as const,
+      order: orderOption.value,
+    };
+  });
+
 const listMedicationOrdersByPatient = ({
   patientId,
   status,
@@ -1834,6 +1911,26 @@ const listMedicationOrdersByPatient = ({
     const reader = yield* DatabaseReader;
     const orders = yield* reader
       .table("medicationOrders")
+      .index("by_patientId_and_authoredOn")
+      .collect();
+
+    return orders
+      .filter(
+        (order) =>
+          order.patientId === patientId &&
+          (status === undefined || order.status === status),
+      )
+      .sort((left, right) => left.authoredOn.localeCompare(right.authoredOn));
+  });
+
+const listDigaOrdersByPatient = ({
+  patientId,
+  status,
+}: typeof ListDigaOrdersArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const orders = yield* reader
+      .table("digaOrders")
       .index("by_patientId_and_authoredOn")
       .collect();
 
@@ -1936,6 +2033,129 @@ const finalizeMedicationOrder = ({
         ? { patientPrintArtifactId: issued.patientPrintArtifactId }
         : {}),
       ...(issued.formInstanceId ? { formInstanceId: issued.formInstanceId } : {}),
+    };
+  });
+
+const digaFinalizeIssues = (order: {
+  readonly digaCatalogRefId: Id<"digaCatalogRefs">;
+}) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const issues: Array<typeof WorkflowIssue.Type> = [];
+    const catalogRef = yield* reader
+      .table("digaCatalogRefs")
+      .get(order.digaCatalogRefId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(catalogRef)) {
+      issues.push({
+        code: "EVDGA_CATALOG_REF_UNKNOWN",
+        message: "Referenced DiGA catalog entry does not exist.",
+        blocking: true,
+      });
+    }
+
+    return issues;
+  });
+
+const finalizeDigaOrder = ({
+  digaOrderId,
+  finalizedAt,
+  profileVersion,
+  artifact,
+  patientPrint,
+  tokenArtifact,
+}: typeof FinalizeDigaOrderArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const writer = yield* DatabaseWriter;
+    const orderOption = yield* reader
+      .table("digaOrders")
+      .get(digaOrderId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(orderOption)) {
+      return { outcome: "order-not-found" as const };
+    }
+
+    const order = orderOption.value;
+    if (order.status !== "draft") {
+      return {
+        outcome: "not-draft" as const,
+        digaOrderId,
+      };
+    }
+
+    const issues = yield* digaFinalizeIssues(order);
+    if (issues.some((issue) => issue.blocking)) {
+      return {
+        outcome: "blocked" as const,
+        digaOrderId,
+        issues,
+      };
+    }
+
+    const issued: {
+      documentId: ClinicalDocumentId;
+      revisionId: DocumentRevisionId;
+      artifactId: Id<"artifacts">;
+      patientPrintArtifactId?: Id<"artifacts">;
+      formInstanceId?: Id<"formInstances">;
+    } = yield* issueDocumentRevision({
+      patientId: order.patientId,
+      kind: "evdga",
+      originInterface: "eVDGA",
+      status: "final",
+      effectiveDate: finalizedAt,
+      authorPractitionerId: order.practitionerId,
+      authorOrganizationId: order.organizationId,
+      summary: {
+        title: "eVDGA",
+        ...(artifact.externalIdentifier
+          ? { externalIdentifier: artifact.externalIdentifier }
+          : {}),
+      },
+      artifact,
+      artifactFamily: "EVDGA",
+      artifactSubtype: "kbv-device-request-bundle",
+      transportKind: "fhir-bundle-xml",
+      contentType: artifact.attachment.contentType,
+      ...(profileVersion ? { profileVersion } : {}),
+      ...(patientPrint ? { patientPrint } : {}),
+    });
+
+    const tokenArtifactId = tokenArtifact
+      ? yield* createArtifact({
+          ownerKind: "documentRevision",
+          ownerId: String(issued.revisionId),
+          direction: "outbound",
+          artifactFamily: "EVDGA",
+          artifactSubtype: "token",
+          transportKind: "ti-token",
+          contentType: tokenArtifact.attachment.contentType,
+          attachment: tokenArtifact.attachment,
+          ...(tokenArtifact.externalIdentifier
+            ? { externalIdentifier: tokenArtifact.externalIdentifier }
+            : {}),
+          immutableAt: finalizedAt,
+        })
+      : undefined;
+
+    yield* writer.table("digaOrders").patch(digaOrderId, {
+      status: "final",
+      artifactDocumentId: issued.documentId,
+    });
+
+    return {
+      outcome: "finalized" as const,
+      digaOrderId,
+      documentId: issued.documentId,
+      revisionId: issued.revisionId,
+      artifactId: issued.artifactId,
+      ...(issued.patientPrintArtifactId
+        ? { patientPrintArtifactId: issued.patientPrintArtifactId }
+        : {}),
+      ...(tokenArtifactId ? { tokenArtifactId } : {}),
     };
   });
 
@@ -2663,6 +2883,231 @@ const buildErpPayload = ({
     };
   });
 
+const buildEvdgaPayload = ({
+  digaOrderId,
+  profileVersion,
+}: typeof RenderEvdgaBundleArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const orderOption = yield* reader
+      .table("digaOrders")
+      .get(digaOrderId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(orderOption)) {
+      return { found: false as const };
+    }
+
+    const order = orderOption.value;
+    const patient = yield* reader.table("patients").get(order.patientId);
+    const practitioner = yield* reader.table("practitioners").get(order.practitionerId);
+    const organization = yield* reader.table("organizations").get(order.organizationId);
+    const coverage = yield* reader.table("coverages").get(order.coverageId);
+    const identifiers = yield* reader
+      .table("patientIdentifiers")
+      .index("by_patientId_and_isPrimary")
+      .collect()
+      .pipe(Effect.map((rows) => rows.filter((row) => row.patientId === patient._id)));
+    const catalogRefOption = yield* reader
+      .table("digaCatalogRefs")
+      .get(order.digaCatalogRefId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(catalogRefOption)) {
+      return { found: false as const };
+    }
+
+    const catalogRef = catalogRefOption.value;
+
+    const patientResource = {
+      resourceType: "Patient" as const,
+      id: String(patient._id),
+      meta: {
+        profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Patient"],
+      },
+      identifier: identifiers.map((identifier) => identifier.identifier),
+      name: patient.names,
+      ...(patient.birthDate ? { birthDate: patient.birthDate } : {}),
+      ...(patient.administrativeGender?.code
+        ? { gender: patient.administrativeGender.code }
+        : {}),
+      address: patient.addresses,
+      telecom: patient.telecom,
+    };
+
+    const practitionerResource = {
+      resourceType: "Practitioner" as const,
+      id: String(practitioner._id),
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Practitioner",
+        ],
+      },
+      identifier: practitioner.lanr
+        ? [{ system: "urn:kbv:lanr", value: practitioner.lanr }]
+        : [],
+      name: practitioner.names,
+    };
+
+    const organizationResource = {
+      resourceType: "Organization" as const,
+      id: String(organization._id),
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Organization",
+        ],
+      },
+      identifier: organization.identifiers,
+      name: organization.name,
+      telecom: organization.telecom,
+      address: organization.addresses,
+    };
+
+    const coverageResource = {
+      resourceType: "Coverage" as const,
+      id: String(coverage._id),
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Coverage",
+        ],
+      },
+      status: "active",
+      type: toCoverageType(coverage.kind),
+      beneficiary: toFhirReference("Patient", String(patient._id), patient.displayName),
+      payor: [
+        toFhirReference(
+          "Organization",
+          String(organization._id),
+          coverage.kostentraegerName ?? organization.name,
+        ),
+      ],
+    };
+
+    const composition = {
+      resourceType: "Composition" as const,
+      id: `composition-${String(digaOrderId)}`,
+      meta: {
+        profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_EVDGA_Composition"],
+      },
+      status: "final",
+      type: {
+        coding: [
+          {
+            system: "urn:kbv:document-kind",
+            code: "evdga",
+            display: "eVDGA",
+          },
+        ],
+        text: "eVDGA",
+      },
+      date: order.authoredOn,
+      title: "eVDGA",
+      subject: toFhirReference("Patient", String(patient._id), patient.displayName),
+      author: [
+        toFhirReference("Practitioner", String(practitioner._id), practitioner.displayName),
+      ],
+    };
+
+    const deviceRequest = {
+      resourceType: "DeviceRequest" as const,
+      id: `device-request-${String(digaOrderId)}`,
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_EVDGA_DeviceRequest",
+        ],
+      },
+      status: order.status === "cancelled" ? "revoked" : "active",
+      intent: "order",
+      subject: toFhirReference("Patient", String(patient._id), patient.displayName),
+      authoredOn: order.authoredOn,
+      requester: toFhirReference(
+        "Practitioner",
+        String(practitioner._id),
+        practitioner.displayName,
+      ),
+      insurance: [toFhirReference("Coverage", String(coverage._id))],
+      codeCodeableConcept: {
+        coding: [
+          {
+            system: "http://fhir.de/CodeSystem/ifa/pzn",
+            code: catalogRef.pzn,
+            display: catalogRef.verordnungseinheitName,
+          },
+        ],
+        text:
+          catalogRef.digaModulName ??
+          catalogRef.digaName ??
+          catalogRef.verordnungseinheitName,
+      },
+      reasonCode: catalogRef.indikationen,
+    };
+
+    const payload = {
+      profileVersion: profileVersion ?? "1.2.2",
+      composition,
+      patient: patientResource,
+      practitioner: practitionerResource,
+      organization: organizationResource,
+      coverage: coverageResource,
+      deviceRequest,
+      bundle: {
+        resourceType: "Bundle" as const,
+        type: "document" as const,
+        identifier: {
+          system: "urn:ietf:rfc:3986",
+          value: `urn:uuid:${String(digaOrderId)}`,
+        },
+        timestamp: order.authoredOn,
+        entry: [
+          {
+            fullUrl: `urn:uuid:${composition.id}`,
+            resource: composition,
+          },
+          {
+            fullUrl: `urn:uuid:${patientResource.id}`,
+            resource: patientResource,
+          },
+          {
+            fullUrl: `urn:uuid:${practitionerResource.id}`,
+            resource: practitionerResource,
+          },
+          {
+            fullUrl: `urn:uuid:${organizationResource.id}`,
+            resource: organizationResource,
+          },
+          {
+            fullUrl: `urn:uuid:${coverageResource.id}`,
+            resource: coverageResource,
+          },
+          {
+            fullUrl: `urn:uuid:${deviceRequest.id}`,
+            resource: deviceRequest,
+          },
+        ],
+      },
+    };
+
+    return {
+      found: true as const,
+      payload,
+      xml: {
+        family: "EVDGA" as const,
+        encoding: "UTF-8" as const,
+        contentType: "application/fhir+xml" as const,
+        boundaryKind: "emit-only" as const,
+        xml: renderEvdgaBundleXml(payload),
+      },
+      validationPlan:
+        buildOraclePlan({
+          family: "eVDGA",
+          ...(order.artifactDocumentId
+            ? { documentId: String(order.artifactDocumentId) }
+            : {}),
+          profileVersion: profileVersion ?? "1.2.2",
+        }) ?? undefined,
+    };
+  });
+
 const buildEauPayload = ({
   documentId,
   encounterId,
@@ -2923,6 +3368,7 @@ const buildEauPayload = ({
   });
 
 const renderErpBundle = buildErpPayload;
+const renderEvdgaBundle = buildEvdgaPayload;
 
 const createEauDocument = ({
     patientId,
@@ -3271,6 +3717,13 @@ const catalogGroup = GroupImpl.make(api, "catalog").pipe(
     FunctionImpl.make(
       api,
       "catalog",
+      "importDigaCatalogRefs",
+      importDigaCatalogRefs,
+    ),
+    FunctionImpl.make(api, "catalog", "lookupDigaByPzn", lookupDigaByPzn),
+    FunctionImpl.make(
+      api,
+      "catalog",
       "importHeilmittelCatalogRefs",
       importHeilmittelCatalogRefs,
     ),
@@ -3280,6 +3733,16 @@ const catalogGroup = GroupImpl.make(api, "catalog").pipe(
       "lookupHeilmittelByKey",
       lookupHeilmittelByKey,
     ),
+  ]),
+);
+
+const digaGroup = GroupImpl.make(api, "diga").pipe(
+  Layer.provide([
+    FunctionImpl.make(api, "diga", "createOrder", createDigaOrder),
+    FunctionImpl.make(api, "diga", "getOrder", getDigaOrder),
+    FunctionImpl.make(api, "diga", "listOrdersByPatient", listDigaOrdersByPatient),
+    FunctionImpl.make(api, "diga", "finalizeOrder", finalizeDigaOrder),
+    FunctionImpl.make(api, "diga", "renderEvdgaBundle", renderEvdgaBundle),
   ]),
 );
 
@@ -3370,6 +3833,7 @@ const unfinalizedImpl = Impl.make(api).pipe(
     appointmentsGroup,
     referralsGroup,
     catalogGroup,
+    digaGroup,
     prescriptionsGroup,
     heilmittelGroup,
     documentsGroup,

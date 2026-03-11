@@ -111,6 +111,20 @@ export const FhirMedicationRequestResource = Schema.Struct({
   ),
 });
 
+export const FhirDeviceRequestResource = Schema.Struct({
+  resourceType: Schema.Literal("DeviceRequest"),
+  id: Schema.String,
+  meta: Schema.optional(FhirMeta),
+  status: Schema.String,
+  intent: Schema.String,
+  subject: FhirReference,
+  authoredOn: Schema.String,
+  requester: Schema.optional(FhirReference),
+  insurance: Schema.Array(FhirReference),
+  codeCodeableConcept: Schema.optional(FhirCodeableConcept),
+  reasonCode: Schema.Array(FhirCodeableConcept),
+});
+
 export const FhirConditionResource = Schema.Struct({
   resourceType: Schema.Literal("Condition"),
   id: Schema.String,

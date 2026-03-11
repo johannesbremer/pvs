@@ -13,6 +13,7 @@ export const makeTestLayer = TestConfectModule.layer(
     "../convex/catalog.ts": () => import("../convex/catalog"),
     "../convex/coding.ts": () => import("../convex/coding"),
     "../convex/appointments.ts": () => import("../convex/appointments"),
+    "../convex/diga.ts": () => import("../convex/diga"),
     "../convex/patients.ts": () => import("../convex/patients"),
     "../convex/prescriptions.ts": () => import("../convex/prescriptions"),
     "../convex/referrals.ts": () => import("../convex/referrals"),

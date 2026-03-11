@@ -6,6 +6,7 @@ export const publicConfectModules = [
   "coding",
   "appointments",
   "referrals",
+  "diga",
   "prescriptions",
   "heilmittel",
   "documents",

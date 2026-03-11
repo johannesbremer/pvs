@@ -1,4 +1,5 @@
 import { EauPayload } from "../../fhir-r4-effect/resources/eau";
+import { EvdgaPayload } from "../../fhir-r4-effect/resources/evdga";
 import { ErpPayload } from "../../fhir-r4-effect/resources/erp";
 
 const escapeXml = (value: string) =>
@@ -141,6 +142,35 @@ const medicationRequestXml = (resource: typeof ErpPayload.Type.medicationRequest
     .map((instruction) => `<dosageInstruction>${textNode("text", instruction.text)}</dosageInstruction>`)
     .join("")}</MedicationRequest>`;
 
+const deviceRequestXml = (resource: typeof EvdgaPayload.Type.deviceRequest) =>
+  `<DeviceRequest xmlns="http://hl7.org/fhir">${textNode(
+    "id",
+    resource.id,
+  )}${textNode("status", resource.status)}${textNode(
+    "intent",
+    resource.intent,
+  )}${referenceXml("subject", resource.subject)}${textNode(
+    "authoredOn",
+    resource.authoredOn,
+  )}${
+    resource.requester ? referenceXml("requester", resource.requester) : ""
+  }${resource.insurance
+    .map((insurance) => referenceXml("insurance", insurance))
+    .join("")}${
+    resource.codeCodeableConcept
+      ? `<codeCodeableConcept>${resource.codeCodeableConcept.coding
+          .map(codingXml)
+          .join("")}${textNode("text", resource.codeCodeableConcept.text)}</codeCodeableConcept>`
+      : ""
+  }${resource.reasonCode
+    .map(
+      (concept) =>
+        `<reasonCode>${concept.coding
+          .map(codingXml)
+          .join("")}${textNode("text", concept.text)}</reasonCode>`,
+    )
+    .join("")}</DeviceRequest>`;
+
 const encounterXml = (resource: typeof EauPayload.Type.encounter) =>
   `<Encounter xmlns="http://hl7.org/fhir">${textNode("id", resource.id)}${textNode(
     "status",
@@ -186,4 +216,17 @@ export const renderEauBundleXml = (payload: typeof EauPayload.Type) =>
   bundleEntryXml(coverageXml(payload.coverage)) +
   bundleEntryXml(encounterXml(payload.encounter)) +
   payload.conditions.map((condition) => bundleEntryXml(conditionXml(condition))).join("") +
+  `</Bundle>`;
+
+export const renderEvdgaBundleXml = (payload: typeof EvdgaPayload.Type) =>
+  `<?xml version="1.0" encoding="UTF-8"?>` +
+  `<Bundle xmlns="http://hl7.org/fhir">` +
+  textNode("type", payload.bundle.type) +
+  textNode("timestamp", payload.bundle.timestamp) +
+  bundleEntryXml(compositionXml(payload.composition)) +
+  bundleEntryXml(patientXml(payload.patient)) +
+  bundleEntryXml(practitionerXml(payload.practitioner)) +
+  bundleEntryXml(organizationXml(payload.organization)) +
+  bundleEntryXml(coverageXml(payload.coverage)) +
+  bundleEntryXml(deviceRequestXml(payload.deviceRequest)) +
   `</Bundle>`;

@@ -1,6 +1,6 @@
 # Validation Coverage
 
-Status as of 2026-03-10.
+Status as of 2026-03-11.
 
 This file is intentionally blunt. "Implemented" means there is code. "Validated" means we actually execute an oracle or fixture sweep that proves something beyond type safety.
 
@@ -18,7 +18,7 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 | BFB / form rendering | Schema only | Partial | Fixture-backed local | Yes | Local BFB oracle fixtures now validate deterministic golden template snapshots for field layout, required values, and barcode payload or placement semantics, anchored to the published KBV Blankoformulare assets on `update.kbv.de`. No full certified PDF renderer exists yet. |
 | Documents / revisions / artifacts | Yes | Yes | Indirect | Yes | Immutability and issuance flows are tested through medication/eAU/heilmittel flows. |
 | Ti / KIM / mailboxes | Yes | Minimal | None | No | Schema is present; production workflows are largely unimplemented. |
-| eVDGA | Yes | Minimal | None | No | Schema is present; emitter/oracle work is not implemented. |
+| eVDGA | Yes | Yes | None | Yes | DiGA catalog import, canonical order finalization, immutable document issuance, and DeviceRequest-based eVDGA bundle rendering are covered by workflow tests. No dedicated eVDGA oracle is implemented yet. |
 | VoS | Yes | Minimal | None | No | Schema is present; transport/runtime behavior is not implemented. |
 | TSS | Yes | Partial | Fixture-backed local | Yes | Public appointments/referrals workflows now cover TSS-style listing, filtering, vermittlungscode lookup, and booking semantics, with local fixture-backed oracle checks for selection behavior. |
 | AW-SST | Yes | Minimal | None | No | Historical import/export architecture is modeled, but no validator/import implementation exists. |
@@ -103,6 +103,7 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 1. Add executable package authenticity or signature validation for SDICD/SDKH/SDKRW coding master-data imports.
 2. Move BFB from golden template parity to actual renderer or artifact comparison against certified output.
 3. Move TSS from local fixture-backed selection semantics to a real transport adapter and Prüfpaket-backed exchange flow.
+4. Add a dedicated eVDGA oracle or executable validation path once pinned official validator assets are available.
 
 ## Machine-Readable Inventory
 
