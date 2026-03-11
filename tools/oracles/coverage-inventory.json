@@ -105,10 +105,10 @@
       "family": "VoS",
       "sourceQuarterOrVersion": "n/a",
       "canonicalModel": true,
-      "runtimeWorkflow": "minimal",
+      "runtimeWorkflow": true,
       "oracleStatus": "none",
-      "testStatus": "not-covered",
-      "currentNote": "Schema is present; transport and runtime behavior are not implemented."
+      "testStatus": "covered",
+      "currentNote": "Outbound VoS call-bundle publication, kID-bounded read/search projection, immutable artifact issuance, and inbound storage-bundle import into medication orders and medication plans are covered by workflow tests."
     },
     {
       "family": "TSS",

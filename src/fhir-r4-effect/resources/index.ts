@@ -14,3 +14,4 @@ export * from "./common";
 export * from "./eau";
 export * from "./erp";
 export * from "./evdga";
+export * from "./vos";

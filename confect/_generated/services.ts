@@ -2,9 +2,9 @@ import {
   ActionCtx as ActionCtx_,
   ActionRunner as ActionRunner_,
   Auth as Auth_,
+  type DataModel,
   DatabaseReader as DatabaseReader_,
   DatabaseWriter as DatabaseWriter_,
-  type DataModel,
   MutationCtx as MutationCtx_,
   MutationRunner as MutationRunner_,
   QueryCtx as QueryCtx_,
@@ -13,7 +13,6 @@ import {
   Storage,
   VectorSearch as VectorSearch_,
 } from "@confect/server";
-
 import type schemaDefinition from "../schema";
 
 export const Auth = Auth_.Auth;

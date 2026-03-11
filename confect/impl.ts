@@ -45,6 +45,7 @@ import {
   RunValidationArgs,
   ValidationSummaryArgs,
 } from "../src/domain/emission";
+import { VosPayload } from "../src/fhir-r4-effect/resources/vos";
 import {
   ManualPatientSeedFields,
   PatientIdentifierSystem,
@@ -66,6 +67,7 @@ import {
   GetMedicationOrderArgs,
   ImportHeilmittelCatalogRefsArgs,
   ImportMedicationCatalogRefsArgs,
+  ImportVosBundleArgs,
   ListDocumentsByPatientArgs,
   ListFormDefinitionsArgs,
   ListFormInstancesByPatientArgs,
@@ -74,8 +76,13 @@ import {
   LookupHeilmittelByKeyArgs,
   LookupMedicationByPznArgs,
   PromoteDraftWorkspaceArgs,
+  PublishVosBundleArgs,
+  ReadVosBundleArgs,
+  ReadVosResourceArgs,
   RegisterFormDefinitionArgs,
+  RenderVosBundleArgs,
   SaveDraftWorkspaceArgs,
+  SearchVosResourcesArgs,
   WorkflowIssue,
 } from "../src/domain/prescribing-documents";
 import {
@@ -97,6 +104,7 @@ type DiagnosisId = Id<"diagnoses">;
 type DigaOrderId = Id<"digaOrders">;
 type DocumentRevisionId = Id<"documentRevisions">;
 type HeilmittelOrderId = Id<"heilmittelOrders">;
+type IntegrationJobId = Id<"integrationJobs">;
 type MedicationOrderId = Id<"medicationOrders">;
 type MedicationPlanId = Id<"medicationPlans">;
 type PatientId = Id<"patients">;
@@ -1368,6 +1376,7 @@ const issueFormInstanceForRevision = ({
 
 const issueDocumentRevision = ({
   artifact,
+  artifactDirection = "outbound",
   artifactFamily,
   artifactSubtype,
   authorOrganizationId,
@@ -1397,6 +1406,7 @@ const issueDocumentRevision = ({
     };
     readonly externalIdentifier?: string;
   };
+  artifactDirection?: "inbound" | "outbound";
   artifactFamily: string;
   artifactSubtype: string;
   authorOrganizationId?: Id<"organizations">;
@@ -1489,7 +1499,7 @@ const issueDocumentRevision = ({
     const artifactId = yield* createArtifact({
       artifactFamily,
       artifactSubtype,
-      direction: "outbound",
+      direction: artifactDirection,
       ownerId: String(revisionId),
       ownerKind: "documentRevision",
       ...(profileVersion ? { profileVersion } : {}),
@@ -2277,6 +2287,768 @@ const getCurrentPlan = ({ patientId }: { readonly patientId: PatientId }) =>
       entries,
       found: true as const,
       plan: currentPlan,
+    };
+  });
+
+const buildVosPayload = ({
+  kId,
+  medicationOrderId,
+  profileVersion,
+}: typeof RenderVosBundleArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const orderOption = yield* reader
+      .table("medicationOrders")
+      .get(medicationOrderId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(orderOption)) {
+      return { found: false as const };
+    }
+
+    const order = orderOption.value;
+    const patient = yield* reader.table("patients").get(order.patientId);
+    const practitioner = yield* reader
+      .table("practitioners")
+      .get(order.practitionerId);
+    const organization = yield* reader
+      .table("organizations")
+      .get(order.organizationId);
+    const coverage = yield* reader.table("coverages").get(order.coverageId);
+    const identifiers = yield* reader
+      .table("patientIdentifiers")
+      .index("by_patientId_and_isPrimary")
+      .collect()
+      .pipe(
+        Effect.map((rows) =>
+          rows.filter((row) => row.patientId === patient._id),
+        ),
+      );
+
+    const catalogRef = order.medicationCatalogRefId
+      ? yield* reader
+          .table("medicationCatalogRefs")
+          .get(order.medicationCatalogRefId)
+          .pipe(Effect.option)
+      : Option.none();
+
+    const patientResource = {
+      address: patient.addresses,
+      ...(patient.birthDate ? { birthDate: patient.birthDate } : {}),
+      ...(patient.administrativeGender?.code
+        ? { gender: patient.administrativeGender.code }
+        : {}),
+      id: String(patient._id),
+      identifier: identifiers.map((identifier) => identifier.identifier),
+      meta: {
+        profile: ["https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Patient"],
+      },
+      name: patient.names,
+      resourceType: "Patient" as const,
+      telecom: patient.telecom,
+    };
+
+    const practitionerResource = {
+      id: String(practitioner._id),
+      identifier: practitioner.lanr
+        ? [{ system: "urn:kbv:lanr", value: practitioner.lanr }]
+        : [],
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Practitioner",
+        ],
+      },
+      name: practitioner.names,
+      resourceType: "Practitioner" as const,
+    };
+
+    const organizationResource = {
+      address: organization.addresses,
+      id: String(organization._id),
+      identifier: organization.identifiers,
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Organization",
+        ],
+      },
+      name: organization.name,
+      resourceType: "Organization" as const,
+      telecom: organization.telecom,
+    };
+
+    const coverageResource = {
+      beneficiary: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
+      id: String(coverage._id),
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_FOR_Coverage",
+        ],
+      },
+      payor: [
+        toFhirReference(
+          "Organization",
+          String(organization._id),
+          coverage.kostentraegerName ?? organization.name,
+        ),
+      ],
+      resourceType: "Coverage" as const,
+      status: "active",
+      type: toCoverageType(coverage.kind),
+    };
+
+    const medicationText = Option.isSome(catalogRef)
+      ? catalogRef.value.displayName
+      : order.freeTextMedication?.trim();
+    if (!medicationText) {
+      return { found: false as const };
+    }
+
+    const medicationResource = {
+      ...(Option.isSome(catalogRef)
+        ? {
+            code: {
+              coding: [
+                {
+                  code: catalogRef.value.pzn,
+                  display: catalogRef.value.displayName,
+                  system: "http://fhir.de/CodeSystem/ifa/pzn",
+                },
+              ],
+              text: catalogRef.value.displayName,
+            },
+          }
+        : {
+            code: {
+              coding: [],
+              text: medicationText,
+            },
+          }),
+      ...(Option.isSome(catalogRef) && catalogRef.value.doseForm
+        ? { form: catalogRef.value.doseForm }
+        : {}),
+      id: `medication-${String(order._id)}`,
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Medication_PZN",
+        ],
+      },
+      resourceType: "Medication" as const,
+    };
+
+    const medicationRequestResource = {
+      authoredOn: order.authoredOn,
+      dosageInstruction: order.dosageText ? [{ text: order.dosageText }] : [],
+      id: `medication-request-${String(order._id)}`,
+      insurance: [toFhirReference("Coverage", String(coverage._id))],
+      intent: "proposal",
+      medicationReference: toFhirReference(
+        "Medication",
+        medicationResource.id,
+        medicationText,
+      ),
+      meta: {
+        profile: [
+          "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Medication_Request",
+        ],
+      },
+      requester: toFhirReference(
+        "Practitioner",
+        String(practitioner._id),
+        practitioner.displayName,
+      ),
+      resourceType: "MedicationRequest" as const,
+      status: order.status === "cancelled" ? "cancelled" : "active",
+      subject: toFhirReference(
+        "Patient",
+        String(patient._id),
+        patient.displayName,
+      ),
+    };
+
+    const resolvedKId = kId ?? `vos-${String(order._id)}`;
+    const bundle = {
+      entry: [
+        {
+          fullUrl: `urn:uuid:${patientResource.id}`,
+          resource: patientResource,
+        },
+        {
+          fullUrl: `urn:uuid:${practitionerResource.id}`,
+          resource: practitionerResource,
+        },
+        {
+          fullUrl: `urn:uuid:${organizationResource.id}`,
+          resource: organizationResource,
+        },
+        {
+          fullUrl: `urn:uuid:${coverageResource.id}`,
+          resource: coverageResource,
+        },
+        {
+          fullUrl: `urn:uuid:${medicationResource.id}`,
+          resource: medicationResource,
+        },
+        {
+          fullUrl: `urn:uuid:${medicationRequestResource.id}`,
+          resource: medicationRequestResource,
+        },
+      ],
+      id: `bundle-${resolvedKId}`,
+      identifier: {
+        system: "urn:kbv:vos:kid",
+        value: resolvedKId,
+      },
+      resourceType: "Bundle" as const,
+      timestamp: order.authoredOn,
+      type: "collection" as const,
+    };
+
+    return {
+      found: true as const,
+      json: {
+        boundaryKind: "partially reversible" as const,
+        contentType: "application/fhir+json" as const,
+        family: "VoS" as const,
+      },
+      payload: {
+        bundle,
+        coverage: coverageResource,
+        medicationRequests: [medicationRequestResource],
+        medications: [medicationResource],
+        organization: organizationResource,
+        patient: patientResource,
+        practitioner: practitionerResource,
+        profileVersion: profileVersion ?? "draft",
+      },
+    };
+  });
+
+const listVosProjectedResources = (payload: typeof VosPayload.Type) => [
+  payload.bundle,
+  payload.patient,
+  payload.practitioner,
+  payload.organization,
+  payload.coverage,
+  ...payload.medications,
+  ...payload.medicationRequests,
+];
+
+const matchesVosIdentifier = (
+  resource: ReturnType<typeof listVosProjectedResources>[number],
+  identifierValue?: string,
+) => {
+  if (!identifierValue) {
+    return true;
+  }
+
+  if (
+    "identifier" in resource &&
+    Array.isArray(resource.identifier) &&
+    resource.identifier.some(
+      (identifier: { readonly value: string }) =>
+        identifier.value === identifierValue,
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    resource.resourceType === "Bundle" &&
+    resource.identifier.value === identifierValue
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+const matchesVosResourceId = (
+  resource: ReturnType<typeof listVosProjectedResources>[number],
+  resourceId?: string,
+) => {
+  if (!resourceId) {
+    return true;
+  }
+
+  return resource.id === resourceId;
+};
+
+const resolveVosExchange = ({
+  kId,
+  requestedAt,
+}: typeof ReadVosBundleArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const jobs = yield* reader
+      .table("integrationJobs")
+      .index("by_idempotencyKey")
+      .collect();
+    const job = jobs
+      .filter(
+        (row) =>
+          row.idempotencyKey === kId &&
+          row.jobType === "vos-call-bundle" &&
+          row.direction === "outbound",
+      )
+      .sort((left, right) => left._creationTime - right._creationTime)
+      .at(-1);
+
+    if (!job || !job.payloadArtifactId || !job.nextAttemptAt) {
+      return { found: false as const, reason: "not-published" as const };
+    }
+
+    if (requestedAt.localeCompare(job.nextAttemptAt) > 0) {
+      return {
+        found: false as const,
+        reason: "expired" as const,
+      };
+    }
+
+    const artifact = yield* reader
+      .table("artifacts")
+      .get(job.payloadArtifactId);
+    const revisionId = artifact.ownerId as DocumentRevisionId;
+    const revision = yield* reader.table("documentRevisions").get(revisionId);
+
+    return {
+      artifactId: artifact._id,
+      documentId: revision.documentId,
+      expiresAt: job.nextAttemptAt,
+      found: true as const,
+      medicationOrderId: job.ownerId as MedicationOrderId,
+      profileVersion: artifact.profileVersion,
+    };
+  });
+
+const renderVosBundle = buildVosPayload;
+
+const publishVosBundle = ({
+  artifact,
+  expiresAt,
+  issuedAt,
+  kId,
+  medicationOrderId,
+  profileVersion,
+}: typeof PublishVosBundleArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const writer = yield* DatabaseWriter;
+    const orderOption = yield* reader
+      .table("medicationOrders")
+      .get(medicationOrderId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(orderOption)) {
+      return { outcome: "order-not-found" as const };
+    }
+
+    const order = orderOption.value;
+    const issues = yield* medicationFinalizeIssues(order);
+    const activeJobs = yield* reader
+      .table("integrationJobs")
+      .index("by_idempotencyKey")
+      .collect();
+    const duplicate = activeJobs.find(
+      (row) =>
+        row.idempotencyKey === kId &&
+        row.jobType === "vos-call-bundle" &&
+        row.direction === "outbound" &&
+        row.nextAttemptAt !== undefined &&
+        issuedAt.localeCompare(row.nextAttemptAt) <= 0,
+    );
+
+    if (order.status === "cancelled" || order.status === "superseded") {
+      issues.push({
+        blocking: true,
+        code: "VOS_ORDER_STATUS_UNSUPPORTED",
+        message:
+          "Cancelled or superseded prescriptions cannot be published to VoS.",
+      });
+    }
+
+    if (issuedAt.localeCompare(expiresAt) >= 0) {
+      issues.push({
+        blocking: true,
+        code: "VOS_WINDOW_INVALID",
+        message: "The VoS availability window must end after issuance.",
+      });
+    }
+
+    if (duplicate) {
+      issues.push({
+        blocking: true,
+        code: "VOS_KID_ALREADY_ACTIVE",
+        message:
+          "The provided kID is already active for another VoS publication.",
+      });
+    }
+
+    if (issues.some((issue) => issue.blocking)) {
+      return {
+        issues,
+        medicationOrderId,
+        outcome: "blocked" as const,
+      };
+    }
+
+    const rendered = yield* buildVosPayload({
+      kId,
+      medicationOrderId,
+      ...(profileVersion ? { profileVersion } : {}),
+    });
+    if (!rendered.found) {
+      return { outcome: "order-not-found" as const };
+    }
+
+    const issued = yield* issueDocumentRevision({
+      artifact,
+      artifactFamily: "VoS",
+      artifactSubtype: "aufruf-bundle",
+      authorOrganizationId: order.organizationId,
+      authorPractitionerId: order.practitionerId,
+      contentType: artifact.attachment.contentType,
+      effectiveDate: issuedAt,
+      kind: "vos",
+      originInterface: "VoS",
+      patientId: order.patientId,
+      profileVersion,
+      status: "final",
+      summary: {
+        externalIdentifier: kId,
+        title: "VoS Aufruf-Bundle",
+      },
+      transportKind: rendered.json.contentType,
+    });
+
+    const jobId = yield* writer.table("integrationJobs").insert({
+      attemptCount: 0,
+      counterparty: "VoS",
+      direction: "outbound",
+      idempotencyKey: kId,
+      jobType: "vos-call-bundle",
+      nextAttemptAt: expiresAt,
+      ownerId: String(medicationOrderId),
+      ownerKind: "medicationOrder",
+      payloadArtifactId: issued.artifactId,
+      status: "waiting",
+    });
+
+    yield* writer.table("artifacts").patch(issued.artifactId, {
+      validationSummary: `Published for kID ${kId} until ${expiresAt}.`,
+    });
+
+    return {
+      artifactId: issued.artifactId,
+      documentId: issued.documentId,
+      jobId,
+      kId,
+      medicationOrderId,
+      outcome: "published" as const,
+      revisionId: issued.revisionId,
+    };
+  });
+
+const readVosBundle = ({ kId, requestedAt }: typeof ReadVosBundleArgs.Type) =>
+  Effect.gen(function* () {
+    const exchange = yield* resolveVosExchange({ kId, requestedAt });
+    if (!exchange.found) {
+      return exchange;
+    }
+
+    const rendered = yield* buildVosPayload({
+      kId,
+      medicationOrderId: exchange.medicationOrderId,
+      ...(exchange.profileVersion
+        ? { profileVersion: exchange.profileVersion }
+        : {}),
+    });
+    if (!rendered.found) {
+      return { found: false as const, reason: "not-published" as const };
+    }
+
+    return {
+      artifactId: exchange.artifactId,
+      documentId: exchange.documentId,
+      expiresAt: exchange.expiresAt,
+      found: true as const,
+      json: rendered.json,
+      kId,
+      payload: rendered.payload,
+    };
+  });
+
+const readVosResource = ({
+  kId,
+  requestedAt,
+  resourceId,
+  resourceType,
+}: typeof ReadVosResourceArgs.Type) =>
+  Effect.gen(function* () {
+    const bundle = yield* readVosBundle({ kId, requestedAt });
+    if (!bundle.found) {
+      return bundle.reason === "expired"
+        ? { found: false as const, reason: "expired" as const }
+        : { found: false as const, reason: "not-published" as const };
+    }
+
+    const resource = listVosProjectedResources(bundle.payload).find(
+      (entry) =>
+        entry.resourceType === resourceType &&
+        matchesVosResourceId(entry, resourceId),
+    );
+
+    if (!resource) {
+      return { found: false as const, reason: "resource-not-found" as const };
+    }
+
+    return {
+      found: true as const,
+      resource,
+    };
+  });
+
+const searchVosResources = ({
+  identifierValue,
+  kId,
+  requestedAt,
+  resourceId,
+  resourceType,
+}: typeof SearchVosResourcesArgs.Type) =>
+  Effect.gen(function* () {
+    const bundle = yield* readVosBundle({ kId, requestedAt });
+    if (!bundle.found) {
+      return bundle.reason === "expired"
+        ? { found: false as const, reason: "expired" as const }
+        : { found: false as const, reason: "not-published" as const };
+    }
+
+    return {
+      found: true as const,
+      resources: listVosProjectedResources(bundle.payload).filter(
+        (resource) =>
+          resource.resourceType === resourceType &&
+          matchesVosResourceId(resource, resourceId) &&
+          matchesVosIdentifier(resource, identifierValue),
+      ),
+    };
+  });
+
+const importVosBundle = ({
+  artifact,
+  coverageId,
+  importedAt,
+  kId,
+  medicationOrders,
+  medicationPlan,
+  organizationId,
+  patientId,
+  practitionerId,
+  profileVersion,
+}: typeof ImportVosBundleArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const writer = yield* DatabaseWriter;
+    const issues: (typeof WorkflowIssue.Type)[] = [];
+
+    if (
+      medicationOrders.length === 0 &&
+      (!medicationPlan || medicationPlan.entries.length === 0)
+    ) {
+      issues.push({
+        blocking: true,
+        code: "VOS_IMPORT_EMPTY",
+        message:
+          "VoS storage bundles must include at least one order or plan entry.",
+      });
+    }
+
+    for (const order of medicationOrders) {
+      const orderIssues = yield* medicationFinalizeIssues(order);
+      issues.push(...orderIssues);
+    }
+
+    if (issues.some((issue) => issue.blocking)) {
+      return {
+        issues,
+        outcome: "blocked" as const,
+      };
+    }
+
+    const issued = yield* issueDocumentRevision({
+      artifact,
+      artifactDirection: "inbound",
+      artifactFamily: "VoS",
+      artifactSubtype: "speicher-bundle",
+      authorOrganizationId: organizationId,
+      authorPractitionerId: practitionerId,
+      contentType: artifact.attachment.contentType,
+      effectiveDate: importedAt,
+      kind: "vos",
+      originInterface: "VoS",
+      patientId,
+      profileVersion,
+      status: "imported",
+      summary: {
+        ...(kId ? { externalIdentifier: kId } : {}),
+        title: "VoS Speicher-Bundle",
+      },
+      transportKind: "application/fhir+json",
+    });
+
+    const importedMedicationOrderIds: MedicationOrderId[] = [];
+    for (const order of medicationOrders) {
+      const medicationOrderId = yield* writer.table("medicationOrders").insert({
+        artifactDocumentId: issued.documentId,
+        authoredOn: order.authoredOn,
+        coverageId,
+        ...(order.dosageText ? { dosageText: order.dosageText } : {}),
+        ...(order.freeTextMedication
+          ? { freeTextMedication: order.freeTextMedication }
+          : {}),
+        ...(order.legalBasisCode
+          ? { legalBasisCode: order.legalBasisCode }
+          : {}),
+        ...(order.medicationCatalogRefId
+          ? { medicationCatalogRefId: order.medicationCatalogRefId }
+          : {}),
+        orderKind: order.orderKind,
+        organizationId,
+        ...(order.packageCount ? { packageCount: order.packageCount } : {}),
+        patientId,
+        practitionerId,
+        prescriptionContext: order.prescriptionContext,
+        prescriptionMode: order.prescriptionMode,
+        ...(order.quantity ? { quantity: order.quantity } : {}),
+        ...(order.serFlag !== undefined ? { serFlag: order.serFlag } : {}),
+        ...(order.specialRecipeType
+          ? { specialRecipeType: order.specialRecipeType }
+          : {}),
+        status: order.status,
+        ...(order.statusCoPaymentCode
+          ? { statusCoPaymentCode: order.statusCoPaymentCode }
+          : {}),
+        ...(order.substitutionAllowed !== undefined
+          ? { substitutionAllowed: order.substitutionAllowed }
+          : {}),
+      });
+      importedMedicationOrderIds.push(medicationOrderId);
+    }
+
+    let medicationPlanId: MedicationPlanId | undefined;
+    if (medicationPlan) {
+      const currentPlans = yield* reader
+        .table("medicationPlans")
+        .index("by_patientId_and_status")
+        .collect()
+        .pipe(
+          Effect.map((rows) =>
+            rows.filter(
+              (row) => row.patientId === patientId && row.status === "current",
+            ),
+          ),
+        );
+
+      for (const plan of currentPlans) {
+        yield* writer.table("medicationPlans").patch(plan._id, {
+          status: "superseded",
+        });
+      }
+
+      medicationPlanId = yield* writer.table("medicationPlans").insert({
+        ...(medicationPlan.barcodePayload
+          ? { barcodePayload: medicationPlan.barcodePayload }
+          : {}),
+        ...(medicationPlan.bmpVersion
+          ? { bmpVersion: medicationPlan.bmpVersion }
+          : {}),
+        ...(medicationPlan.documentIdentifier
+          ? { documentIdentifier: medicationPlan.documentIdentifier }
+          : {}),
+        issuerPractitionerId: practitionerId,
+        issuingOrganizationId: organizationId,
+        patientId,
+        ...(medicationPlan.setIdentifier
+          ? { setIdentifier: medicationPlan.setIdentifier }
+          : {}),
+        sourceArtifactId: issued.artifactId,
+        sourceKind: "vos",
+        status: "current",
+        updatedAt: medicationPlan.updatedAt,
+      });
+
+      for (const entry of medicationPlan.entries) {
+        yield* writer.table("medicationPlanEntries").insert({
+          ...(entry.activeIngredientText
+            ? { activeIngredientText: entry.activeIngredientText }
+            : {}),
+          displayName: entry.displayName,
+          ...(entry.dosageText ? { dosageText: entry.dosageText } : {}),
+          ...(entry.doseFormText ? { doseFormText: entry.doseFormText } : {}),
+          entrySource: "imported-plan",
+          hasBoundSupplementLine: entry.supplementLineText !== undefined,
+          ...(entry.indicationText
+            ? { indicationText: entry.indicationText }
+            : {}),
+          isRecipePreparation: entry.isRecipePreparation,
+          planId: medicationPlanId,
+          printOnPlan: entry.printOnPlan,
+          ...(entry.productCode ? { productCode: entry.productCode } : {}),
+          sortOrder: entry.sortOrder,
+          ...(entry.strengthText ? { strengthText: entry.strengthText } : {}),
+          ...(entry.supplementLineText
+            ? { supplementLineText: entry.supplementLineText }
+            : {}),
+        });
+      }
+    }
+
+    const inboundJobId = yield* writer.table("integrationJobs").insert({
+      attemptCount: 1,
+      counterparty: "VoS",
+      direction: "inbound",
+      idempotencyKey: kId
+        ? `vos-storage:${kId}`
+        : `vos-storage:${String(issued.artifactId)}`,
+      jobType: "vos-storage-bundle",
+      ownerId: String(issued.documentId),
+      ownerKind: "clinicalDocument",
+      payloadArtifactId: issued.artifactId,
+      status: "done",
+    });
+
+    if (kId) {
+      const jobs = yield* reader
+        .table("integrationJobs")
+        .index("by_idempotencyKey")
+        .collect();
+      for (const job of jobs.filter(
+        (row) =>
+          row.idempotencyKey === kId &&
+          row.jobType === "vos-call-bundle" &&
+          row.direction === "outbound",
+      )) {
+        yield* writer.table("integrationJobs").patch(job._id, {
+          status: "done",
+        });
+      }
+    }
+
+    yield* writer.table("artifacts").patch(issued.artifactId, {
+      validationStatus: "valid",
+      validationSummary: `Imported VoS storage bundle via job ${String(inboundJobId)}.`,
+    });
+
+    return {
+      artifactId: issued.artifactId,
+      documentId: issued.documentId,
+      importedMedicationOrderIds,
+      ...(medicationPlanId ? { medicationPlanId } : {}),
+      outcome: "imported" as const,
+      revisionId: issued.revisionId,
     };
   });
 
@@ -3923,6 +4695,22 @@ const prescriptionsGroup = GroupImpl.make(api, "prescriptions").pipe(
       finalizeMedicationOrder,
     ),
     FunctionImpl.make(api, "prescriptions", "renderErpBundle", renderErpBundle),
+    FunctionImpl.make(api, "prescriptions", "renderVosBundle", renderVosBundle),
+    FunctionImpl.make(
+      api,
+      "prescriptions",
+      "publishVosBundle",
+      publishVosBundle,
+    ),
+    FunctionImpl.make(api, "prescriptions", "readVosBundle", readVosBundle),
+    FunctionImpl.make(api, "prescriptions", "readVosResource", readVosResource),
+    FunctionImpl.make(
+      api,
+      "prescriptions",
+      "searchVosResources",
+      searchVosResources,
+    ),
+    FunctionImpl.make(api, "prescriptions", "importVosBundle", importVosBundle),
     FunctionImpl.make(
       api,
       "prescriptions",

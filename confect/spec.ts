@@ -116,6 +116,8 @@ import {
   ImportHeilmittelCatalogRefsResult,
   ImportMedicationCatalogRefsArgs,
   ImportMedicationCatalogRefsResult,
+  ImportVosBundleArgs,
+  ImportVosBundleResult,
   ListDocumentsByPatientArgs,
   ListDocumentsByPatientResult,
   ListFormDefinitionsArgs,
@@ -132,10 +134,20 @@ import {
   LookupMedicationByPznResult,
   PromoteDraftWorkspaceArgs,
   PromoteDraftWorkspaceResult,
+  PublishVosBundleArgs,
+  PublishVosBundleResult,
+  ReadVosBundleArgs,
+  ReadVosBundleResult,
+  ReadVosResourceArgs,
+  ReadVosResourceResult,
   RegisterFormDefinitionArgs,
   RegisterFormDefinitionResult,
+  RenderVosBundleArgs,
+  RenderVosBundleResult,
   SaveDraftWorkspaceArgs,
   SaveDraftWorkspaceResult,
+  SearchVosResourcesArgs,
+  SearchVosResourcesResult,
 } from "../src/domain/prescribing-documents";
 import { internalConfectModules, publicConfectModules } from "./modules";
 
@@ -468,6 +480,48 @@ export const PrescriptionsGroup = GroupSpec.make("prescriptions")
       args: GetCurrentMedicationPlanArgs,
       name: "getCurrentPlan",
       returns: GetCurrentMedicationPlanResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      args: RenderVosBundleArgs,
+      name: "renderVosBundle",
+      returns: RenderVosBundleResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      args: PublishVosBundleArgs,
+      name: "publishVosBundle",
+      returns: PublishVosBundleResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      args: ReadVosBundleArgs,
+      name: "readVosBundle",
+      returns: ReadVosBundleResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      args: ReadVosResourceArgs,
+      name: "readVosResource",
+      returns: ReadVosResourceResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      args: SearchVosResourcesArgs,
+      name: "searchVosResources",
+      returns: SearchVosResourcesResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      args: ImportVosBundleArgs,
+      name: "importVosBundle",
+      returns: ImportVosBundleResult,
     }),
   );
 

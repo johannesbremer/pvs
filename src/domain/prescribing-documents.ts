@@ -24,7 +24,17 @@ import {
   AttachmentRefValue,
   IsoDate,
   IsoDateTime,
+  QuantityValue,
 } from "../../confect/tables/primitives";
+import {
+  FhirCoverageResource,
+  FhirMedicationRequestResource,
+  FhirMedicationResource,
+  FhirOrganizationResource,
+  FhirPatientResource,
+  FhirPractitionerResource,
+} from "../fhir-r4-effect/resources/common";
+import { VosBundleResource, VosPayload } from "../fhir-r4-effect/resources/vos";
 import { withSystemFields } from "./shared";
 
 export const MedicationCatalogRefDocument = withSystemFields(
@@ -237,6 +247,221 @@ export const GetCurrentMedicationPlanMissing = Schema.Struct({
 export const GetCurrentMedicationPlanResult = Schema.Union(
   GetCurrentMedicationPlanFound,
   GetCurrentMedicationPlanMissing,
+);
+
+export const VosJsonRenderResult = Schema.Struct({
+  boundaryKind: Schema.Literal("partially reversible"),
+  contentType: Schema.Literal("application/fhir+json"),
+  family: Schema.Literal("VoS"),
+});
+
+export const RenderVosBundleArgs = Schema.Struct({
+  kId: Schema.optional(Schema.String),
+  medicationOrderId: GenericId.GenericId("medicationOrders"),
+  profileVersion: Schema.optional(Schema.String),
+});
+export const RenderVosBundleFound = Schema.Struct({
+  found: Schema.Literal(true),
+  json: VosJsonRenderResult,
+  payload: VosPayload,
+});
+export const RenderVosBundleMissing = Schema.Struct({
+  found: Schema.Literal(false),
+});
+export const RenderVosBundleResult = Schema.Union(
+  RenderVosBundleFound,
+  RenderVosBundleMissing,
+);
+
+export const PublishVosBundleArgs = Schema.Struct({
+  artifact: FinalizeDocumentArtifactInput,
+  expiresAt: IsoDateTime,
+  issuedAt: IsoDateTime,
+  kId: Schema.String,
+  medicationOrderId: GenericId.GenericId("medicationOrders"),
+  profileVersion: Schema.optional(Schema.String),
+});
+export const PublishVosBundlePublished = Schema.Struct({
+  artifactId: GenericId.GenericId("artifacts"),
+  documentId: GenericId.GenericId("clinicalDocuments"),
+  jobId: GenericId.GenericId("integrationJobs"),
+  kId: Schema.String,
+  medicationOrderId: GenericId.GenericId("medicationOrders"),
+  outcome: Schema.Literal("published"),
+  revisionId: GenericId.GenericId("documentRevisions"),
+});
+export const PublishVosBundleBlocked = Schema.Struct({
+  issues: Schema.Array(WorkflowIssue),
+  medicationOrderId: GenericId.GenericId("medicationOrders"),
+  outcome: Schema.Literal("blocked"),
+});
+export const PublishVosBundleMissing = Schema.Struct({
+  outcome: Schema.Literal("order-not-found"),
+});
+export const PublishVosBundleResult = Schema.Union(
+  PublishVosBundlePublished,
+  PublishVosBundleBlocked,
+  PublishVosBundleMissing,
+);
+
+export const ReadVosBundleArgs = Schema.Struct({
+  kId: Schema.String,
+  requestedAt: IsoDateTime,
+});
+export const ReadVosBundleFound = Schema.Struct({
+  artifactId: GenericId.GenericId("artifacts"),
+  documentId: GenericId.GenericId("clinicalDocuments"),
+  expiresAt: IsoDateTime,
+  found: Schema.Literal(true),
+  json: VosJsonRenderResult,
+  kId: Schema.String,
+  payload: VosPayload,
+});
+export const ReadVosBundleMissing = Schema.Struct({
+  found: Schema.Literal(false),
+  reason: Schema.Literal("expired", "not-published"),
+});
+export const ReadVosBundleResult = Schema.Union(
+  ReadVosBundleFound,
+  ReadVosBundleMissing,
+);
+
+export const VosProjectedResourceType = Schema.Literal(
+  "Bundle",
+  "Coverage",
+  "Medication",
+  "MedicationRequest",
+  "Organization",
+  "Patient",
+  "Practitioner",
+);
+export const VosProjectedResource = Schema.Union(
+  VosBundleResource,
+  FhirCoverageResource,
+  FhirMedicationResource,
+  FhirMedicationRequestResource,
+  FhirOrganizationResource,
+  FhirPatientResource,
+  FhirPractitionerResource,
+);
+
+export const ReadVosResourceArgs = Schema.Struct({
+  kId: Schema.String,
+  requestedAt: IsoDateTime,
+  resourceId: Schema.String,
+  resourceType: VosProjectedResourceType,
+});
+export const ReadVosResourceFound = Schema.Struct({
+  found: Schema.Literal(true),
+  resource: VosProjectedResource,
+});
+export const ReadVosResourceMissing = Schema.Struct({
+  found: Schema.Literal(false),
+  reason: Schema.Literal("expired", "not-published", "resource-not-found"),
+});
+export const ReadVosResourceResult = Schema.Union(
+  ReadVosResourceFound,
+  ReadVosResourceMissing,
+);
+
+export const SearchVosResourcesArgs = Schema.Struct({
+  identifierValue: Schema.optional(Schema.String),
+  kId: Schema.String,
+  requestedAt: IsoDateTime,
+  resourceId: Schema.optional(Schema.String),
+  resourceType: VosProjectedResourceType,
+});
+export const SearchVosResourcesFound = Schema.Struct({
+  found: Schema.Literal(true),
+  resources: Schema.Array(VosProjectedResource),
+});
+export const SearchVosResourcesMissing = Schema.Struct({
+  found: Schema.Literal(false),
+  reason: Schema.Literal("expired", "not-published"),
+});
+export const SearchVosResourcesResult = Schema.Union(
+  SearchVosResourcesFound,
+  SearchVosResourcesMissing,
+);
+
+export const ImportVosMedicationOrderInput = Schema.Struct({
+  authoredOn: IsoDateTime,
+  dosageText: Schema.optional(Schema.String),
+  freeTextMedication: Schema.optional(Schema.String),
+  legalBasisCode: Schema.optional(Schema.String),
+  medicationCatalogRefId: Schema.optional(
+    GenericId.GenericId("medicationCatalogRefs"),
+  ),
+  orderKind: Schema.Literal("pzn", "ingredient", "compounding", "freetext"),
+  packageCount: Schema.optional(Schema.Number),
+  prescriptionContext: Schema.Literal(
+    "regular",
+    "practice-supply",
+    "home-visit",
+    "care-home",
+    "technical-fallback",
+  ),
+  prescriptionMode: Schema.Literal("paper", "electronic", "fallback-paper"),
+  quantity: Schema.optional(QuantityValue),
+  serFlag: Schema.optional(Schema.Boolean),
+  specialRecipeType: Schema.optional(Schema.Literal("btm", "t-rezept", "none")),
+  status: Schema.Literal("draft", "final", "cancelled", "superseded"),
+  statusCoPaymentCode: Schema.optional(Schema.String),
+  substitutionAllowed: Schema.optional(Schema.Boolean),
+});
+
+export const ImportVosMedicationPlanEntryInput = Schema.Struct({
+  activeIngredientText: Schema.optional(Schema.String),
+  displayName: Schema.String,
+  dosageText: Schema.optional(Schema.String),
+  doseFormText: Schema.optional(Schema.String),
+  indicationText: Schema.optional(Schema.String),
+  isRecipePreparation: Schema.Boolean,
+  printOnPlan: Schema.Boolean,
+  productCode: Schema.optional(Schema.String),
+  sortOrder: Schema.Number,
+  strengthText: Schema.optional(Schema.String),
+  supplementLineText: Schema.optional(Schema.String),
+});
+
+export const ImportVosMedicationPlanInput = Schema.Struct({
+  barcodePayload: Schema.optional(Schema.String),
+  bmpVersion: Schema.optional(Schema.String),
+  documentIdentifier: Schema.optional(Schema.String),
+  entries: Schema.Array(ImportVosMedicationPlanEntryInput),
+  setIdentifier: Schema.optional(Schema.String),
+  updatedAt: IsoDateTime,
+});
+
+export const ImportVosBundleArgs = Schema.Struct({
+  artifact: FinalizeDocumentArtifactInput,
+  coverageId: GenericId.GenericId("coverages"),
+  importedAt: IsoDateTime,
+  kId: Schema.optional(Schema.String),
+  medicationOrders: Schema.Array(ImportVosMedicationOrderInput),
+  medicationPlan: Schema.optional(ImportVosMedicationPlanInput),
+  organizationId: GenericId.GenericId("organizations"),
+  patientId: GenericId.GenericId("patients"),
+  practitionerId: GenericId.GenericId("practitioners"),
+  profileVersion: Schema.optional(Schema.String),
+});
+export const ImportVosBundleImported = Schema.Struct({
+  artifactId: GenericId.GenericId("artifacts"),
+  documentId: GenericId.GenericId("clinicalDocuments"),
+  importedMedicationOrderIds: Schema.Array(
+    GenericId.GenericId("medicationOrders"),
+  ),
+  medicationPlanId: Schema.optional(GenericId.GenericId("medicationPlans")),
+  outcome: Schema.Literal("imported"),
+  revisionId: GenericId.GenericId("documentRevisions"),
+});
+export const ImportVosBundleBlocked = Schema.Struct({
+  issues: Schema.Array(WorkflowIssue),
+  outcome: Schema.Literal("blocked"),
+});
+export const ImportVosBundleResult = Schema.Union(
+  ImportVosBundleImported,
+  ImportVosBundleBlocked,
 );
 
 export const CreateHeilmittelApprovalArgs = HeilmittelApprovalsFields;

@@ -47,6 +47,7 @@ describe("validation coverage inventory", () => {
     const bfb = inventory.families.find((entry) => entry.family === "BFB");
     const tss = inventory.families.find((entry) => entry.family === "TSS");
     const evdga = inventory.families.find((entry) => entry.family === "eVDGA");
+    const vos = inventory.families.find((entry) => entry.family === "VoS");
 
     expect(eRezept?.oracleStatus).toBe("executable-fhir");
     expect(eRezept?.testStatus).toBe("covered");
@@ -59,6 +60,8 @@ describe("validation coverage inventory", () => {
     expect(tss?.testStatus).toBe("covered");
     expect(evdga?.runtimeWorkflow).toBe(true);
     expect(evdga?.testStatus).toBe("covered");
+    expect(vos?.runtimeWorkflow).toBe(true);
+    expect(vos?.testStatus).toBe("covered");
 
     for (const family of [
       "eRezept",
@@ -69,6 +72,7 @@ describe("validation coverage inventory", () => {
       "BFB",
       "TSS",
       "eVDGA",
+      "VoS",
     ]) {
       expect(markdown.includes(family)).toBe(true);
     }
