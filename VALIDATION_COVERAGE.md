@@ -11,7 +11,7 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 | VSD / eGK / eEB adoption | Yes | Yes | None | Yes | Patient, identifier, coverage, and VSD snapshot workflows are covered by unit-style integration tests. |
 | ICD / coding | Yes | Yes | Local only | Yes | Diagnosis lifecycle and persisted coding evaluations exist; no SDICD/SDKH/SDKRW executable oracle yet. |
 | KVDT billing seam | Yes | Partial | Executable XPM + XKM | Yes | Official `.con` fixtures from the XPM package are covered in automated cold-start and warm-cache tests, including both positive and negative validator cases. |
-| Arzneimittel / eRezept canonical order | Yes | Yes | Executable FHIR | Partial | Current Q3_2026 ERP fixtures run through the real validator. Several curated examples pass cleanly; examples using `renderedDosageInstruction` with `de-DE` currently hit a reproducible offline validator limitation and are tracked explicitly in tests. |
+| Arzneimittel / eRezept canonical order | Yes | Yes | Executable FHIR | Partial | The full official Q3_2026 ERP XML archive now runs through the real validator. A substantial subset passes cleanly; the remaining examples cluster around a reproducible offline `renderedDosageInstruction` + `de-DE` limitation and are tracked explicitly in tests. |
 | eAU canonical documents | Yes | Yes | Executable FHIR | Yes | Official eAU examples validate via the executable FHIR path from an empty cache. |
 | BMP | Yes | Partial | Executable XSD | Yes | Official BMP example XMLs are covered through the downloaded KBV XSD package and example archive. |
 | Heilmittel canonical orders | Yes | Yes | Fixture-backed local | Yes | Domain workflows exist, but no executable KBV oracle family yet. |
@@ -47,18 +47,9 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
   - all non-error XML examples are validated through the real `validator_cli`
 - `eRezept`
   - official `Q3_2026/eRP_Beispiele_V1.4.zip`
-  - curated examples are executed through the real `validator_cli`
-  - fully passing today:
-    - `Beispiel_1.xml`
-    - `Beispiel_10_1.xml`
-    - `Beispiel_22.xml`
-    - `Beispiel_60.xml`
-  - known offline limitation today:
-    - `Beispiel_3.xml`
-    - `Beispiel_4.xml`
-    - `Beispiel_5.xml`
-    - `Beispiel_16.xml`
-    - `Beispiel_23.xml`
+  - the full archive of 62 XML examples is executed through the real `validator_cli`
+  - many examples validate cleanly
+  - the remaining examples currently fail only with one reproducible offline limitation class
   - shared failure pattern:
     - `renderedDosageInstruction` plus `language = de-DE`
     - validator reports `all-languages` / `urn:ietf:bcp:47` resolution failure and a downstream `KBV_PR_ERP_Prescription` profile-match error
@@ -73,7 +64,6 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 
 ## Highest-Value Remaining Gaps
 
-1. Expand eRezept from curated examples to the full official XML example archive.
-2. Replace fixture-backed BFB and Heilmittel placeholders with real oracle checks.
-3. Reduce the `renderedDosageInstruction` + `de-DE` offline validator limitation for ERP examples.
-4. Add a machine-readable coverage inventory so CI can report progress by family and quarter.
+1. Replace fixture-backed BFB and Heilmittel placeholders with real oracle checks.
+2. Reduce the `renderedDosageInstruction` + `de-DE` offline validator limitation for ERP examples.
+3. Add a machine-readable coverage inventory so CI can report progress by family and quarter.

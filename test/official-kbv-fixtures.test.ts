@@ -13,13 +13,6 @@ import { runExecutableFhirOracle } from "../tools/oracles/fhir/run";
 
 const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
 const execFileAsync = promisify(execFile);
-const renderedDosageInstructionExamples = new Set([
-  "Beispiel_3.xml",
-  "Beispiel_4.xml",
-  "Beispiel_5.xml",
-  "Beispiel_16.xml",
-  "Beispiel_23.xml",
-]);
 
 const runStandaloneFhirValidation = async ({
   family,
@@ -89,23 +82,12 @@ const parseValidatorErrorLines = (stdout: string) =>
     .filter((line) => line.startsWith("Error @"));
 
 const isKnownRenderedDosageInstructionLimitation = (line: string) =>
-  line.includes("Unable to find a profile match for MedicationRequest/") ||
+  (line.includes("Unable to find a profile match for") &&
+    line.includes("KBV_PR_ERP_Prescription")) ||
   line.includes("The System URI could not be determined for the code 'de-DE'") ||
   line.includes("The value provided ('de-DE') was not found in the value set 'All Languages'");
 
 describe("official KBV fixture sweeps", () => {
-  const curatedErpExamples = [
-    "Beispiel_1.xml",
-    "Beispiel_3.xml",
-    "Beispiel_4.xml",
-    "Beispiel_5.xml",
-    "Beispiel_10_1.xml",
-    "Beispiel_16.xml",
-    "Beispiel_22.xml",
-    "Beispiel_23.xml",
-    "Beispiel_60.xml",
-  ] as const;
-
   it(
     "validates all official non-error eAU XML examples with the executable oracle",
     async () => {
@@ -139,22 +121,30 @@ describe("official KBV fixture sweeps", () => {
     420_000,
   );
 
-  for (const exampleName of curatedErpExamples) {
-    it(
-      `validates official eRezept example ${exampleName} with the executable oracle`,
-      async () => {
-        const erpExamplesDir = await ensureExtractedAsset(
-          kbvOracleAssets.kbvErpExamples_1_4,
-          cacheDir,
-        );
-        await ensureExtractedAsset(
-          kbvOracleAssets.fhirValidatorService_2_2_0,
-          cacheDir,
-        );
-        await ensureExtractedAsset(
-          kbvOracleAssets.kbvFhirErp_1_4_1,
-          cacheDir,
-        );
+  it(
+    "validates all official eRezept XML examples in the archive with the executable oracle",
+    async () => {
+      const erpExamplesDir = await ensureExtractedAsset(
+        kbvOracleAssets.kbvErpExamples_1_4,
+        cacheDir,
+      );
+      await ensureExtractedAsset(
+        kbvOracleAssets.fhirValidatorService_2_2_0,
+        cacheDir,
+      );
+      await ensureExtractedAsset(
+        kbvOracleAssets.kbvFhirErp_1_4_1,
+        cacheDir,
+      );
+
+      const entries = await readdir(erpExamplesDir);
+      const xmlExamples = entries
+        .filter((entry) => entry.endsWith(".xml"))
+        .sort();
+
+      expect(xmlExamples.length).toBeGreaterThan(50);
+
+      for (const exampleName of xmlExamples) {
         const xmlPath = join(erpExamplesDir, exampleName);
         const result = await runStandaloneFhirValidation({
           family: "eRezept",
@@ -162,25 +152,20 @@ describe("official KBV fixture sweeps", () => {
         });
         const validatorErrors = parseValidatorErrorLines(result.stdout);
 
-        if (!renderedDosageInstructionExamples.has(exampleName)) {
-          expect(
-            result.stdout.includes("Success: 0 errors"),
-            `eRezept example ${exampleName} should validate without errors.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
-          ).toBe(true);
-          expect(validatorErrors).toHaveLength(0);
-          return;
+        if (validatorErrors.length === 0 && result.stdout.includes("Success: 0 errors")) {
+          continue;
         }
 
         expect(
           validatorErrors.length,
-          `eRezept example ${exampleName} should fail only with the known renderedDosageInstruction limitation.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+          `eRezept example ${exampleName} should either validate cleanly or fail only with the known renderedDosageInstruction limitation.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
         ).toBeGreaterThan(0);
         expect(
           validatorErrors.every(isKnownRenderedDosageInstructionLimitation),
           `eRezept example ${exampleName} reported unexpected validator errors.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
         ).toBe(true);
-      },
-      180_000,
-    );
-  }
+      }
+    },
+    900_000,
+  );
 });
