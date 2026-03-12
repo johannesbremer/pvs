@@ -49,6 +49,13 @@ import {
   ValidationSummaryArgs,
 } from "../src/domain/emission";
 import {
+  AdoptEebInboxItemArgs,
+  GetEebInboxItemArgs,
+  ListEebInboxItemsArgs,
+  ReceiveEebInboxItemArgs,
+  RegisterKimMailboxArgs,
+} from "../src/domain/integration";
+import {
   ManualPatientSeedFields,
   PatientIdentifierSystem,
   RecordVsdSnapshotArgs,
@@ -103,11 +110,14 @@ import spec from "./spec";
 type ArtifactId = Id<"artifacts">;
 type BillingCaseId = Id<"billingCases">;
 type ClinicalDocumentId = Id<"clinicalDocuments">;
+type CoverageId = Id<"coverages">;
 type DiagnosisId = Id<"diagnoses">;
 type DigaOrderId = Id<"digaOrders">;
 type DocumentRevisionId = Id<"documentRevisions">;
+type EebInboxItemId = Id<"eebInboxItems">;
 type HeilmittelOrderId = Id<"heilmittelOrders">;
 type IntegrationJobId = Id<"integrationJobs">;
+type KimMailboxId = Id<"kimMailboxes">;
 type MedicationOrderId = Id<"medicationOrders">;
 type MedicationPlanId = Id<"medicationPlans">;
 type PatientId = Id<"patients">;
@@ -339,6 +349,137 @@ const findPatientByKvid = (kvid10?: string) =>
     return existingIdentifier
       ? Option.some(existingIdentifier.patientId)
       : Option.none();
+  });
+
+const findCoverageForPatientAndPayload = ({
+  coveragePayload,
+  patientId,
+  versichertenId3119,
+}: {
+  coveragePayload: typeof ReceiveEebInboxItemArgs.Type.coveragePayload;
+  patientId: PatientId;
+  versichertenId3119?: string;
+}) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const coverages = yield* reader
+      .table("coverages")
+      .index("by_patientId")
+      .collect()
+      .pipe(
+        Effect.map((rows) => rows.filter((row) => row.patientId === patientId)),
+      );
+
+    const matchedCoverage = coverages.find(
+      (coverage) =>
+        ((versichertenId3119 ?? coveragePayload.versichertenId3119) &&
+          coverage.kvid10 ===
+            (versichertenId3119 ?? coveragePayload.versichertenId3119)) ||
+        (!!coveragePayload.kostentraegerkennung4133 &&
+          coverage.kostentraegerkennung ===
+            coveragePayload.kostentraegerkennung4133),
+    );
+
+    return matchedCoverage
+      ? Option.some(matchedCoverage._id)
+      : Option.none<CoverageId>();
+  });
+
+const quarterCardReadStatus = ({
+  patientId,
+  timestamp,
+}: {
+  patientId?: PatientId;
+  timestamp: string;
+}) =>
+  Effect.gen(function* () {
+    const quarter = quarterFromIsoDateTime(timestamp);
+    if (!patientId) {
+      return {
+        hasCardRead: false,
+        quarter,
+      };
+    }
+
+    const reader = yield* DatabaseReader;
+    const snapshots = yield* reader
+      .table("vsdSnapshots")
+      .index("by_patientId_and_readAt")
+      .collect()
+      .pipe(
+        Effect.map((rows) => rows.filter((row) => row.patientId === patientId)),
+      );
+
+    return {
+      hasCardRead: snapshots.some(
+        (snapshot) =>
+          (snapshot.readSource === "egk" || snapshot.readSource === "kvk") &&
+          quarterFromIsoDateTime(snapshot.readAt) === quarter,
+      ),
+      quarter,
+    };
+  });
+
+const findEebSnapshotByPayloadArtifactId = (payloadArtifactId: ArtifactId) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const snapshots = yield* reader
+      .table("vsdSnapshots")
+      .index("by_readSource_and_readAt")
+      .collect();
+
+    const snapshot = snapshots.find(
+      (row) =>
+        row.readSource === "eeb" && row.rawArtifactId === payloadArtifactId,
+    );
+
+    return snapshot ? Option.some(snapshot) : Option.none();
+  });
+
+const buildEebInboxItemView = (inboxItemId: EebInboxItemId) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const inboxItemOption = yield* reader
+      .table("eebInboxItems")
+      .get(inboxItemId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(inboxItemOption)) {
+      return Option.none();
+    }
+
+    const inboxItem = inboxItemOption.value;
+    const matchedPatient = inboxItem.matchedPatientId
+      ? yield* reader
+          .table("patients")
+          .get(inboxItem.matchedPatientId)
+          .pipe(Effect.option)
+      : Option.none();
+    const matchedCoverage = inboxItem.matchedCoverageId
+      ? yield* reader
+          .table("coverages")
+          .get(inboxItem.matchedCoverageId)
+          .pipe(Effect.option)
+      : Option.none();
+    const snapshot = yield* findEebSnapshotByPayloadArtifactId(
+      inboxItem.payloadArtifactId,
+    );
+    const quarterCardRead = yield* quarterCardReadStatus({
+      patientId: inboxItem.matchedPatientId,
+      timestamp: inboxItem.receivedAt,
+    });
+
+    return Option.some({
+      inboxItem,
+      ...(Option.isSome(matchedPatient)
+        ? { matchedPatient: matchedPatient.value }
+        : {}),
+      ...(Option.isSome(matchedCoverage)
+        ? { matchedCoverage: matchedCoverage.value }
+        : {}),
+      quarterCardRead,
+      ...(Option.isSome(snapshot) ? { snapshot: snapshot.value } : {}),
+    });
   });
 
 const upsertPatientIdentifier = ({
@@ -4705,6 +4846,338 @@ const createEauDocument = ({
 
 const renderEauDocument = buildEauPayload;
 
+const registerKimMailbox = (mailbox: typeof RegisterKimMailboxArgs.Type) =>
+  Effect.gen(function* () {
+    const writer = yield* DatabaseWriter;
+    const mailboxId = yield* writer.table("kimMailboxes").insert(mailbox);
+    return { mailboxId };
+  });
+
+const receiveEebInboxItem = ({
+  attachment,
+  coveragePayload,
+  kimMailboxId,
+  kimMessageId,
+  onlineCheckErrorCode3012,
+  onlineCheckPruefziffer3013,
+  onlineCheckResult3011,
+  onlineCheckTimestamp3010,
+  receivedAt,
+  schemaVersion3006,
+  senderDisplay,
+  senderVerified,
+  serviceIdentifier,
+  versichertenId3119,
+}: typeof ReceiveEebInboxItemArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const writer = yield* DatabaseWriter;
+    const mailboxOption = yield* reader
+      .table("kimMailboxes")
+      .get(kimMailboxId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(mailboxOption)) {
+      return { outcome: "kim-mailbox-not-found" as const };
+    }
+
+    const existingInboxItems = yield* reader
+      .table("eebInboxItems")
+      .index("by_kimMessageId")
+      .collect();
+    const existingInboxItem = existingInboxItems.find(
+      (row) => row.kimMessageId === kimMessageId,
+    );
+
+    if (existingInboxItem) {
+      return {
+        inboxItemId: existingInboxItem._id,
+        outcome: "duplicate-message" as const,
+      };
+    }
+
+    const inboundKvid =
+      versichertenId3119 ?? coveragePayload.versichertenId3119;
+    const matchedPatientOption = yield* findPatientByKvid(inboundKvid);
+    const matchedCoverageOption = Option.isSome(matchedPatientOption)
+      ? yield* findCoverageForPatientAndPayload({
+          coveragePayload,
+          patientId: matchedPatientOption.value,
+          ...(inboundKvid ? { versichertenId3119: inboundKvid } : {}),
+        })
+      : Option.none();
+
+    const integrationJobId = yield* writer.table("integrationJobs").insert({
+      attemptCount: 1,
+      counterparty: "KIM",
+      direction: "inbound",
+      idempotencyKey: `eeb:${String(kimMailboxId)}:${kimMessageId}`,
+      jobType: "eeb-receive",
+      ownerId: String(kimMailboxId),
+      ownerKind: "kimMailbox",
+      status: "running",
+    });
+
+    const payloadArtifactId = yield* createArtifact({
+      artifactFamily: "EEB",
+      artifactSubtype: serviceIdentifier,
+      attachment,
+      contentType: attachment.contentType,
+      direction: "inbound",
+      externalIdentifier: kimMessageId,
+      immutableAt: receivedAt,
+      ownerId: String(integrationJobId),
+      ownerKind: "integrationJob",
+      transportKind: "kim",
+      validationStatus: senderVerified ? "valid" : "pending",
+    });
+
+    yield* writer.table("integrationEvents").insert({
+      artifactId: payloadArtifactId,
+      eventType: "eeb-message-received",
+      jobId: integrationJobId,
+      message: `Received eEB message ${kimMessageId}.`,
+      occurredAt: receivedAt,
+    });
+
+    const snapshotId = yield* writer.table("vsdSnapshots").insert({
+      coveragePayload,
+      ...(Option.isSome(matchedPatientOption)
+        ? { patientId: matchedPatientOption.value }
+        : {}),
+      ...(onlineCheckErrorCode3012 ? { onlineCheckErrorCode3012 } : {}),
+      ...(onlineCheckPruefziffer3013 ? { onlineCheckPruefziffer3013 } : {}),
+      ...(onlineCheckResult3011 ? { onlineCheckResult3011 } : {}),
+      ...(onlineCheckTimestamp3010 ? { onlineCheckTimestamp3010 } : {}),
+      rawArtifactId: payloadArtifactId,
+      readAt: receivedAt,
+      readSource: "eeb",
+      ...(schemaVersion3006 ? { schemaVersion3006 } : {}),
+      ...(inboundKvid ? { versichertenId3119: inboundKvid } : {}),
+    });
+
+    const matchState = !senderVerified
+      ? "manual-review"
+      : Option.isSome(matchedPatientOption)
+        ? "matched-existing"
+        : inboundKvid
+          ? "new-patient"
+          : "manual-review";
+
+    const inboxItemId = yield* writer.table("eebInboxItems").insert({
+      adoptionState: "pending",
+      kimMailboxId,
+      kimMessageId,
+      ...(Option.isSome(matchedCoverageOption)
+        ? { matchedCoverageId: matchedCoverageOption.value }
+        : {}),
+      ...(Option.isSome(matchedPatientOption)
+        ? { matchedPatientId: matchedPatientOption.value }
+        : {}),
+      matchState,
+      payloadArtifactId,
+      receivedAt,
+      ...(senderDisplay ? { senderDisplay } : {}),
+      senderVerified,
+      serviceIdentifier,
+    });
+
+    const quarterCardRead = yield* quarterCardReadStatus({
+      patientId: Option.isSome(matchedPatientOption)
+        ? matchedPatientOption.value
+        : undefined,
+      timestamp: receivedAt,
+    });
+
+    yield* writer.table("integrationJobs").patch(integrationJobId, {
+      payloadArtifactId,
+      status: "done",
+    });
+    yield* writer.table("integrationEvents").insert({
+      artifactId: payloadArtifactId,
+      eventType: "eeb-match-evaluated",
+      jobId: integrationJobId,
+      message: `eEB message ${kimMessageId} entered state ${matchState}.`,
+      occurredAt: receivedAt,
+    });
+
+    return {
+      inboxItemId,
+      integrationJobId,
+      ...(Option.isSome(matchedCoverageOption)
+        ? { matchedCoverageId: matchedCoverageOption.value }
+        : {}),
+      ...(Option.isSome(matchedPatientOption)
+        ? { matchedPatientId: matchedPatientOption.value }
+        : {}),
+      outcome: "received" as const,
+      payloadArtifactId,
+      quarterCardRead,
+      snapshotId,
+    };
+  });
+
+const getEebInboxItem = ({ eebInboxItemId }: typeof GetEebInboxItemArgs.Type) =>
+  Effect.gen(function* () {
+    const view = yield* buildEebInboxItemView(eebInboxItemId);
+    return Option.isSome(view)
+      ? {
+          found: true as const,
+          view: view.value,
+        }
+      : { found: false as const };
+  });
+
+const listEebInboxItems = ({
+  adoptionState,
+  matchedPatientId,
+  matchState,
+}: typeof ListEebInboxItemsArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const inboxItems = yield* reader
+      .table("eebInboxItems")
+      .index("by_matchState_and_receivedAt")
+      .collect();
+
+    const filteredItems = inboxItems
+      .filter((row) =>
+        adoptionState === undefined
+          ? true
+          : row.adoptionState === adoptionState,
+      )
+      .filter((row) =>
+        matchState === undefined ? true : row.matchState === matchState,
+      )
+      .filter((row) =>
+        matchedPatientId === undefined
+          ? true
+          : row.matchedPatientId === matchedPatientId,
+      )
+      .sort((left, right) => right.receivedAt.localeCompare(left.receivedAt));
+
+    const views = [];
+    for (const inboxItem of filteredItems) {
+      const view = yield* buildEebInboxItemView(inboxItem._id);
+      if (Option.isSome(view)) {
+        views.push(view.value);
+      }
+    }
+
+    return views;
+  });
+
+const adoptEebInboxItem = ({
+  eebInboxItemId,
+  existingPatientId,
+  patientSeed,
+}: typeof AdoptEebInboxItemArgs.Type) =>
+  Effect.gen(function* () {
+    const reader = yield* DatabaseReader;
+    const writer = yield* DatabaseWriter;
+    const inboxItemOption = yield* reader
+      .table("eebInboxItems")
+      .get(eebInboxItemId)
+      .pipe(Effect.option);
+
+    if (Option.isNone(inboxItemOption)) {
+      return { outcome: "eeb-inbox-item-not-found" as const };
+    }
+
+    const inboxItem = inboxItemOption.value;
+    if (inboxItem.adoptionState !== "pending") {
+      return {
+        adoptionState: inboxItem.adoptionState,
+        outcome: "adoption-not-pending" as const,
+      };
+    }
+
+    if (!inboxItem.senderVerified) {
+      return { outcome: "sender-not-verified" as const };
+    }
+
+    const snapshotOption = yield* findEebSnapshotByPayloadArtifactId(
+      inboxItem.payloadArtifactId,
+    );
+    if (Option.isNone(snapshotOption)) {
+      return { outcome: "snapshot-not-found" as const };
+    }
+
+    const snapshot = snapshotOption.value;
+    const candidatePatientId = existingPatientId ?? inboxItem.matchedPatientId;
+
+    if (!candidatePatientId && !patientSeed) {
+      return { outcome: "needs-patient-seed" as const };
+    }
+
+    const quarterCardRead = yield* quarterCardReadStatus({
+      patientId: candidatePatientId,
+      timestamp: inboxItem.receivedAt,
+    });
+    if (!quarterCardRead.hasCardRead) {
+      return {
+        outcome: "quarter-card-read-required" as const,
+        quarter: quarterCardRead.quarter,
+      };
+    }
+
+    const adopted = yield* adoptSnapshot({
+      ...(candidatePatientId ? { existingPatientId: candidatePatientId } : {}),
+      ...(patientSeed ? { patientSeed } : {}),
+      snapshotId: snapshot._id,
+    });
+
+    if (adopted.outcome === "snapshot-not-found") {
+      return { outcome: "snapshot-not-found" as const };
+    }
+    if (adopted.outcome === "needs-patient-seed") {
+      return { outcome: "needs-patient-seed" as const };
+    }
+
+    yield* writer.table("vsdSnapshots").patch(snapshot._id, {
+      patientId: adopted.patientId,
+    });
+    yield* writer.table("eebInboxItems").patch(eebInboxItemId, {
+      adoptedVsdSnapshotId: snapshot._id,
+      adoptionState: "accepted",
+      matchedCoverageId: adopted.coverageId,
+      matchedPatientId: adopted.patientId,
+      matchState: adopted.patientCreated ? "new-patient" : "matched-existing",
+    });
+
+    const integrationJobId = yield* writer.table("integrationJobs").insert({
+      attemptCount: 1,
+      counterparty: "KIM",
+      direction: "inbound",
+      idempotencyKey: `eeb-adopt:${String(eebInboxItemId)}`,
+      jobType: "eeb-adopt",
+      ownerId: String(eebInboxItemId),
+      ownerKind: "eebInboxItem",
+      payloadArtifactId: inboxItem.payloadArtifactId,
+      status: "done",
+    });
+    yield* writer.table("integrationEvents").insert({
+      artifactId: inboxItem.payloadArtifactId,
+      eventType: "eeb-adopted",
+      jobId: integrationJobId,
+      message: `Adopted eEB inbox item ${String(eebInboxItemId)} into patient ${String(adopted.patientId)}.`,
+      occurredAt: inboxItem.receivedAt,
+    });
+
+    return {
+      coverageCreated: adopted.coverageCreated,
+      coverageId: adopted.coverageId,
+      inboxItemId: eebInboxItemId,
+      matchedPatientId: adopted.patientId,
+      outcome: "adopted" as const,
+      patientCreated: adopted.patientCreated,
+      ...(adopted.patientIdentifierId
+        ? { patientIdentifierId: adopted.patientIdentifierId }
+        : {}),
+      snapshotId: snapshot._id,
+    };
+  });
+
 const listOraclePlugins = ({ family }: typeof ListOraclePluginsArgs.Type) =>
   Effect.succeed(
     listRegisteredOraclePlugins().filter(
@@ -5092,6 +5565,31 @@ const draftsGroup = GroupImpl.make(api, "drafts").pipe(
 
 const integrationGroup = GroupImpl.make(api, "integration").pipe(
   Layer.provide([
+    FunctionImpl.make(
+      api,
+      "integration",
+      "registerKimMailbox",
+      registerKimMailbox,
+    ),
+    FunctionImpl.make(
+      api,
+      "integration",
+      "receiveEebInboxItem",
+      receiveEebInboxItem,
+    ),
+    FunctionImpl.make(api, "integration", "getEebInboxItem", getEebInboxItem),
+    FunctionImpl.make(
+      api,
+      "integration",
+      "listEebInboxItems",
+      listEebInboxItems,
+    ),
+    FunctionImpl.make(
+      api,
+      "integration",
+      "adoptEebInboxItem",
+      adoptEebInboxItem,
+    ),
     FunctionImpl.make(
       api,
       "integration",

@@ -35,6 +35,7 @@ export {
   PatientIdentifiersFields,
   Patients,
   PatientsFields,
+  VsdCoveragePayloadFields,
   VsdSnapshots,
   VsdSnapshotsFields,
 } from "./core-patients";

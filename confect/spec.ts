@@ -78,6 +78,18 @@ import {
   ValidationSummaryResult,
 } from "../src/domain/emission";
 import {
+  AdoptEebInboxItemArgs,
+  AdoptEebInboxItemResult,
+  GetEebInboxItemArgs,
+  GetEebInboxItemResult,
+  ListEebInboxItemsArgs,
+  ListEebInboxItemsResult,
+  ReceiveEebInboxItemArgs,
+  ReceiveEebInboxItemResult,
+  RegisterKimMailboxArgs,
+  RegisterKimMailboxResult,
+} from "../src/domain/integration";
+import {
   AdoptVsdSnapshotArgs,
   AdoptVsdSnapshotResult,
   CreateManualPatientArgs,
@@ -655,6 +667,41 @@ export const DraftsGroup = GroupSpec.make("drafts")
   );
 
 export const IntegrationGroup = GroupSpec.make("integration")
+  .addFunction(
+    FunctionSpec.publicMutation({
+      args: RegisterKimMailboxArgs,
+      name: "registerKimMailbox",
+      returns: RegisterKimMailboxResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      args: ReceiveEebInboxItemArgs,
+      name: "receiveEebInboxItem",
+      returns: ReceiveEebInboxItemResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      args: GetEebInboxItemArgs,
+      name: "getEebInboxItem",
+      returns: GetEebInboxItemResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicQuery({
+      args: ListEebInboxItemsArgs,
+      name: "listEebInboxItems",
+      returns: ListEebInboxItemsResult,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      args: AdoptEebInboxItemArgs,
+      name: "adoptEebInboxItem",
+      returns: AdoptEebInboxItemResult,
+    }),
+  )
   .addFunction(
     FunctionSpec.publicQuery({
       args: ListOraclePluginsArgs,

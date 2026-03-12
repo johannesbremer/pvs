@@ -86,20 +86,22 @@ export const Coverages = unsafeMakeTable("coverages", CoveragesFields)
   .index("by_kvid10", ["kvid10"])
   .index("by_kostentraegerkennung", ["kostentraegerkennung"]);
 
+export const VsdCoveragePayloadFields = Schema.Struct({
+  geburtsdatum3103: Schema.optional(Schema.String),
+  geschlecht3110: Schema.optional(Schema.String),
+  kostentraegerkennung4133: Schema.optional(Schema.String),
+  kostentraegername4134: Schema.optional(Schema.String),
+  ort3113: Schema.optional(Schema.String),
+  plz3112: Schema.optional(Schema.String),
+  strasse3107: Schema.optional(Schema.String),
+  versichertenart3108: Schema.optional(Schema.String),
+  versichertenId3119: Schema.optional(Schema.String),
+  versichertennummer3105: Schema.optional(Schema.String),
+  versicherungsschutzEnde3116: Schema.optional(Schema.String),
+});
+
 export const VsdSnapshotsFields = Schema.Struct({
-  coveragePayload: Schema.Struct({
-    geburtsdatum3103: Schema.optional(Schema.String),
-    geschlecht3110: Schema.optional(Schema.String),
-    kostentraegerkennung4133: Schema.optional(Schema.String),
-    kostentraegername4134: Schema.optional(Schema.String),
-    ort3113: Schema.optional(Schema.String),
-    plz3112: Schema.optional(Schema.String),
-    strasse3107: Schema.optional(Schema.String),
-    versichertenart3108: Schema.optional(Schema.String),
-    versichertenId3119: Schema.optional(Schema.String),
-    versichertennummer3105: Schema.optional(Schema.String),
-    versicherungsschutzEnde3116: Schema.optional(Schema.String),
-  }),
+  coveragePayload: VsdCoveragePayloadFields,
   onlineCheckErrorCode3012: Schema.optional(Schema.String),
   onlineCheckPruefziffer3013: Schema.optional(Schema.String),
   onlineCheckResult3011: Schema.optional(Schema.String),
