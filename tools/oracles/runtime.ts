@@ -93,6 +93,18 @@ export const executeOraclePlan = ({
               xml: payloadPreviewXml,
             }),
           );
+    case "eVDGA":
+      return executionMode === "executable"
+        ? runExecutableFhirOracle({
+            family: "eVDGA",
+            xml: payloadPreviewXml,
+          })
+        : Promise.resolve(
+            runFhirOracle({
+              family: "eVDGA",
+              xml: payloadPreviewXml,
+            }),
+          );
     case "Heilmittel":
       return Promise.resolve(runHeilmittelOracle({ payloadPreview }));
     case "ICD":

@@ -97,9 +97,9 @@
       "sourceQuarterOrVersion": "Q3_2026",
       "canonicalModel": true,
       "runtimeWorkflow": true,
-      "oracleStatus": "none",
+      "oracleStatus": "fixture-backed-local",
       "testStatus": "covered",
-      "currentNote": "DiGA catalog import, canonical order finalization, immutable document issuance, and DeviceRequest-based eVDGA bundle rendering are covered by workflow tests. No dedicated eVDGA oracle is implemented yet."
+      "currentNote": "DiGA catalog import, canonical order finalization, immutable document issuance, and DeviceRequest-based eVDGA bundle rendering are covered by workflow tests. Rendered bundles now emit a schema-backed eVDGA oracle plan and pass local FHIR bundle checks through the shared validator runner shape; official executable archive sweeps are still pending."
     },
     {
       "family": "VoS",

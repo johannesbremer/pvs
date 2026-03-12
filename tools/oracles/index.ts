@@ -63,6 +63,19 @@ export const oraclePluginRegistry = {
       workingDirectory: ".",
     },
     {
+      command: "tools/oracles/fhir/run.ts",
+      expectedOutputs: ["report.json"],
+      family: "eVDGA",
+      fixtureRoot: "test/oracles/evdga",
+      inputKind: "fhir-xml",
+      kind: "executable-backed",
+      normalizationRules: ["normalizePaths", "normalizeValidatorNoise"],
+      passFailRule:
+        "FHIR validator exits successfully with no error severity findings.",
+      reportParser: "tools/oracles/fhir/parseReport.ts",
+      workingDirectory: ".",
+    },
+    {
       expectedOutputs: ["comparison.json"],
       family: "BFB",
       fixtureRoot: "test/oracles/bfb",

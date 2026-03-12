@@ -15,6 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const KBV_MIRROR_ROOT = "/Users/johannes/Code/kbv-mirror";
 const fhirValidatorAssetsCache = new Map<
   string,
   Promise<{
@@ -536,7 +537,7 @@ export const ensureFhirValidatorAssets = async ({
   family,
 }: {
   cacheDir?: string;
-  family: "eAU" | "eRezept";
+  family: "eAU" | "eRezept" | "eVDGA";
 }) => {
   const resolvedCacheDir = resolve(cacheDir);
   const cacheKey = `${family}:${resolvedCacheDir}`;
@@ -567,10 +568,23 @@ export const ensureFhirValidatorAssets = async ({
             kbvOracleAssets.kbvFhirEau_1_2_1,
             resolvedCacheDir,
           )
-        : await ensureExtractedAsset(
-            kbvOracleAssets.kbvFhirErp_1_4_1,
-            resolvedCacheDir,
-          );
+        : family === "eRezept"
+          ? await ensureExtractedAsset(
+              kbvOracleAssets.kbvFhirErp_1_4_1,
+              resolvedCacheDir,
+            )
+          : resolve(
+              KBV_MIRROR_ROOT,
+              "DigitaleMuster/eVDGA/KBV_FHIR_eVDGA_V1.2.2_zur_Validierung.zip.extracted",
+            );
+
+    if (!existsSync(packageRoot)) {
+      throw new Error(
+        family === "eVDGA"
+          ? "eVDGA validator package was not found in /Users/johannes/Code/kbv-mirror"
+          : `FHIR validator package root for ${family} was not found`,
+      );
+    }
 
     const nestedIgPaths = (await collectIgDirectories(packageRoot)).filter(
       (entryPath) => entryPath !== packageRoot,

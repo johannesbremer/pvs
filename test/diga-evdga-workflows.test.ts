@@ -6,6 +6,10 @@ import { describe, expect, it } from "vitest";
 
 import { DatabaseWriter } from "../confect/_generated/services";
 import { refs } from "../confect/refs";
+import {
+  OracleExecutionResultFields,
+  OraclePlanFields,
+} from "../tools/oracles/types";
 import { runWithTestConfect, TestConfect } from "./TestConfect";
 
 const seedStorageId = "seed;_storage" as Id<"_storage">;
@@ -215,6 +219,29 @@ describe("diga and evdga workflows", () => {
             documentId: finalized.documentId,
           },
         );
+        const plan = yield* test.query(
+          refs.public.integration.buildValidationPlan,
+          {
+            documentId: finalized.documentId,
+            family: "eVDGA",
+            profileVersion: "1.2.2",
+          },
+        );
+        const validationRun = yield* test.mutation(
+          refs.public.integration.runValidation,
+          {
+            artifactId: finalized.artifactId,
+            family: "eVDGA",
+            payloadPreviewXml: rendered.found ? rendered.xml.xml : undefined,
+            profileVersion: "1.2.2",
+          },
+        );
+        const validationSummary = yield* test.query(
+          refs.public.integration.getValidationSummary,
+          {
+            artifactId: finalized.artifactId,
+          },
+        );
 
         return {
           documents,
@@ -222,7 +249,10 @@ describe("diga and evdga workflows", () => {
           finalized,
           orders,
           orderView,
+          plan,
           rendered,
+          validationRun,
+          validationSummary,
         };
       }),
     );
@@ -243,6 +273,37 @@ describe("diga and evdga workflows", () => {
         ?.code,
     ).toBe("19283746");
     expect(result.rendered.xml.xml).toContain("<DeviceRequest");
+    expect(result.rendered.validationPlan?.family).toBe("eVDGA");
+    expect(result.plan.found).toBe(true);
+    if (!result.plan.found) {
+      throw new Error("expected eVDGA validation plan");
+    }
+    const plan = Schema.decodeUnknownSync(OraclePlanFields)(result.plan.plan);
+    expect(plan.family).toBe("eVDGA");
+    expect(plan.pluginKind).toBe("executable-backed");
+    expect(plan.profileVersion).toBe("1.2.2");
+    expect(result.validationRun.outcome).toBe("completed");
+    if (result.validationRun.outcome !== "completed") {
+      throw new Error(
+        `expected completed validation outcome, got ${result.validationRun.outcome}`,
+      );
+    }
+    const report = Schema.decodeUnknownSync(OracleExecutionResultFields)(
+      result.validationRun.report,
+    );
+    expect(report.family).toBe("eVDGA");
+    expect(report.passed).toBe(true);
+    expect(
+      report.findings.filter((finding) => finding.severity === "error"),
+    ).toHaveLength(0);
+    expect(result.validationSummary.found).toBe(true);
+    if (!result.validationSummary.found) {
+      throw new Error("expected validation summary");
+    }
+    expect(result.validationSummary.validationStatus).toBe("valid");
+    expect(result.validationSummary.validationSummary).toContain(
+      "eVDGA XML satisfied",
+    );
     expect(result.documents).toHaveLength(1);
     expect(result.documentView.found).toBe(true);
     if (!result.documentView.found) {

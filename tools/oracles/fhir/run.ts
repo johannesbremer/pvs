@@ -149,7 +149,7 @@ export const runFhirOracle = ({
   family,
   xml,
 }: {
-  family: "eAU" | "eRezept";
+  family: "eAU" | "eRezept" | "eVDGA";
   xml?: string;
 }): OracleExecutionResult => {
   const findings = [];
@@ -185,6 +185,15 @@ export const runFhirOracle = ({
         findings.push(missingTagFinding("Condition"));
       }
     }
+
+    if (family === "eVDGA") {
+      if (!xml.includes("<DeviceRequest")) {
+        findings.push(missingTagFinding("DeviceRequest"));
+      }
+      if (!xml.includes("<Coverage")) {
+        findings.push(missingTagFinding("Coverage"));
+      }
+    }
   }
 
   return {
@@ -204,7 +213,7 @@ export const runExecutableFhirOracle = async ({
   xml,
 }: {
   cacheDir?: string;
-  family: "eAU" | "eRezept";
+  family: "eAU" | "eRezept" | "eVDGA";
   xml?: string;
 }): Promise<OracleExecutionResult> => {
   if (!xml || xml.trim().length === 0) {
