@@ -109,3 +109,5 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 
 - checked-in JSON inventory: [tools/oracles/coverage-inventory.json](/Users/johannes/Code/pvs/tools/oracles/coverage-inventory.json)
 - stdout helper for CI: `pnpm oracle:coverage-inventory`
+- authoritative official corpus inventory: [tools/oracles/official-corpus-inventory.ts](/Users/johannes/Code/pvs/tools/oracles/official-corpus-inventory.ts)
+- stdout helper for corpus inventory: `pnpm oracle:official-corpus-inventory`

@@ -12,6 +12,7 @@
     "lint": "eslint . --fix",
     "lint:check": "eslint .",
     "oracle:coverage-inventory": "node tools/oracles/print-coverage-inventory.mjs",
+    "oracle:official-corpus-inventory": "node tools/oracles/print-official-corpus-inventory.mjs",
     "oracle:prefetch": "node --experimental-strip-types tools/oracles/prefetch.mjs",
     "test": "vitest run",
     "tsc": "tsc --noEmit",
