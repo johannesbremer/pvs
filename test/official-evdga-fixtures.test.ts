@@ -3,7 +3,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { runExecutableFhirOracle } from "../tools/oracles/fhir/run";
+import {
+  runExecutableFhirOracle,
+  runExecutableFhirValidationBatch,
+} from "../tools/oracles/fhir/run";
 import { OracleExecutionResultFields } from "../tools/oracles/types";
 
 const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
@@ -28,26 +31,36 @@ describe("official eVDGA fixture sweeps", () => {
       .sort();
 
     expect(xmlExamples.length).toBeGreaterThan(5);
+    const xmlPaths = xmlExamples.map((exampleName) =>
+      join(evdgaExamplesDir, exampleName),
+    );
 
     // Act
+    const result = await runExecutableFhirValidationBatch({
+      cacheDir,
+      family: "eVDGA",
+      xmlPaths,
+    });
+    const summaries = new Map(
+      result.summaries.map((summary) => [summary.sourcePath, summary]),
+    );
+
     for (const exampleName of xmlExamples) {
-      const xml = await readFile(join(evdgaExamplesDir, exampleName), "utf8");
-      const result = Schema.decodeUnknownSync(OracleExecutionResultFields)(
-        await runExecutableFhirOracle({
-          cacheDir,
-          family: "eVDGA",
-          xml,
-        }),
-      );
+      const xmlPath = join(evdgaExamplesDir, exampleName);
+      const summary = summaries.get(xmlPath);
 
       // Assert
       expect(
-        result.findings.filter((finding) => finding.severity === "error"),
-        `eVDGA example ${exampleName} should validate without error findings.\n${JSON.stringify(result, null, 2)}`,
-      ).toHaveLength(0);
+        summary,
+        `eVDGA example ${exampleName} should appear in the batch validator output.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+      ).toBeDefined();
       expect(
-        result.passed,
-        `eVDGA example ${exampleName} should pass executable validation.\n${JSON.stringify(result, null, 2)}`,
+        summary?.errorCount,
+        `eVDGA example ${exampleName} should validate without error findings.\nSECTION:\n${summary?.rawSection ?? "<missing>"}\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+      ).toBe(0);
+      expect(
+        summary?.passed,
+        `eVDGA example ${exampleName} should pass executable validation.\nSECTION:\n${summary?.rawSection ?? "<missing>"}\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
       ).toBe(true);
     }
   }, 1_200_000);
