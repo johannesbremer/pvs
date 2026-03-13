@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ensureExtractedAsset, kbvOracleAssets } from "../tools/oracles/assets";
-import { runExecutableFhirOracle } from "../tools/oracles/fhir/run";
+import {
+  runExecutableFhirOracle,
+  toBatchValidationSourcePathKey,
+} from "../tools/oracles/fhir/run";
 
 const tempDirs: string[] = [];
 
@@ -15,6 +18,16 @@ afterEach(async () => {
 });
 
 describe("executable FHIR oracle", () => {
+  it("normalizes batch validation source paths so accented filenames match across platforms", () => {
+    const macStyle = "/tmp/Beispiel_69_Kombipra\u0308parat.xml";
+    const linuxStyle = "/tmp/Beispiel_69_Kombipr\u00E4parat.xml";
+
+    expect(macStyle).not.toBe(linuxStyle);
+    expect(toBatchValidationSourcePathKey(macStyle)).toBe(
+      toBatchValidationSourcePathKey(linuxStyle),
+    );
+  });
+
   it("downloads validator assets and validates an official KBV eAU example from an empty cache", async () => {
     const cacheDir = await mkdtemp(join(tmpdir(), "kbv-fhir-exec-test-"));
     tempDirs.push(cacheDir);

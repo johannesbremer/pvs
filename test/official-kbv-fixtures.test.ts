@@ -7,7 +7,10 @@ import {
   ensureFhirValidatorDependencyCache,
   kbvOracleAssets,
 } from "../tools/oracles/assets";
-import { runExecutableFhirValidationBatch } from "../tools/oracles/fhir/run";
+import {
+  runExecutableFhirValidationBatch,
+  toBatchValidationSourcePathKey,
+} from "../tools/oracles/fhir/run";
 
 const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
 
@@ -33,11 +36,16 @@ describe("official KBV fixture sweeps", () => {
       xmlPaths,
     });
     const summaries = new Map(
-      result.summaries.map((summary) => [summary.sourcePath, summary]),
+      result.summaries.map((summary) => [
+        toBatchValidationSourcePathKey(summary.sourcePath),
+        summary,
+      ]),
     );
 
     for (const exampleName of xmlExamples) {
-      const xmlPath = join(eauExamplesDir, exampleName);
+      const xmlPath = toBatchValidationSourcePathKey(
+        join(eauExamplesDir, exampleName),
+      );
       const summary = summaries.get(xmlPath);
 
       expect(
@@ -83,11 +91,16 @@ describe("official KBV fixture sweeps", () => {
       xmlPaths,
     });
     const summaries = new Map(
-      result.summaries.map((summary) => [summary.sourcePath, summary]),
+      result.summaries.map((summary) => [
+        toBatchValidationSourcePathKey(summary.sourcePath),
+        summary,
+      ]),
     );
 
     for (const exampleName of xmlExamples) {
-      const xmlPath = join(erpExamplesDir, exampleName);
+      const xmlPath = toBatchValidationSourcePathKey(
+        join(erpExamplesDir, exampleName),
+      );
       const summary = summaries.get(xmlPath);
 
       expect(

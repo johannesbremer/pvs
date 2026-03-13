@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   runExecutableFhirOracle,
   runExecutableFhirValidationBatch,
+  toBatchValidationSourcePathKey,
 } from "../tools/oracles/fhir/run";
 import { OracleExecutionResultFields } from "../tools/oracles/types";
 
@@ -42,11 +43,16 @@ describe("official eVDGA fixture sweeps", () => {
       xmlPaths,
     });
     const summaries = new Map(
-      result.summaries.map((summary) => [summary.sourcePath, summary]),
+      result.summaries.map((summary) => [
+        toBatchValidationSourcePathKey(summary.sourcePath),
+        summary,
+      ]),
     );
 
     for (const exampleName of xmlExamples) {
-      const xmlPath = join(evdgaExamplesDir, exampleName);
+      const xmlPath = toBatchValidationSourcePathKey(
+        join(evdgaExamplesDir, exampleName),
+      );
       const summary = summaries.get(xmlPath);
 
       // Assert

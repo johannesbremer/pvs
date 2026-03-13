@@ -182,6 +182,9 @@ const writeOfflineLanguageSupportResourcesEffect = Effect.fn(
 const stripAnsiColorCodes = (value: string) =>
   value.replace(ansiColorCodePattern, "");
 
+export const toBatchValidationSourcePathKey = (sourcePath: string) =>
+  sourcePath.normalize("NFC");
+
 const coerceExecOutput = (value: unknown) => {
   if (typeof value === "string") {
     return value;
@@ -206,7 +209,9 @@ const parseBatchValidationSections = (stdout: string) => {
 
   for (const section of cleanedOutput.split(/^-- /mu).slice(1)) {
     const [headerLine = "", ...bodyLines] = section.split("\n");
-    const sourcePath = headerLine.replace(/\s-+$/u, "").trim();
+    const sourcePath = toBatchValidationSourcePathKey(
+      headerLine.replace(/\s-+$/u, "").trim(),
+    );
     const body = bodyLines.join("\n");
     const summaryLine = body
       .split("\n")
