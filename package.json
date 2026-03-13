@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "codegen": "confect codegen",
+    "effect:patch": "effect-language-service patch",
     "format": "prettier --write .",
     "format:list": "prettier --check .",
     "lint": "eslint . --fix",
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@confect/test": "latest",
     "@convex-dev/eslint-plugin": "^1.1.1",
+    "@effect/language-service": "^0.80.0",
     "@eslint-community/eslint-plugin-eslint-comments": "^4.7.1",
     "@eslint/js": "^9.39.4",
     "@eslint/markdown": "^7.5.1",

@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "node",
+    "plugins": [{ "name": "@effect/language-service" }],
     "lib": ["ES2022"],
     "strict": true,
     "noEmit": true,
