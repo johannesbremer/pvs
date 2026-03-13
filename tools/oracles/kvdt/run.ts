@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { execFile } from "node:child_process";
 import {
   cp,
@@ -70,19 +71,42 @@ const parseLogFindings = (output: string) => {
   return findings;
 };
 
-const listWorkspaceFiles = async (directory: string) => {
-  const entries = await readdir(directory, {
-    withFileTypes: true,
-  });
-  return entries
-    .filter((entry) => entry.isFile())
-    .map((entry) => join(directory, entry.name));
+const coerceExecOutput = (value: unknown) => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Buffer.isBuffer(value)) {
+    return value.toString("utf8");
+  }
+  return "";
 };
 
-const resetWorkspaceDirectory = async (directory: string) => {
-  await rm(directory, { force: true, recursive: true });
-  await mkdir(directory, { recursive: true });
-};
+const getExecFailureOutput = (error: unknown) =>
+  typeof error === "object" && error !== null
+    ? `${"stdout" in error ? coerceExecOutput(error.stdout) : ""}\n${"stderr" in error ? coerceExecOutput(error.stderr) : ""}`
+    : "";
+
+const listWorkspaceFilesEffect = Effect.fn("oracles.listWorkspaceFiles")(
+  function* (directory: string) {
+    const entries = yield* Effect.tryPromise(() =>
+      readdir(directory, {
+        withFileTypes: true,
+      }),
+    );
+    return entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(directory, entry.name));
+  },
+);
+
+const resetWorkspaceDirectoryEffect = Effect.fn(
+  "oracles.resetWorkspaceDirectory",
+)(function* (directory: string) {
+  yield* Effect.tryPromise(() =>
+    rm(directory, { force: true, recursive: true }),
+  );
+  yield* Effect.tryPromise(() => mkdir(directory, { recursive: true }));
+});
 
 export const runKvdtOracle = ({
   payloadBytes,
@@ -117,7 +141,9 @@ export const runKvdtOracle = ({
   };
 };
 
-export const runExecutableKvdtOracle = async ({
+export const runExecutableKvdtOracleEffect = Effect.fn(
+  "oracles.runExecutableKvdtOracle",
+)(function* ({
   cacheDir,
   payloadBytes,
   payloadFileName,
@@ -127,7 +153,7 @@ export const runExecutableKvdtOracle = async ({
   payloadBytes?: Uint8Array;
   payloadFileName?: string;
   payloadPreview?: string;
-}): Promise<OracleExecutionResult> => {
+}) {
   const localResult = runKvdtOracle({ payloadBytes, payloadPreview });
   if (!localResult.passed) {
     return localResult;
@@ -141,193 +167,265 @@ export const runExecutableKvdtOracle = async ({
       ? basename(payloadFileName)
       : "input.con";
 
-  const tempRoot = await mkdtemp(join(tmpdir(), "kbv-kvdt-oracle-"));
+  const program = Effect.scoped(
+    Effect.gen(function* () {
+      const tempRoot = yield* Effect.acquireRelease(
+        Effect.tryPromise(() => mkdtemp(join(tmpdir(), "kbv-kvdt-oracle-"))),
+        (tempRoot) =>
+          Effect.tryPromise(() =>
+            rm(tempRoot, { force: true, recursive: true }),
+          ).pipe(Effect.orDie),
+      );
+      const assets = yield* Effect.tryPromise(() =>
+        ensureKvdtAssets({
+          ...(cacheDir ? { cacheDir } : {}),
+        }),
+      );
+      const javaCommand = resolveJavaCommand();
+      const javaDir = dirname(javaCommand);
 
-  try {
-    const assets = await ensureKvdtAssets({
-      ...(cacheDir ? { cacheDir } : {}),
-    });
-    const javaCommand = resolveJavaCommand();
-    const javaDir = dirname(javaCommand);
+      const xpmWorkspace = yield* Effect.tryPromise(() =>
+        cloneAssetWorkspace({
+          sourceDir: join(assets.xpmDir, "XPM_KVDT.Praxis"),
+          targetDir: join(tempRoot, "XPM_KVDT.Praxis"),
+        }),
+      );
+      const xkmWorkspace = yield* Effect.tryPromise(() =>
+        cloneAssetWorkspace({
+          sourceDir: join(assets.xkmDir, "XKM"),
+          targetDir: join(tempRoot, "XKM"),
+        }),
+      );
 
-    const xpmWorkspace = await cloneAssetWorkspace({
-      sourceDir: join(assets.xpmDir, "XPM_KVDT.Praxis"),
-      targetDir: join(tempRoot, "XPM_KVDT.Praxis"),
-    });
-    const xkmWorkspace = await cloneAssetWorkspace({
-      sourceDir: join(assets.xkmDir, "XKM"),
-      targetDir: join(tempRoot, "XKM"),
-    });
+      yield* resetWorkspaceDirectoryEffect(join(xpmWorkspace, "Listen"));
+      yield* resetWorkspaceDirectoryEffect(join(xpmWorkspace, "Temp"));
+      yield* resetWorkspaceDirectoryEffect(join(xkmWorkspace, "Quelle"));
+      yield* resetWorkspaceDirectoryEffect(
+        join(xkmWorkspace, "Verschluesselt"),
+      );
+      yield* resetWorkspaceDirectoryEffect(join(xkmWorkspace, "Bearbeitet"));
 
-    await resetWorkspaceDirectory(join(xpmWorkspace, "Listen"));
-    await resetWorkspaceDirectory(join(xpmWorkspace, "Temp"));
-    await resetWorkspaceDirectory(join(xkmWorkspace, "Quelle"));
-    await resetWorkspaceDirectory(join(xkmWorkspace, "Verschluesselt"));
-    await resetWorkspaceDirectory(join(xkmWorkspace, "Bearbeitet"));
+      const kvdtInputRelativePath = join("Daten", effectiveFileName);
+      const kvdtInputPath = join(xpmWorkspace, kvdtInputRelativePath);
+      yield* Effect.tryPromise(() =>
+        writeFile(kvdtInputPath, validatedPayloadBytes),
+      );
 
-    const kvdtInputRelativePath = join("Daten", effectiveFileName);
-    const kvdtInputPath = join(xpmWorkspace, kvdtInputRelativePath);
-    await writeFile(kvdtInputPath, validatedPayloadBytes);
+      const xpmLogPath = join(xpmWorkspace, "Listen", "XPM_Logfile.log");
+      const xpmRun = yield* Effect.either(
+        Effect.tryPromise(() =>
+          execFileAsync(
+            javaCommand,
+            [
+              "-Xmx500m",
+              "-Djava.awt.headless=true",
+              "-Dfile.encoding=UTF8",
+              "-DXPM_QUARTAL_VERSION=2026.2.1",
+              "-classpath",
+              KVDT_CLASSPATH,
+              KVDT_HEADLESS_CLASS,
+              "-c",
+              KVDT_CONFIG_PATH,
+              "-f",
+              kvdtInputRelativePath,
+            ],
+            {
+              cwd: xpmWorkspace,
+              env: {
+                ...process.env,
+                JAVA_BIN: javaCommand,
+                PATH: `${javaDir}:${process.env.PATH ?? ""}`,
+              },
+              maxBuffer: 10 * 1024 * 1024,
+            },
+          ),
+        ),
+      );
+      const xpmLog = yield* Effect.tryPromise(() =>
+        readFile(xpmLogPath, "utf8").catch(() => ""),
+      );
+      const xpmExecOutput =
+        xpmRun._tag === "Right"
+          ? `${xpmRun.right.stdout}\n${xpmRun.right.stderr}`
+          : getExecFailureOutput(xpmRun.left);
+      const xpmOutput = `${xpmExecOutput}\n${xpmLog}`;
+      const xpmFindings = parseLogFindings(xpmOutput);
+      const xpmArtifacts = yield* listWorkspaceFilesEffect(
+        join(xpmWorkspace, "Listen"),
+      ).pipe(Effect.catchAll(() => Effect.succeed([])));
 
-    const xpmRun = await execFileAsync(
-      javaCommand,
-      [
-        "-Xmx500m",
-        "-Djava.awt.headless=true",
-        "-Dfile.encoding=UTF8",
-        "-DXPM_QUARTAL_VERSION=2026.2.1",
-        "-classpath",
-        KVDT_CLASSPATH,
-        KVDT_HEADLESS_CLASS,
-        "-c",
-        KVDT_CONFIG_PATH,
-        "-f",
-        kvdtInputRelativePath,
-      ],
-      {
-        cwd: xpmWorkspace,
-        env: {
-          ...process.env,
-          JAVA_BIN: javaCommand,
-          PATH: `${javaDir}:${process.env.PATH ?? ""}`,
+      if (xpmRun._tag === "Left") {
+        const findings = [
+          ...xpmFindings,
+          {
+            code: "KVDT_XPM_ARTIFACT_COUNT",
+            message: `KVDT XPM produced ${xpmArtifacts.length} file(s) in Listen/: ${xpmArtifacts.map((path) => basename(path)).join(", ") || "(none)"}.`,
+            severity: "info" as const,
+          },
+        ];
+
+        return {
+          family: "KVDT",
+          findings:
+            findings.length > 0
+              ? findings
+              : [
+                  {
+                    code: "KVDT_EXECUTION_FAILED",
+                    message: xpmOutput.trim().slice(0, 4000),
+                    severity: "error",
+                  },
+                ],
+          passed: false,
+          summary: "KVDT executable validation reported XPM errors.",
+        } satisfies OracleExecutionResult;
+      }
+
+      const publicKeyPath = yield* Effect.tryPromise(() =>
+        findFileRecursive(assets.xkmPublicKeysDir, (entryPath) =>
+          entryPath.endsWith("Oeffentlich_KV_V10.pub"),
+        ),
+      );
+      if (!publicKeyPath) {
+        return {
+          family: "KVDT",
+          findings: [
+            {
+              code: "KVDT_PUBLIC_KEY_MISSING",
+              message:
+                "Oeffentlich_KV_V10.pub was not found in the downloaded KBV key archive.",
+              severity: "error",
+            },
+          ],
+          passed: false,
+          summary:
+            "KVDT packaging could not start because the KBV public key was missing.",
+        } satisfies OracleExecutionResult;
+      }
+
+      yield* Effect.tryPromise(() =>
+        cp(
+          publicKeyPath,
+          join(xkmWorkspace, "System", "keys", basename(publicKeyPath)),
+        ),
+      );
+      const sourcePayloadPath = join(xkmWorkspace, "Quelle", effectiveFileName);
+      yield* Effect.tryPromise(() =>
+        writeFile(sourcePayloadPath, validatedPayloadBytes),
+      );
+
+      const xkmRun = yield* Effect.tryPromise(() =>
+        execFileAsync(
+          javaCommand,
+          [
+            "-Xmx300m",
+            "-Dfile.encoding=8859_1",
+            "-Dlog4j.configurationFile=Bin/log4j2.xml",
+            "-Djava.awt.headless=true",
+            "-classpath",
+            XKM_CLASSPATH,
+            "de.kbv.xkm.Main",
+            "-c",
+            "Konfig/config.xml",
+            "-s",
+            "-e",
+          ],
+          {
+            cwd: xkmWorkspace,
+            env: {
+              ...process.env,
+              JAVA_BIN: javaCommand,
+              PATH: `${javaDir}:${process.env.PATH ?? ""}`,
+            },
+            maxBuffer: 10 * 1024 * 1024,
+          },
+        ),
+      );
+
+      const xkmOutput = `${xkmRun.stdout}\n${xkmRun.stderr}`;
+      const xkmFindings = parseLogFindings(xkmOutput);
+      const encryptedArtifacts = yield* listWorkspaceFilesEffect(
+        join(xkmWorkspace, "Verschluesselt"),
+      );
+
+      const findings = [
+        ...xpmFindings,
+        ...xkmFindings,
+        {
+          code: "KVDT_PRUEFASSISTENT_INSTALLER_READY",
+          message: `KBV-Pruefassistent installer is cached at ${assets.pruefassistentJar}.`,
+          severity: "info" as const,
         },
-        maxBuffer: 10 * 1024 * 1024,
-      },
-    );
+        {
+          code: "KVDT_XPM_ARTIFACT_COUNT",
+          message: `KVDT XPM produced ${xpmArtifacts.length} file(s) in Listen/: ${xpmArtifacts.map((path) => basename(path)).join(", ") || "(none)"}.`,
+          severity: "info" as const,
+        },
+        {
+          code: "KVDT_XKM_ARTIFACT_COUNT",
+          message: `XKM produced ${encryptedArtifacts.length} file(s) in Verschluesselt/: ${encryptedArtifacts.map((path) => basename(path)).join(", ") || "(none)"}.`,
+          severity: "info" as const,
+        },
+      ];
 
-    const xpmLogPath = join(xpmWorkspace, "Listen", "XPM_Logfile.log");
-    const xpmLog = await readFile(xpmLogPath, "utf8").catch(() => "");
-    const xpmOutput = `${xpmRun.stdout}\n${xpmRun.stderr}\n${xpmLog}`;
-    const xpmFindings = parseLogFindings(xpmOutput);
-    const xpmArtifacts = await listWorkspaceFiles(join(xpmWorkspace, "Listen"));
+      if (!encryptedArtifacts.some((path) => path.endsWith(".XKM"))) {
+        findings.push({
+          code: "KVDT_XKM_OUTPUT_MISSING",
+          message: "XKM did not produce an encrypted .XKM output artifact.",
+          severity: "error",
+        });
+      }
 
-    const publicKeyPath = await findFileRecursive(
-      assets.xkmPublicKeysDir,
-      (entryPath) => entryPath.endsWith("Oeffentlich_KV_V10.pub"),
-    );
-    if (!publicKeyPath) {
+      const passed = findings.every((finding) => finding.severity !== "error");
+
       return {
         family: "KVDT",
-        findings: [
-          {
-            code: "KVDT_PUBLIC_KEY_MISSING",
-            message:
-              "Oeffentlich_KV_V10.pub was not found in the downloaded KBV key archive.",
-            severity: "error",
-          },
-        ],
+        findings,
+        passed,
+        summary: passed
+          ? `KVDT validation and XKM packaging completed. Produced ${xpmArtifacts.length} validator outputs and ${encryptedArtifacts.length} encrypted output(s).`
+          : "KVDT executable validation or packaging reported errors.",
+      } satisfies OracleExecutionResult;
+    }),
+  );
+
+  return yield* program.pipe(
+    Effect.catchAll((error) => {
+      const errorOutput =
+        typeof error === "object" &&
+        error !== null &&
+        "stdout" in error &&
+        "stderr" in error
+          ? `${String(error.stdout)}\n${String(error.stderr)}`
+          : error instanceof Error
+            ? error.message
+            : String(error);
+
+      const findings = parseLogFindings(errorOutput);
+
+      return Effect.succeed({
+        family: "KVDT",
+        findings:
+          findings.length > 0
+            ? findings
+            : [
+                {
+                  code: "KVDT_EXECUTION_FAILED",
+                  message: errorOutput.slice(0, 4000),
+                  severity: "error",
+                },
+              ],
         passed: false,
-        summary:
-          "KVDT packaging could not start because the KBV public key was missing.",
-      };
-    }
+        summary: "KVDT executable-backed validation failed.",
+      } satisfies OracleExecutionResult);
+    }),
+  );
+});
 
-    await cp(
-      publicKeyPath,
-      join(xkmWorkspace, "System", "keys", basename(publicKeyPath)),
-    );
-    const sourcePayloadPath = join(xkmWorkspace, "Quelle", effectiveFileName);
-    await writeFile(sourcePayloadPath, validatedPayloadBytes);
-
-    const xkmRun = await execFileAsync(
-      javaCommand,
-      [
-        "-Xmx300m",
-        "-Dfile.encoding=8859_1",
-        "-Dlog4j.configurationFile=Bin/log4j2.xml",
-        "-Djava.awt.headless=true",
-        "-classpath",
-        XKM_CLASSPATH,
-        "de.kbv.xkm.Main",
-        "-c",
-        "Konfig/config.xml",
-        "-s",
-        "-e",
-      ],
-      {
-        cwd: xkmWorkspace,
-        env: {
-          ...process.env,
-          JAVA_BIN: javaCommand,
-          PATH: `${javaDir}:${process.env.PATH ?? ""}`,
-        },
-        maxBuffer: 10 * 1024 * 1024,
-      },
-    );
-
-    const xkmOutput = `${xkmRun.stdout}\n${xkmRun.stderr}`;
-    const xkmFindings = parseLogFindings(xkmOutput);
-    const encryptedArtifacts = await listWorkspaceFiles(
-      join(xkmWorkspace, "Verschluesselt"),
-    );
-
-    const findings = [
-      ...xpmFindings,
-      ...xkmFindings,
-      {
-        code: "KVDT_PRUEFASSISTENT_INSTALLER_READY",
-        message: `KBV-Pruefassistent installer is cached at ${assets.pruefassistentJar}.`,
-        severity: "info" as const,
-      },
-      {
-        code: "KVDT_XPM_ARTIFACT_COUNT",
-        message: `KVDT XPM produced ${xpmArtifacts.length} file(s) in Listen/: ${xpmArtifacts.map((path) => basename(path)).join(", ") || "(none)"}.`,
-        severity: "info" as const,
-      },
-      {
-        code: "KVDT_XKM_ARTIFACT_COUNT",
-        message: `XKM produced ${encryptedArtifacts.length} file(s) in Verschluesselt/: ${encryptedArtifacts.map((path) => basename(path)).join(", ") || "(none)"}.`,
-        severity: "info" as const,
-      },
-    ];
-
-    if (!encryptedArtifacts.some((path) => path.endsWith(".XKM"))) {
-      findings.push({
-        code: "KVDT_XKM_OUTPUT_MISSING",
-        message: "XKM did not produce an encrypted .XKM output artifact.",
-        severity: "error",
-      });
-    }
-
-    const passed = findings.every((finding) => finding.severity !== "error");
-
-    return {
-      family: "KVDT",
-      findings,
-      passed,
-      summary: passed
-        ? `KVDT validation and XKM packaging completed. Produced ${xpmArtifacts.length} validator outputs and ${encryptedArtifacts.length} encrypted output(s).`
-        : "KVDT executable validation or packaging reported errors.",
-    };
-  } catch (error) {
-    const errorOutput =
-      typeof error === "object" &&
-      error !== null &&
-      "stdout" in error &&
-      "stderr" in error
-        ? `${String(error.stdout)}\n${String(error.stderr)}`
-        : error instanceof Error
-          ? error.message
-          : String(error);
-
-    const findings = parseLogFindings(errorOutput);
-
-    return {
-      family: "KVDT",
-      findings:
-        findings.length > 0
-          ? findings
-          : [
-              {
-                code: "KVDT_EXECUTION_FAILED",
-                message: errorOutput.slice(0, 4000),
-                severity: "error",
-              },
-            ],
-      passed: false,
-      summary: "KVDT executable-backed validation failed.",
-    };
-  } finally {
-    await rm(tempRoot, { force: true, recursive: true });
-  }
-};
+export const runExecutableKvdtOracle = (args: {
+  cacheDir?: string;
+  payloadBytes?: Uint8Array;
+  payloadFileName?: string;
+  payloadPreview?: string;
+}): Promise<OracleExecutionResult> =>
+  Effect.runPromise(runExecutableKvdtOracleEffect(args));

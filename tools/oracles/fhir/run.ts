@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -148,29 +149,35 @@ const buildOfflineAllLanguagesValueSet = (codes: readonly string[]) => ({
   version: "4.0.1",
 });
 
-const writeOfflineLanguageSupportResources = async ({
+const writeOfflineLanguageSupportResourcesEffect = Effect.fn(
+  "oracles.writeOfflineLanguageSupportResources",
+)(function* ({
   codes,
   supportDir,
 }: {
   codes: readonly string[];
   supportDir: string;
-}) => {
+}) {
   if (codes.length === 0) {
     return;
   }
 
-  await mkdir(supportDir, { recursive: true });
-  await writeFile(
-    join(supportDir, "CodeSystem-kbv-offline-ietf-bcp-47.json"),
-    JSON.stringify(buildOfflineLanguageCodeSystem(codes), null, 2),
-    "utf8",
+  yield* Effect.tryPromise(() => mkdir(supportDir, { recursive: true }));
+  yield* Effect.tryPromise(() =>
+    writeFile(
+      join(supportDir, "CodeSystem-kbv-offline-ietf-bcp-47.json"),
+      JSON.stringify(buildOfflineLanguageCodeSystem(codes), null, 2),
+      "utf8",
+    ),
   );
-  await writeFile(
-    join(supportDir, "ValueSet-all-languages.json"),
-    JSON.stringify(buildOfflineAllLanguagesValueSet(codes), null, 2),
-    "utf8",
+  yield* Effect.tryPromise(() =>
+    writeFile(
+      join(supportDir, "ValueSet-all-languages.json"),
+      JSON.stringify(buildOfflineAllLanguagesValueSet(codes), null, 2),
+      "utf8",
+    ),
   );
-};
+});
 
 const stripAnsiColorCodes = (value: string) =>
   value.replace(ansiColorCodePattern, "");
@@ -306,7 +313,9 @@ export const runFhirOracle = ({
   };
 };
 
-export const runExecutableFhirOracle = async ({
+export const runExecutableFhirOracleEffect = Effect.fn(
+  "oracles.runExecutableFhirOracle",
+)(function* ({
   cacheDir,
   family,
   xml,
@@ -314,7 +323,7 @@ export const runExecutableFhirOracle = async ({
   cacheDir?: string;
   family: "eAU" | "eRezept" | "eVDGA";
   xml?: string;
-}): Promise<OracleExecutionResult> => {
+}) {
   if (!xml || xml.trim().length === 0) {
     return runFhirOracle({ family, xml });
   }
@@ -328,113 +337,143 @@ export const runExecutableFhirOracle = async ({
     String(process.pid),
     family,
   ].join("-");
-  const userHomeOverride = await ensureFhirValidatorRuntimeHome({
-    cacheDir: resolvedCacheDir,
-    runtimeKey,
-  });
+  const program = Effect.scoped(
+    Effect.gen(function* () {
+      const userHomeOverride = yield* Effect.tryPromise(() =>
+        ensureFhirValidatorRuntimeHome({
+          cacheDir: resolvedCacheDir,
+          runtimeKey,
+        }),
+      );
+      const tempDir = yield* Effect.acquireRelease(
+        Effect.tryPromise(() => mkdtemp(join(tmpdir(), "kbv-fhir-oracle-"))),
+        (tempDir) =>
+          Effect.tryPromise(() =>
+            rm(tempDir, { force: true, recursive: true }),
+          ).pipe(Effect.orDie),
+      );
+      const xmlPath = join(tempDir, `${family}.xml`);
+      const supportDir = join(tempDir, "support");
 
-  const tempDir = await mkdtemp(join(tmpdir(), "kbv-fhir-oracle-"));
-  const xmlPath = join(tempDir, `${family}.xml`);
-  const supportDir = join(tempDir, "support");
+      const assetsStart = Date.now();
+      logDebug(`starting ensureFhirValidatorAssets(${family})`);
+      const assets = yield* Effect.tryPromise(() =>
+        ensureFhirValidatorAssets({
+          family,
+          ...(cacheDir ? { cacheDir } : {}),
+        }),
+      );
+      logTiming(`ensureFhirValidatorAssets(${family})`, assetsStart);
 
-  try {
-    const assetsStart = Date.now();
-    logDebug(`starting ensureFhirValidatorAssets(${family})`);
-    const assets = await ensureFhirValidatorAssets({
-      family,
-      ...(cacheDir ? { cacheDir } : {}),
-    });
-    logTiming(`ensureFhirValidatorAssets(${family})`, assetsStart);
+      const dependencyStart = Date.now();
+      logDebug(`starting ensureFhirValidatorDependencyCache(${family})`);
+      yield* Effect.tryPromise(() =>
+        ensureFhirValidatorDependencyCache({
+          ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
+        }),
+      );
+      logTiming(
+        `ensureFhirValidatorDependencyCache(${family})`,
+        dependencyStart,
+      );
 
-    const dependencyStart = Date.now();
-    logDebug(`starting ensureFhirValidatorDependencyCache(${family})`);
-    await ensureFhirValidatorDependencyCache({
-      ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
-    });
-    logTiming(`ensureFhirValidatorDependencyCache(${family})`, dependencyStart);
+      const writeStart = Date.now();
+      logDebug(`starting writeInputXml(${family})`);
+      yield* Effect.tryPromise(() =>
+        mkdir(userHomeOverride, { recursive: true }),
+      );
+      yield* Effect.tryPromise(() => writeFile(xmlPath, xml, "utf8"));
+      const offlineLanguageCodes = extractOfflineLanguageCodes(xml);
+      yield* writeOfflineLanguageSupportResourcesEffect({
+        codes: offlineLanguageCodes,
+        supportDir,
+      });
+      logTiming(`writeInputXml(${family})`, writeStart);
 
-    const writeStart = Date.now();
-    logDebug(`starting writeInputXml(${family})`);
-    await mkdir(userHomeOverride, { recursive: true });
-    await writeFile(xmlPath, xml, "utf8");
-    const offlineLanguageCodes = extractOfflineLanguageCodes(xml);
-    await writeOfflineLanguageSupportResources({
-      codes: offlineLanguageCodes,
-      supportDir,
-    });
-    logTiming(`writeInputXml(${family})`, writeStart);
+      const mountedIgPaths =
+        offlineLanguageCodes.length > 0
+          ? [supportDir, ...assets.igPaths]
+          : assets.igPaths;
+      const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
+      const execStart = Date.now();
+      logDebug(`starting validatorCli(${family})`);
+      const { stderr, stdout } = yield* Effect.tryPromise(() =>
+        execFileAsync(
+          resolveJavaCommand(),
+          [
+            `-Duser.home=${userHomeOverride}`,
+            "-jar",
+            assets.validatorJar,
+            "-version",
+            "4.0.1",
+            xmlPath,
+            ...igArgs,
+            "-tx",
+            "n/a",
+          ],
+          {
+            maxBuffer: 10 * 1024 * 1024,
+          },
+        ),
+      );
+      logTiming(`validatorCli(${family})`, execStart);
 
-    const mountedIgPaths =
-      offlineLanguageCodes.length > 0
-        ? [supportDir, ...assets.igPaths]
-        : assets.igPaths;
-    const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
-    const execStart = Date.now();
-    logDebug(`starting validatorCli(${family})`);
-    const { stderr, stdout } = await execFileAsync(
-      resolveJavaCommand(),
-      [
-        `-Duser.home=${userHomeOverride}`,
-        "-jar",
-        assets.validatorJar,
-        "-version",
-        "4.0.1",
-        xmlPath,
-        ...igArgs,
-        "-tx",
-        "n/a",
-      ],
-      {
-        maxBuffer: 10 * 1024 * 1024,
-      },
-    );
-    logTiming(`validatorCli(${family})`, execStart);
+      const combined = `${stdout}\n${stderr}`;
+      const findings = parseFhirValidatorFindings(combined);
+      const passed = findings.every((finding) => finding.severity !== "error");
 
-    const combined = `${stdout}\n${stderr}`;
-    const findings = parseFhirValidatorFindings(combined);
+      return {
+        family,
+        findings,
+        passed,
+        summary: passed
+          ? `${family} executable validator completed without error findings.`
+          : `${family} executable validator reported errors.`,
+      } satisfies OracleExecutionResult;
+    }),
+  );
 
-    const passed = findings.every((finding) => finding.severity !== "error");
+  return yield* program.pipe(
+    Effect.catchAll((error) => {
+      const errorOutput =
+        typeof error === "object" &&
+        error !== null &&
+        "stdout" in error &&
+        "stderr" in error
+          ? `${coerceExecOutput(error.stdout)}\n${coerceExecOutput(error.stderr)}`
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      const findings = parseFhirValidatorFindings(errorOutput);
+      return Effect.succeed({
+        family,
+        findings:
+          findings.length > 0
+            ? findings
+            : [
+                {
+                  code: "FHIR_VALIDATOR_EXECUTION_FAILED",
+                  message: errorOutput.slice(0, 500),
+                  severity: "error",
+                },
+              ],
+        passed: false,
+        summary: `${family} executable validator failed to run.`,
+      } satisfies OracleExecutionResult);
+    }),
+  );
+});
 
-    return {
-      family,
-      findings,
-      passed,
-      summary: passed
-        ? `${family} executable validator completed without error findings.`
-        : `${family} executable validator reported errors.`,
-    };
-  } catch (error) {
-    const errorOutput =
-      typeof error === "object" &&
-      error !== null &&
-      "stdout" in error &&
-      "stderr" in error
-        ? `${coerceExecOutput(error.stdout)}\n${coerceExecOutput(error.stderr)}`
-        : error instanceof Error
-          ? error.message
-          : String(error);
-    const findings = parseFhirValidatorFindings(errorOutput);
-    return {
-      family,
-      findings:
-        findings.length > 0
-          ? findings
-          : [
-              {
-                code: "FHIR_VALIDATOR_EXECUTION_FAILED",
-                message: errorOutput.slice(0, 500),
-                severity: "error",
-              },
-            ],
-      passed: false,
-      summary: `${family} executable validator failed to run.`,
-    };
-  } finally {
-    await rm(tempDir, { force: true, recursive: true });
-  }
-};
+export const runExecutableFhirOracle = (args: {
+  cacheDir?: string;
+  family: "eAU" | "eRezept" | "eVDGA";
+  xml?: string;
+}): Promise<OracleExecutionResult> =>
+  Effect.runPromise(runExecutableFhirOracleEffect(args));
 
-export const runExecutableFhirValidationBatch = async ({
+export const runExecutableFhirValidationBatchEffect = Effect.fn(
+  "oracles.runExecutableFhirValidationBatch",
+)(function* ({
   cacheDir,
   family,
   xmlPaths,
@@ -442,7 +481,7 @@ export const runExecutableFhirValidationBatch = async ({
   cacheDir?: string;
   family: "eAU" | "eRezept" | "eVDGA";
   xmlPaths: readonly string[];
-}): Promise<ExecutableFhirBatchValidationResult> => {
+}) {
   if (xmlPaths.length === 0) {
     return {
       passed: true,
@@ -461,90 +500,118 @@ export const runExecutableFhirValidationBatch = async ({
     String(process.pid),
     family,
   ].join("-");
-  const userHomeOverride = await ensureFhirValidatorRuntimeHome({
-    cacheDir: resolvedCacheDir,
-    runtimeKey,
-  });
+  const program = Effect.scoped(
+    Effect.gen(function* () {
+      const userHomeOverride = yield* Effect.tryPromise(() =>
+        ensureFhirValidatorRuntimeHome({
+          cacheDir: resolvedCacheDir,
+          runtimeKey,
+        }),
+      );
+      const tempDir = yield* Effect.acquireRelease(
+        Effect.tryPromise(() =>
+          mkdtemp(join(tmpdir(), "kbv-fhir-batch-oracle-")),
+        ),
+        (tempDir) =>
+          Effect.tryPromise(() =>
+            rm(tempDir, { force: true, recursive: true }),
+          ).pipe(Effect.orDie),
+      );
+      const supportDir = join(tempDir, "support");
 
-  const tempDir = await mkdtemp(join(tmpdir(), "kbv-fhir-batch-oracle-"));
-  const supportDir = join(tempDir, "support");
+      const assets = yield* Effect.tryPromise(() =>
+        ensureFhirValidatorAssets({
+          family,
+          ...(cacheDir ? { cacheDir } : {}),
+        }),
+      );
+      yield* Effect.tryPromise(() =>
+        ensureFhirValidatorDependencyCache({
+          ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
+        }),
+      );
 
-  try {
-    const assets = await ensureFhirValidatorAssets({
-      family,
-      ...(cacheDir ? { cacheDir } : {}),
-    });
-    await ensureFhirValidatorDependencyCache({
-      ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
-    });
+      const xmlDocuments = yield* Effect.forEach(xmlPaths, (xmlPath) =>
+        Effect.tryPromise(() => readFile(xmlPath, "utf8")),
+      );
+      const offlineLanguageCodes = [
+        ...new Set(
+          xmlDocuments.flatMap((xml) => extractOfflineLanguageCodes(xml)),
+        ),
+      ].sort();
 
-    const xmlDocuments = await Promise.all(
-      xmlPaths.map(async (xmlPath) => readFile(xmlPath, "utf8")),
-    );
-    const offlineLanguageCodes = [
-      ...new Set(
-        xmlDocuments.flatMap((xml) => extractOfflineLanguageCodes(xml)),
-      ),
-    ].sort();
+      yield* Effect.tryPromise(() =>
+        mkdir(userHomeOverride, { recursive: true }),
+      );
+      yield* writeOfflineLanguageSupportResourcesEffect({
+        codes: offlineLanguageCodes,
+        supportDir,
+      });
 
-    await mkdir(userHomeOverride, { recursive: true });
-    await writeOfflineLanguageSupportResources({
-      codes: offlineLanguageCodes,
-      supportDir,
-    });
+      const mountedIgPaths =
+        offlineLanguageCodes.length > 0
+          ? [supportDir, ...assets.igPaths]
+          : assets.igPaths;
+      const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
 
-    const mountedIgPaths =
-      offlineLanguageCodes.length > 0
-        ? [supportDir, ...assets.igPaths]
-        : assets.igPaths;
-    const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
+      const { stderr, stdout } = yield* Effect.tryPromise(() =>
+        execFileAsync(
+          resolveJavaCommand(),
+          [
+            `-Duser.home=${userHomeOverride}`,
+            "-jar",
+            assets.validatorJar,
+            "-version",
+            "4.0.1",
+            ...xmlPaths,
+            ...igArgs,
+            "-tx",
+            "n/a",
+          ],
+          {
+            maxBuffer: 64 * 1024 * 1024,
+          },
+        ),
+      );
 
-    const { stderr, stdout } = await execFileAsync(
-      resolveJavaCommand(),
-      [
-        `-Duser.home=${userHomeOverride}`,
-        "-jar",
-        assets.validatorJar,
-        "-version",
-        "4.0.1",
-        ...xmlPaths,
-        ...igArgs,
-        "-tx",
-        "n/a",
-      ],
-      {
-        maxBuffer: 64 * 1024 * 1024,
-      },
-    );
+      const summaries = parseBatchValidationSections(stdout);
+      return {
+        passed:
+          summaries.length === xmlPaths.length &&
+          summaries.every((summary) => summary.passed),
+        stderr,
+        stdout,
+        summaries,
+      } satisfies ExecutableFhirBatchValidationResult;
+    }),
+  );
 
-    const summaries = parseBatchValidationSections(stdout);
-    return {
-      passed:
-        summaries.length === xmlPaths.length &&
-        summaries.every((summary) => summary.passed),
-      stderr,
-      stdout,
-      summaries,
-    };
-  } catch (error) {
-    const stdout =
-      typeof error === "object" && error !== null && "stdout" in error
-        ? coerceExecOutput(error.stdout)
-        : "";
-    const stderr =
-      typeof error === "object" && error !== null && "stderr" in error
-        ? coerceExecOutput(error.stderr)
-        : error instanceof Error
-          ? error.message
-          : String(error);
+  return yield* program.pipe(
+    Effect.catchAll((error) => {
+      const stdout =
+        typeof error === "object" && error !== null && "stdout" in error
+          ? coerceExecOutput(error.stdout)
+          : "";
+      const stderr =
+        typeof error === "object" && error !== null && "stderr" in error
+          ? coerceExecOutput(error.stderr)
+          : error instanceof Error
+            ? error.message
+            : String(error);
 
-    return {
-      passed: false,
-      stderr,
-      stdout,
-      summaries: parseBatchValidationSections(stdout),
-    };
-  } finally {
-    await rm(tempDir, { force: true, recursive: true });
-  }
-};
+      return Effect.succeed({
+        passed: false,
+        stderr,
+        stdout,
+        summaries: parseBatchValidationSections(stdout),
+      } satisfies ExecutableFhirBatchValidationResult);
+    }),
+  );
+});
+
+export const runExecutableFhirValidationBatch = (args: {
+  cacheDir?: string;
+  family: "eAU" | "eRezept" | "eVDGA";
+  xmlPaths: readonly string[];
+}): Promise<ExecutableFhirBatchValidationResult> =>
+  Effect.runPromise(runExecutableFhirValidationBatchEffect(args));

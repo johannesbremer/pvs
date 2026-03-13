@@ -26,8 +26,7 @@
     "@effect/platform": "^0.94.5",
     "@effect/platform-node": "^0.104.1",
     "convex": "^1.32.0",
-    "effect": "latest",
-    "pvs": "link:"
+    "effect": "latest"
   },
   "devDependencies": {
     "@confect/test": "latest",

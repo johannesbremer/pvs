@@ -100,7 +100,7 @@ import {
   listOraclePlugins as listRegisteredOraclePlugins,
 } from "../tools/oracles/framework";
 import {
-  buildAndExecuteOraclePlan,
+  buildAndExecuteOraclePlanEffect,
   resolveOracleFamily,
 } from "../tools/oracles/runtime";
 import { DatabaseReader, DatabaseWriter } from "./_generated/services";
@@ -5256,17 +5256,15 @@ const runValidation = ({
       return { outcome: "no-oracle-plan" as const };
     }
 
-    const executed = yield* Effect.promise(() =>
-      buildAndExecuteOraclePlan({
-        artifactId: String(artifactId),
-        family: resolvedFamily,
-        ...(documentId ? { documentId: String(documentId) } : {}),
-        ...(profileVersion ? { profileVersion } : {}),
-        executionMode: executionMode ?? "local",
-        ...(payloadPreviewXml ? { payloadPreviewXml } : {}),
-        ...(payloadPreview ? { payloadPreview } : {}),
-      }),
-    );
+    const executed = yield* buildAndExecuteOraclePlanEffect({
+      artifactId: String(artifactId),
+      family: resolvedFamily,
+      ...(documentId ? { documentId: String(documentId) } : {}),
+      ...(profileVersion ? { profileVersion } : {}),
+      executionMode: executionMode ?? "local",
+      ...(payloadPreviewXml ? { payloadPreviewXml } : {}),
+      ...(payloadPreview ? { payloadPreview } : {}),
+    });
 
     if (!executed) {
       return { outcome: "no-oracle-plan" as const };
