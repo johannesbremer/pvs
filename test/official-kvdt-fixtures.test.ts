@@ -1,17 +1,16 @@
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { ensureKvdtAssets } from "../tools/oracles/assets";
 import { runExecutableKvdtOracle } from "../tools/oracles/kvdt/run";
+import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 
-const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
+const cacheDir = path.join(process.cwd(), ".cache", "kbv-oracles");
 
 describe("official KVDT fixture sweeps", () => {
   it("validates the official positive fixture and rejects the official negative fixtures shipped with the KVDT XPM package", async () => {
     const assets = await ensureKvdtAssets({ cacheDir });
-    const fixtureDir = join(assets.xpmDir, "XPM_KVDT.Praxis", "Daten");
-    const entries = await readdir(fixtureDir);
+    const fixtureDir = path.join(assets.xpmDir, "XPM_KVDT.Praxis", "Daten");
+    const entries = await runEffect(fileSystem.readDirectory(fixtureDir));
     const conFixtures = entries
       .filter((entry) => entry.endsWith(".con"))
       .sort();
@@ -19,7 +18,9 @@ describe("official KVDT fixture sweeps", () => {
     expect(conFixtures.length).toBeGreaterThanOrEqual(3);
 
     for (const fixtureName of conFixtures) {
-      const payloadBytes = await readFile(join(fixtureDir, fixtureName));
+      const payloadBytes = await runEffect(
+        fileSystem.readFile(path.join(fixtureDir, fixtureName)),
+      );
       const result = await runExecutableKvdtOracle({
         cacheDir,
         payloadBytes,

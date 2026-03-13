@@ -1,8 +1,7 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runCodingOracle } from "../tools/oracles/coding/run";
+import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 
 interface CodingFixture {
   readonly caseId: string;
@@ -13,7 +12,7 @@ interface CodingFixture {
 
 describe("official coding fixture sweeps", () => {
   it("validates SDICD/SDKH/SDKRW rule fixtures", async () => {
-    const fixturePath = join(
+    const fixturePath = path.join(
       process.cwd(),
       "test",
       "oracles",
@@ -21,7 +20,7 @@ describe("official coding fixture sweeps", () => {
       "sdicd-sdkh-sdkrw-fixtures.json",
     );
     const fixtures = JSON.parse(
-      await readFile(fixturePath, "utf8"),
+      await runEffect(fileSystem.readFileString(fixturePath)),
     ) as readonly CodingFixture[];
 
     expect(fixtures.length).toBeGreaterThanOrEqual(6);

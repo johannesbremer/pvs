@@ -1,7 +1,4 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -11,12 +8,15 @@ import {
   getKbvOracleCacheManifestPath,
   kbvOracleAssets,
 } from "../tools/oracles/assets";
+import { fileSystem, runEffect } from "../tools/oracles/platform";
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
   for (const tempDir of tempDirs.splice(0)) {
-    await rm(tempDir, { force: true, recursive: true });
+    await runEffect(
+      fileSystem.remove(tempDir, { force: true, recursive: true }),
+    );
   }
 });
 
@@ -49,7 +49,9 @@ describe("oracle asset downloader", () => {
   it("downloads an asset into the cache and verifies its SHA-256", async () => {
     const payload = Buffer.from("kbv-test-payload");
     const sha256 = createHash("sha256").update(payload).digest("hex");
-    const tempDir = await mkdtemp(join(tmpdir(), "kbv-asset-test-"));
+    const tempDir = await runEffect(
+      fileSystem.makeTempDirectory({ prefix: "kbv-asset-test-" }),
+    );
     tempDirs.push(tempDir);
     const downloadedPath = await downloadManagedAsset(
       {
@@ -61,12 +63,11 @@ describe("oracle asset downloader", () => {
       tempDir,
     );
 
-    const downloaded = await readFile(downloadedPath);
-    expect(downloaded.equals(payload)).toBe(true);
+    const downloaded = await runEffect(fileSystem.readFile(downloadedPath));
+    expect(Buffer.from(downloaded).equals(payload)).toBe(true);
 
-    const manifestContent = await readFile(
-      getKbvOracleCacheManifestPath(tempDir),
-      "utf8",
+    const manifestContent = await runEffect(
+      fileSystem.readFileString(getKbvOracleCacheManifestPath(tempDir)),
     );
     expect(manifestContent).toContain("test-asset");
 
@@ -80,7 +81,9 @@ describe("oracle asset downloader", () => {
   it("re-downloads a cached asset automatically when the cached hash no longer matches", async () => {
     const payload = Buffer.from("kbv-test-payload");
     const sha256 = createHash("sha256").update(payload).digest("hex");
-    const tempDir = await mkdtemp(join(tmpdir(), "kbv-asset-test-"));
+    const tempDir = await runEffect(
+      fileSystem.makeTempDirectory({ prefix: "kbv-asset-test-" }),
+    );
     tempDirs.push(tempDir);
 
     const downloadedPath = await downloadManagedAsset(
@@ -93,7 +96,9 @@ describe("oracle asset downloader", () => {
       tempDir,
     );
 
-    await writeFile(downloadedPath, "corrupted-cache", "utf8");
+    await runEffect(
+      fileSystem.writeFileString(downloadedPath, "corrupted-cache"),
+    );
 
     const redownloadedPath = await downloadManagedAsset(
       {
@@ -105,20 +110,23 @@ describe("oracle asset downloader", () => {
       tempDir,
     );
 
-    const redownloaded = await readFile(redownloadedPath);
-    expect(redownloaded.equals(payload)).toBe(true);
+    const redownloaded = await runEffect(fileSystem.readFile(redownloadedPath));
+    expect(Buffer.from(redownloaded).equals(payload)).toBe(true);
   });
 
   it("recovers from a malformed asset-cache manifest by rewriting it on the next update", async () => {
     const payload = Buffer.from("kbv-test-payload");
     const sha256 = createHash("sha256").update(payload).digest("hex");
-    const tempDir = await mkdtemp(join(tmpdir(), "kbv-asset-test-"));
+    const tempDir = await runEffect(
+      fileSystem.makeTempDirectory({ prefix: "kbv-asset-test-" }),
+    );
     tempDirs.push(tempDir);
 
-    await writeFile(
-      getKbvOracleCacheManifestPath(tempDir),
-      '{"broken": true}\n}',
-      "utf8",
+    await runEffect(
+      fileSystem.writeFileString(
+        getKbvOracleCacheManifestPath(tempDir),
+        '{"broken": true}\n}',
+      ),
     );
 
     const downloadedPath = await downloadManagedAsset(
@@ -131,8 +139,8 @@ describe("oracle asset downloader", () => {
       tempDir,
     );
 
-    const downloaded = await readFile(downloadedPath);
-    expect(downloaded.equals(payload)).toBe(true);
+    const downloaded = await runEffect(fileSystem.readFile(downloadedPath));
+    expect(Buffer.from(downloaded).equals(payload)).toBe(true);
 
     const cacheEntry = await getAssetCacheEntry({
       assetId: "test-asset-broken-manifest",

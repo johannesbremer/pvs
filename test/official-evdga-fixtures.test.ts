@@ -1,6 +1,4 @@
 import { Schema } from "effect";
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,10 +6,11 @@ import {
   runExecutableFhirValidationBatch,
   toBatchValidationSourcePathKey,
 } from "../tools/oracles/fhir/run";
+import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 import { OracleExecutionResultFields } from "../tools/oracles/types";
 
-const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
-const evdgaExamplesDir = join(
+const cacheDir = path.join(process.cwd(), ".cache", "kbv-oracles");
+const evdgaExamplesDir = path.join(
   "/Users/johannes/Code/kbv-mirror",
   "DigitaleMuster",
   "eVDGA",
@@ -21,7 +20,9 @@ const evdgaExamplesDir = join(
 describe("official eVDGA fixture sweeps", () => {
   it("validates the official non-negative eVDGA XML examples with the executable oracle", async () => {
     // Arrange
-    const entries = await readdir(evdgaExamplesDir).catch(() => []);
+    const entries = await runEffect(
+      fileSystem.readDirectory(evdgaExamplesDir),
+    ).catch(() => []);
     if (entries.length === 0) {
       return;
     }
@@ -33,7 +34,7 @@ describe("official eVDGA fixture sweeps", () => {
 
     expect(xmlExamples.length).toBeGreaterThan(5);
     const xmlPaths = xmlExamples.map((exampleName) =>
-      join(evdgaExamplesDir, exampleName),
+      path.join(evdgaExamplesDir, exampleName),
     );
 
     // Act
@@ -51,7 +52,7 @@ describe("official eVDGA fixture sweeps", () => {
 
     for (const exampleName of xmlExamples) {
       const xmlPath = toBatchValidationSourcePathKey(
-        join(evdgaExamplesDir, exampleName),
+        path.join(evdgaExamplesDir, exampleName),
       );
       const summary = summaries.get(xmlPath);
 
@@ -73,9 +74,10 @@ describe("official eVDGA fixture sweeps", () => {
 
   it("fails the official negative eVDGA XML example with the executable oracle", async () => {
     // Arrange
-    const xml = await readFile(
-      join(evdgaExamplesDir, "EVDGA_Bundle_PKV_negativer_Testfall.xml"),
-      "utf8",
+    const xml = await runEffect(
+      fileSystem.readFileString(
+        path.join(evdgaExamplesDir, "EVDGA_Bundle_PKV_negativer_Testfall.xml"),
+      ),
     ).catch(() => undefined);
     if (!xml) {
       return;

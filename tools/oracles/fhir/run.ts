@@ -1,9 +1,4 @@
 import { Effect } from "effect";
-import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
 
 import type { OracleExecutionResult } from "../types";
 
@@ -12,9 +7,9 @@ import {
   ensureFhirValidatorDependencyCache,
   ensureFhirValidatorRuntimeHome,
 } from "../assets";
+import { fileSystem, path, runCommand } from "../platform";
 import { resolveJavaCommand } from "../system";
 
-const execFileAsync = promisify(execFile);
 const debugTimingsEnabled =
   process.env.KBV_ORACLE_DEBUG === "1" ||
   process.env.KBV_ORACLE_DEBUG === "true";
@@ -162,20 +157,14 @@ const writeOfflineLanguageSupportResourcesEffect = Effect.fn(
     return;
   }
 
-  yield* Effect.tryPromise(() => mkdir(supportDir, { recursive: true }));
-  yield* Effect.tryPromise(() =>
-    writeFile(
-      join(supportDir, "CodeSystem-kbv-offline-ietf-bcp-47.json"),
-      JSON.stringify(buildOfflineLanguageCodeSystem(codes), null, 2),
-      "utf8",
-    ),
+  yield* fileSystem.makeDirectory(supportDir, { recursive: true });
+  yield* fileSystem.writeFileString(
+    path.join(supportDir, "CodeSystem-kbv-offline-ietf-bcp-47.json"),
+    JSON.stringify(buildOfflineLanguageCodeSystem(codes), null, 2),
   );
-  yield* Effect.tryPromise(() =>
-    writeFile(
-      join(supportDir, "ValueSet-all-languages.json"),
-      JSON.stringify(buildOfflineAllLanguagesValueSet(codes), null, 2),
-      "utf8",
-    ),
+  yield* fileSystem.writeFileString(
+    path.join(supportDir, "ValueSet-all-languages.json"),
+    JSON.stringify(buildOfflineAllLanguagesValueSet(codes), null, 2),
   );
 });
 
@@ -368,7 +357,7 @@ export const runExecutableFhirOracleEffect = Effect.fn(
 
   const effectiveCacheDir = cacheDir ?? process.env.KBV_UPDATE_CACHE_DIR;
   const resolvedCacheDir =
-    effectiveCacheDir ?? join(process.cwd(), ".cache", "kbv-oracles");
+    effectiveCacheDir ?? path.join(process.cwd(), ".cache", "kbv-oracles");
   const runtimeKey = [
     "exec",
     process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? "main",
@@ -383,15 +372,11 @@ export const runExecutableFhirOracleEffect = Effect.fn(
           runtimeKey,
         }),
       );
-      const tempDir = yield* Effect.acquireRelease(
-        Effect.tryPromise(() => mkdtemp(join(tmpdir(), "kbv-fhir-oracle-"))),
-        (tempDir) =>
-          Effect.tryPromise(() =>
-            rm(tempDir, { force: true, recursive: true }),
-          ).pipe(Effect.orDie),
-      );
-      const xmlPath = join(tempDir, `${family}.xml`);
-      const supportDir = join(tempDir, "support");
+      const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "kbv-fhir-oracle-",
+      });
+      const xmlPath = path.join(tempDir, `${family}.xml`);
+      const supportDir = path.join(tempDir, "support");
 
       const assetsStart = Date.now();
       logDebug(`starting ensureFhirValidatorAssets(${family})`);
@@ -417,10 +402,8 @@ export const runExecutableFhirOracleEffect = Effect.fn(
 
       const writeStart = Date.now();
       logDebug(`starting writeInputXml(${family})`);
-      yield* Effect.tryPromise(() =>
-        mkdir(userHomeOverride, { recursive: true }),
-      );
-      yield* Effect.tryPromise(() => writeFile(xmlPath, xml, "utf8"));
+      yield* fileSystem.makeDirectory(userHomeOverride, { recursive: true });
+      yield* fileSystem.writeFileString(xmlPath, xml);
       const offlineLanguageCodes = extractOfflineLanguageCodes(xml);
       yield* writeOfflineLanguageSupportResourcesEffect({
         codes: offlineLanguageCodes,
@@ -435,10 +418,10 @@ export const runExecutableFhirOracleEffect = Effect.fn(
       const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
       const execStart = Date.now();
       logDebug(`starting validatorCli(${family})`);
-      const { stderr, stdout } = yield* Effect.tryPromise(() =>
-        execFileAsync(
-          resolveJavaCommand(),
-          [
+      const javaCommand = yield* Effect.tryPromise(() => resolveJavaCommand());
+      const { exitCode, stderr, stdout } = yield* Effect.tryPromise(() =>
+        runCommand({
+          args: [
             `-Duser.home=${userHomeOverride}`,
             "-jar",
             assets.validatorJar,
@@ -449,16 +432,16 @@ export const runExecutableFhirOracleEffect = Effect.fn(
             "-tx",
             "n/a",
           ],
-          {
-            maxBuffer: 10 * 1024 * 1024,
-          },
-        ),
+          command: javaCommand,
+        }),
       );
       logTiming(`validatorCli(${family})`, execStart);
 
       const combined = `${stdout}\n${stderr}`;
       const findings = parseFhirValidatorFindings(combined);
-      const passed = findings.every((finding) => finding.severity !== "error");
+      const passed =
+        exitCode === 0 &&
+        findings.every((finding) => finding.severity !== "error");
 
       return {
         family,
@@ -531,7 +514,7 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
 
   const effectiveCacheDir = cacheDir ?? process.env.KBV_UPDATE_CACHE_DIR;
   const resolvedCacheDir =
-    effectiveCacheDir ?? join(process.cwd(), ".cache", "kbv-oracles");
+    effectiveCacheDir ?? path.join(process.cwd(), ".cache", "kbv-oracles");
   const runtimeKey = [
     "exec-batch",
     process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? "main",
@@ -546,16 +529,10 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
           runtimeKey,
         }),
       );
-      const tempDir = yield* Effect.acquireRelease(
-        Effect.tryPromise(() =>
-          mkdtemp(join(tmpdir(), "kbv-fhir-batch-oracle-")),
-        ),
-        (tempDir) =>
-          Effect.tryPromise(() =>
-            rm(tempDir, { force: true, recursive: true }),
-          ).pipe(Effect.orDie),
-      );
-      const supportDir = join(tempDir, "support");
+      const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "kbv-fhir-batch-oracle-",
+      });
+      const supportDir = path.join(tempDir, "support");
 
       const assets = yield* Effect.tryPromise(() =>
         ensureFhirValidatorAssets({
@@ -570,7 +547,7 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
       );
 
       const xmlDocuments = yield* Effect.forEach(xmlPaths, (xmlPath) =>
-        Effect.tryPromise(() => readFile(xmlPath, "utf8")),
+        fileSystem.readFileString(xmlPath),
       );
       const offlineLanguageCodes = [
         ...new Set(
@@ -578,9 +555,7 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
         ),
       ].sort();
 
-      yield* Effect.tryPromise(() =>
-        mkdir(userHomeOverride, { recursive: true }),
-      );
+      yield* fileSystem.makeDirectory(userHomeOverride, { recursive: true });
       yield* writeOfflineLanguageSupportResourcesEffect({
         codes: offlineLanguageCodes,
         supportDir,
@@ -592,10 +567,10 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
           : assets.igPaths;
       const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
 
-      const { stderr, stdout } = yield* Effect.tryPromise(() =>
-        execFileAsync(
-          resolveJavaCommand(),
-          [
+      const javaCommand = yield* Effect.tryPromise(() => resolveJavaCommand());
+      const { exitCode, stderr, stdout } = yield* Effect.tryPromise(() =>
+        runCommand({
+          args: [
             `-Duser.home=${userHomeOverride}`,
             "-jar",
             assets.validatorJar,
@@ -606,10 +581,8 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
             "-tx",
             "n/a",
           ],
-          {
-            maxBuffer: 64 * 1024 * 1024,
-          },
-        ),
+          command: javaCommand,
+        }),
       );
 
       const summaries = alignBatchValidationSummarySourcePaths({
@@ -618,6 +591,7 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
       });
       return {
         passed:
+          exitCode === 0 &&
           summaries.length === xmlPaths.length &&
           summaries.every((summary) => summary.passed),
         stderr,

@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+
+import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 
 interface CoverageInventory {
   readonly asOf: string;
@@ -18,18 +18,18 @@ interface CoverageInventory {
 
 describe("validation coverage inventory", () => {
   it("tracks the validated KBV families in machine-readable form", async () => {
-    const inventoryPath = join(
+    const inventoryPath = path.join(
       process.cwd(),
       "tools",
       "oracles",
       "coverage-inventory.json",
     );
-    const markdownPath = join(process.cwd(), "VALIDATION_COVERAGE.md");
+    const markdownPath = path.join(process.cwd(), "VALIDATION_COVERAGE.md");
 
     const inventory = JSON.parse(
-      await readFile(inventoryPath, "utf8"),
+      await runEffect(fileSystem.readFileString(inventoryPath)),
     ) as CoverageInventory;
-    const markdown = await readFile(markdownPath, "utf8");
+    const markdown = await runEffect(fileSystem.readFileString(markdownPath));
 
     expect(inventory.asOf).toBe("2026-03-11");
     expect(inventory.inventoryVersion).toBe(1);

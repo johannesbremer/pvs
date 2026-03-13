@@ -1,49 +1,39 @@
-import { existsSync } from "node:fs";
+import { fileSystem, runEffect } from "./platform";
 
-export const resolveJavaCommand = () => {
-  const candidates = [
-    process.env.JAVA_BIN,
-    "/opt/homebrew/opt/openjdk/bin/java",
+const resolveCommand = async (
+  candidates: readonly (string | undefined)[],
+  fallback: string,
+) => {
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    if (
+      candidate === fallback ||
+      (await runEffect(fileSystem.exists(candidate)))
+    ) {
+      return candidate;
+    }
+  }
+
+  return fallback;
+};
+
+export const resolveJavaCommand = () =>
+  resolveCommand(
+    [process.env.JAVA_BIN, "/opt/homebrew/opt/openjdk/bin/java", "java"],
     "java",
-  ].filter((candidate): candidate is string => Boolean(candidate));
+  );
 
-  for (const candidate of candidates) {
-    if (candidate === "java" || existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return "java";
-};
-
-export const resolveJavacCommand = () => {
-  const candidates = [
-    process.env.JAVAC_BIN,
-    "/opt/homebrew/opt/openjdk/bin/javac",
+export const resolveJavacCommand = () =>
+  resolveCommand(
+    [process.env.JAVAC_BIN, "/opt/homebrew/opt/openjdk/bin/javac", "javac"],
     "javac",
-  ].filter((candidate): candidate is string => Boolean(candidate));
+  );
 
-  for (const candidate of candidates) {
-    if (candidate === "javac" || existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return "javac";
-};
-
-export const resolveXmllintCommand = () => {
-  const candidates = [
-    process.env.XMLLINT_BIN,
-    "/usr/bin/xmllint",
+export const resolveXmllintCommand = () =>
+  resolveCommand(
+    [process.env.XMLLINT_BIN, "/usr/bin/xmllint", "xmllint"],
     "xmllint",
-  ].filter((candidate): candidate is string => Boolean(candidate));
-
-  for (const candidate of candidates) {
-    if (candidate === "xmllint" || existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return "xmllint";
-};
+  );

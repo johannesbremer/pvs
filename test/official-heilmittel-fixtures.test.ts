@@ -1,8 +1,7 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { runHeilmittelOracle } from "../tools/oracles/heilmittel/run";
+import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 
 interface HeilmittelFixture {
   readonly caseId: string;
@@ -12,7 +11,7 @@ interface HeilmittelFixture {
 
 describe("official Heilmittel fixture sweeps", () => {
   it("validates official KBV Heilmittel prueffall fixtures", async () => {
-    const fixturePath = join(
+    const fixturePath = path.join(
       process.cwd(),
       "test",
       "oracles",
@@ -20,7 +19,7 @@ describe("official Heilmittel fixture sweeps", () => {
       "pruefpaket-v2.4.json",
     );
     const fixtures = JSON.parse(
-      await readFile(fixturePath, "utf8"),
+      await runEffect(fileSystem.readFileString(fixturePath)),
     ) as readonly HeilmittelFixture[];
 
     expect(fixtures.length).toBeGreaterThanOrEqual(6);

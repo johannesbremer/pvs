@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { kbvOracleAssets } from "../tools/oracles/assets";
@@ -9,6 +7,7 @@ import {
   officialKbvCorpusInventoryByAssetId,
   officialKbvXmlCorpusEntries,
 } from "../tools/oracles/official-corpus-inventory";
+import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 
 const KBV_MIRROR_ROOT = "/Users/johannes/Code/kbv-mirror";
 
@@ -98,9 +97,9 @@ describe("official KBV corpus inventory", () => {
     ]);
   });
 
-  it("should keep the current high-value executable backlog from the local KBV mirror explicit", () => {
+  it("should keep the current high-value executable backlog from the local KBV mirror explicit", async () => {
     // Arrange
-    if (!existsSync(KBV_MIRROR_ROOT)) {
+    if (!(await runEffect(fileSystem.exists(KBV_MIRROR_ROOT)))) {
       return;
     }
 
@@ -111,8 +110,12 @@ describe("official KBV corpus inventory", () => {
           (familyKey): familyKey is ExecutableFamilyKey => familyKey !== null,
         ),
     );
-    const mirrorCandidateExists = highValueMirrorExecutableCandidates.map(
-      (candidate) => existsSync(join(KBV_MIRROR_ROOT, candidate.relativePath)),
+    const mirrorCandidateExists = await Promise.all(
+      highValueMirrorExecutableCandidates.map((candidate) =>
+        runEffect(
+          fileSystem.exists(path.join(KBV_MIRROR_ROOT, candidate.relativePath)),
+        ),
+      ),
     );
 
     // Act
@@ -246,7 +249,9 @@ const highValueMirrorExecutableCandidates: readonly MirrorExecutableCandidate[] 
 const toExecutableFamilyKey = (
   fileName: string,
 ): ExecutableFamilyKey | null => {
-  const normalizedFileName = basename(fileName).replace(/\.extracted$/, "");
+  const normalizedFileName = path
+    .basename(fileName)
+    .replace(/\.extracted$/, "");
 
   if (/^AWS_Service_zur_Validierung\.zip$/u.test(normalizedFileName)) {
     return "aw-sst-validator";

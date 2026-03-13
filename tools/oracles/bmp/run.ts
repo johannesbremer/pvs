@@ -1,18 +1,12 @@
 import { Effect } from "effect";
-import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import type { OracleExecutionResult } from "../types";
 
 import { ensureBmpAssets } from "../assets";
+import { fileSystem, path, runCommand } from "../platform";
 import { resolveJavacCommand, resolveJavaCommand } from "../system";
 
-const execFileAsync = promisify(execFile);
 const bmpValidatorSourcePath = fileURLToPath(
   new URL("../java/BmpSchemaValidator.java", import.meta.url),
 );
@@ -20,28 +14,32 @@ const bmpValidatorSourcePath = fileURLToPath(
 const ensureBmpJavaValidatorEffect = Effect.fn(
   "oracles.ensureBmpJavaValidator",
 )(function* (cacheDir?: string) {
-  const resolvedCacheDir = resolve(cacheDir ?? process.cwd());
-  const buildDir = join(resolvedCacheDir, "java-tools", "bmp");
-  const classFile = join(buildDir, "BmpSchemaValidator.class");
+  const resolvedCacheDir = path.resolve(cacheDir ?? process.cwd());
+  const buildDir = path.join(resolvedCacheDir, "java-tools", "bmp");
+  const classFile = path.join(buildDir, "BmpSchemaValidator.class");
 
-  if (existsSync(classFile)) {
+  if (yield* fileSystem.exists(classFile)) {
     return {
       buildDir,
       className: "BmpSchemaValidator",
     };
   }
 
-  yield* Effect.tryPromise(() => mkdir(buildDir, { recursive: true }));
-  yield* Effect.tryPromise(() =>
-    execFileAsync(
-      resolveJavacCommand(),
-      ["-d", buildDir, bmpValidatorSourcePath],
-      {
-        cwd: dirname(bmpValidatorSourcePath),
-        maxBuffer: 5 * 1024 * 1024,
-      },
-    ),
+  yield* fileSystem.makeDirectory(buildDir, { recursive: true });
+
+  const javacCommand = yield* Effect.tryPromise(() => resolveJavacCommand());
+  const javacResult = yield* Effect.tryPromise(() =>
+    runCommand({
+      args: ["-d", buildDir, bmpValidatorSourcePath],
+      command: javacCommand,
+      cwd: path.dirname(bmpValidatorSourcePath),
+    }),
   );
+  if (javacResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to compile BMP validator: ${(javacResult.stderr || javacResult.stdout).trim()}`,
+    );
+  }
 
   return {
     buildDir,
@@ -132,31 +130,46 @@ export const runExecutableBmpOracleEffect = Effect.fn(
         }),
       );
       const validator = yield* ensureBmpJavaValidatorEffect(cacheDir);
-      const tempDir = yield* Effect.acquireRelease(
-        Effect.tryPromise(() => mkdtemp(join(tmpdir(), "kbv-bmp-oracle-"))),
-        (tempDir) =>
-          Effect.tryPromise(() =>
-            rm(tempDir, { force: true, recursive: true }),
-          ).pipe(Effect.orDie),
-      );
-      const xmlPath = join(tempDir, "payload.xml");
+      const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "kbv-bmp-oracle-",
+      });
+      const xmlPath = path.join(tempDir, "payload.xml");
 
-      yield* Effect.tryPromise(() => writeFile(xmlPath, validatedXmlBytes));
-      yield* Effect.tryPromise(() =>
-        execFileAsync(
-          resolveJavaCommand(),
-          [
+      yield* fileSystem.writeFile(xmlPath, validatedXmlBytes);
+
+      const javaCommand = yield* Effect.tryPromise(() => resolveJavaCommand());
+      const result = yield* Effect.tryPromise(() =>
+        runCommand({
+          args: [
             "-cp",
             validator.buildDir,
             validator.className,
             assets.bmpXsd,
             xmlPath,
           ],
-          {
-            maxBuffer: 5 * 1024 * 1024,
-          },
-        ),
+          command: javaCommand,
+        }),
       );
+
+      if (result.exitCode !== 0) {
+        const errorOutput = `${result.stdout}\n${result.stderr}`;
+        const findings = parseBmpFindings(errorOutput);
+        return {
+          family: "BMP",
+          findings:
+            findings.length > 0
+              ? findings
+              : [
+                  {
+                    code: "BMP_EXECUTION_FAILED",
+                    message: errorOutput.slice(0, 500),
+                    severity: "error",
+                  },
+                ],
+          passed: false,
+          summary: "BMP executable validation failed.",
+        } satisfies OracleExecutionResult;
+      }
 
       return {
         family: "BMP",

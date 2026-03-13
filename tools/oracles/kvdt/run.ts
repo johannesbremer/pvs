@@ -1,17 +1,4 @@
 import { Effect } from "effect";
-import { execFile } from "node:child_process";
-import {
-  cp,
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
-import { promisify } from "node:util";
 
 import type { OracleExecutionResult } from "../types";
 
@@ -20,9 +7,8 @@ import {
   ensureKvdtAssets,
   findFileRecursive,
 } from "../assets";
+import { fileSystem, path, runCommand } from "../platform";
 import { resolveJavaCommand } from "../system";
-
-const execFileAsync = promisify(execFile);
 
 const KVDT_HEADLESS_CLASS = "de.kbv.xpm.modul.kvdt.praxis.start.StartKonsole";
 const KVDT_CLASSPATH =
@@ -71,41 +57,29 @@ const parseLogFindings = (output: string) => {
   return findings;
 };
 
-const coerceExecOutput = (value: unknown) => {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (Buffer.isBuffer(value)) {
-    return value.toString("utf8");
-  }
-  return "";
-};
-
-const getExecFailureOutput = (error: unknown) =>
-  typeof error === "object" && error !== null
-    ? `${"stdout" in error ? coerceExecOutput(error.stdout) : ""}\n${"stderr" in error ? coerceExecOutput(error.stderr) : ""}`
-    : "";
-
 const listWorkspaceFilesEffect = Effect.fn("oracles.listWorkspaceFiles")(
   function* (directory: string) {
-    const entries = yield* Effect.tryPromise(() =>
-      readdir(directory, {
-        withFileTypes: true,
-      }),
-    );
-    return entries
-      .filter((entry) => entry.isFile())
-      .map((entry) => join(directory, entry.name));
+    const entries = yield* fileSystem.readDirectory(directory);
+    const files = [];
+
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry);
+      const entryInfo = yield* fileSystem.stat(entryPath);
+
+      if (entryInfo.type === "File") {
+        files.push(entryPath);
+      }
+    }
+
+    return files;
   },
 );
 
 const resetWorkspaceDirectoryEffect = Effect.fn(
   "oracles.resetWorkspaceDirectory",
 )(function* (directory: string) {
-  yield* Effect.tryPromise(() =>
-    rm(directory, { force: true, recursive: true }),
-  );
-  yield* Effect.tryPromise(() => mkdir(directory, { recursive: true }));
+  yield* fileSystem.remove(directory, { force: true, recursive: true });
+  yield* fileSystem.makeDirectory(directory, { recursive: true });
 });
 
 export const runKvdtOracle = ({
@@ -164,102 +138,90 @@ export const runExecutableKvdtOracleEffect = Effect.fn(
       : Buffer.from(payloadPreview!, "utf8");
   const effectiveFileName =
     payloadFileName && payloadFileName.trim().length > 0
-      ? basename(payloadFileName)
+      ? path.basename(payloadFileName)
       : "input.con";
 
   const program = Effect.scoped(
     Effect.gen(function* () {
-      const tempRoot = yield* Effect.acquireRelease(
-        Effect.tryPromise(() => mkdtemp(join(tmpdir(), "kbv-kvdt-oracle-"))),
-        (tempRoot) =>
-          Effect.tryPromise(() =>
-            rm(tempRoot, { force: true, recursive: true }),
-          ).pipe(Effect.orDie),
-      );
+      const tempRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "kbv-kvdt-oracle-",
+      });
       const assets = yield* Effect.tryPromise(() =>
         ensureKvdtAssets({
           ...(cacheDir ? { cacheDir } : {}),
         }),
       );
-      const javaCommand = resolveJavaCommand();
-      const javaDir = dirname(javaCommand);
+      const javaCommand = yield* Effect.tryPromise(() => resolveJavaCommand());
+      const javaDir = path.dirname(javaCommand);
 
       const xpmWorkspace = yield* Effect.tryPromise(() =>
         cloneAssetWorkspace({
-          sourceDir: join(assets.xpmDir, "XPM_KVDT.Praxis"),
-          targetDir: join(tempRoot, "XPM_KVDT.Praxis"),
+          sourceDir: path.join(assets.xpmDir, "XPM_KVDT.Praxis"),
+          targetDir: path.join(tempRoot, "XPM_KVDT.Praxis"),
         }),
       );
       const xkmWorkspace = yield* Effect.tryPromise(() =>
         cloneAssetWorkspace({
-          sourceDir: join(assets.xkmDir, "XKM"),
-          targetDir: join(tempRoot, "XKM"),
+          sourceDir: path.join(assets.xkmDir, "XKM"),
+          targetDir: path.join(tempRoot, "XKM"),
         }),
       );
 
-      yield* resetWorkspaceDirectoryEffect(join(xpmWorkspace, "Listen"));
-      yield* resetWorkspaceDirectoryEffect(join(xpmWorkspace, "Temp"));
-      yield* resetWorkspaceDirectoryEffect(join(xkmWorkspace, "Quelle"));
+      yield* resetWorkspaceDirectoryEffect(path.join(xpmWorkspace, "Listen"));
+      yield* resetWorkspaceDirectoryEffect(path.join(xpmWorkspace, "Temp"));
+      yield* resetWorkspaceDirectoryEffect(path.join(xkmWorkspace, "Quelle"));
       yield* resetWorkspaceDirectoryEffect(
-        join(xkmWorkspace, "Verschluesselt"),
+        path.join(xkmWorkspace, "Verschluesselt"),
       );
-      yield* resetWorkspaceDirectoryEffect(join(xkmWorkspace, "Bearbeitet"));
-
-      const kvdtInputRelativePath = join("Daten", effectiveFileName);
-      const kvdtInputPath = join(xpmWorkspace, kvdtInputRelativePath);
-      yield* Effect.tryPromise(() =>
-        writeFile(kvdtInputPath, validatedPayloadBytes),
+      yield* resetWorkspaceDirectoryEffect(
+        path.join(xkmWorkspace, "Bearbeitet"),
       );
 
-      const xpmLogPath = join(xpmWorkspace, "Listen", "XPM_Logfile.log");
-      const xpmRun = yield* Effect.either(
-        Effect.tryPromise(() =>
-          execFileAsync(
-            javaCommand,
-            [
-              "-Xmx500m",
-              "-Djava.awt.headless=true",
-              "-Dfile.encoding=UTF8",
-              "-DXPM_QUARTAL_VERSION=2026.2.1",
-              "-classpath",
-              KVDT_CLASSPATH,
-              KVDT_HEADLESS_CLASS,
-              "-c",
-              KVDT_CONFIG_PATH,
-              "-f",
-              kvdtInputRelativePath,
-            ],
-            {
-              cwd: xpmWorkspace,
-              env: {
-                ...process.env,
-                JAVA_BIN: javaCommand,
-                PATH: `${javaDir}:${process.env.PATH ?? ""}`,
-              },
-              maxBuffer: 10 * 1024 * 1024,
-            },
-          ),
-        ),
+      const kvdtInputRelativePath = path.join("Daten", effectiveFileName);
+      const kvdtInputPath = path.join(xpmWorkspace, kvdtInputRelativePath);
+      yield* fileSystem.writeFile(kvdtInputPath, validatedPayloadBytes);
+
+      const xpmLogPath = path.join(xpmWorkspace, "Listen", "XPM_Logfile.log");
+      const xpmRun = yield* Effect.tryPromise(() =>
+        runCommand({
+          args: [
+            "-Xmx500m",
+            "-Djava.awt.headless=true",
+            "-Dfile.encoding=UTF8",
+            "-DXPM_QUARTAL_VERSION=2026.2.1",
+            "-classpath",
+            KVDT_CLASSPATH,
+            KVDT_HEADLESS_CLASS,
+            "-c",
+            KVDT_CONFIG_PATH,
+            "-f",
+            kvdtInputRelativePath,
+          ],
+          command: javaCommand,
+          cwd: xpmWorkspace,
+          env: {
+            ...process.env,
+            JAVA_BIN: javaCommand,
+            PATH: `${javaDir}:${process.env.PATH ?? ""}`,
+          },
+        }),
       );
-      const xpmLog = yield* Effect.tryPromise(() =>
-        readFile(xpmLogPath, "utf8").catch(() => ""),
-      );
-      const xpmExecOutput =
-        xpmRun._tag === "Right"
-          ? `${xpmRun.right.stdout}\n${xpmRun.right.stderr}`
-          : getExecFailureOutput(xpmRun.left);
+      const xpmLog = yield* fileSystem
+        .readFileString(xpmLogPath)
+        .pipe(Effect.catchAll(() => Effect.succeed("")));
+      const xpmExecOutput = `${xpmRun.stdout}\n${xpmRun.stderr}`;
       const xpmOutput = `${xpmExecOutput}\n${xpmLog}`;
       const xpmFindings = parseLogFindings(xpmOutput);
       const xpmArtifacts = yield* listWorkspaceFilesEffect(
-        join(xpmWorkspace, "Listen"),
+        path.join(xpmWorkspace, "Listen"),
       ).pipe(Effect.catchAll(() => Effect.succeed([])));
 
-      if (xpmRun._tag === "Left") {
+      if (xpmRun.exitCode !== 0) {
         const findings = [
           ...xpmFindings,
           {
             code: "KVDT_XPM_ARTIFACT_COUNT",
-            message: `KVDT XPM produced ${xpmArtifacts.length} file(s) in Listen/: ${xpmArtifacts.map((path) => basename(path)).join(", ") || "(none)"}.`,
+            message: `KVDT XPM produced ${xpmArtifacts.length} file(s) in Listen/: ${xpmArtifacts.map((artifactPath) => path.basename(artifactPath)).join(", ") || "(none)"}.`,
             severity: "info" as const,
           },
         ];
@@ -303,21 +265,20 @@ export const runExecutableKvdtOracleEffect = Effect.fn(
         } satisfies OracleExecutionResult;
       }
 
-      yield* Effect.tryPromise(() =>
-        cp(
-          publicKeyPath,
-          join(xkmWorkspace, "System", "keys", basename(publicKeyPath)),
-        ),
+      yield* fileSystem.copy(
+        publicKeyPath,
+        path.join(xkmWorkspace, "System", "keys", path.basename(publicKeyPath)),
       );
-      const sourcePayloadPath = join(xkmWorkspace, "Quelle", effectiveFileName);
-      yield* Effect.tryPromise(() =>
-        writeFile(sourcePayloadPath, validatedPayloadBytes),
+      const sourcePayloadPath = path.join(
+        xkmWorkspace,
+        "Quelle",
+        effectiveFileName,
       );
+      yield* fileSystem.writeFile(sourcePayloadPath, validatedPayloadBytes);
 
       const xkmRun = yield* Effect.tryPromise(() =>
-        execFileAsync(
-          javaCommand,
-          [
+        runCommand({
+          args: [
             "-Xmx300m",
             "-Dfile.encoding=8859_1",
             "-Dlog4j.configurationFile=Bin/log4j2.xml",
@@ -330,22 +291,20 @@ export const runExecutableKvdtOracleEffect = Effect.fn(
             "-s",
             "-e",
           ],
-          {
-            cwd: xkmWorkspace,
-            env: {
-              ...process.env,
-              JAVA_BIN: javaCommand,
-              PATH: `${javaDir}:${process.env.PATH ?? ""}`,
-            },
-            maxBuffer: 10 * 1024 * 1024,
+          command: javaCommand,
+          cwd: xkmWorkspace,
+          env: {
+            ...process.env,
+            JAVA_BIN: javaCommand,
+            PATH: `${javaDir}:${process.env.PATH ?? ""}`,
           },
-        ),
+        }),
       );
 
       const xkmOutput = `${xkmRun.stdout}\n${xkmRun.stderr}`;
       const xkmFindings = parseLogFindings(xkmOutput);
       const encryptedArtifacts = yield* listWorkspaceFilesEffect(
-        join(xkmWorkspace, "Verschluesselt"),
+        path.join(xkmWorkspace, "Verschluesselt"),
       );
 
       const findings = [
@@ -358,12 +317,12 @@ export const runExecutableKvdtOracleEffect = Effect.fn(
         },
         {
           code: "KVDT_XPM_ARTIFACT_COUNT",
-          message: `KVDT XPM produced ${xpmArtifacts.length} file(s) in Listen/: ${xpmArtifacts.map((path) => basename(path)).join(", ") || "(none)"}.`,
+          message: `KVDT XPM produced ${xpmArtifacts.length} file(s) in Listen/: ${xpmArtifacts.map((artifactPath) => path.basename(artifactPath)).join(", ") || "(none)"}.`,
           severity: "info" as const,
         },
         {
           code: "KVDT_XKM_ARTIFACT_COUNT",
-          message: `XKM produced ${encryptedArtifacts.length} file(s) in Verschluesselt/: ${encryptedArtifacts.map((path) => basename(path)).join(", ") || "(none)"}.`,
+          message: `XKM produced ${encryptedArtifacts.length} file(s) in Verschluesselt/: ${encryptedArtifacts.map((artifactPath) => path.basename(artifactPath)).join(", ") || "(none)"}.`,
           severity: "info" as const,
         },
       ];
@@ -372,6 +331,17 @@ export const runExecutableKvdtOracleEffect = Effect.fn(
         findings.push({
           code: "KVDT_XKM_OUTPUT_MISSING",
           message: "XKM did not produce an encrypted .XKM output artifact.",
+          severity: "error",
+        });
+      }
+
+      if (
+        xkmRun.exitCode !== 0 &&
+        !findings.some((finding) => finding.severity === "error")
+      ) {
+        findings.push({
+          code: "KVDT_EXECUTION_FAILED",
+          message: xkmOutput.trim().slice(0, 4000),
           severity: "error",
         });
       }

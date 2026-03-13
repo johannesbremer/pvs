@@ -1,9 +1,8 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { parseOfficialTssSearchsetXml } from "../src/codecs/xml/tss";
 import { ensureTssAssets, findFileRecursive } from "../tools/oracles/assets";
+import { fileSystem, runEffect } from "../tools/oracles/platform";
 import { runTssOracle } from "../tools/oracles/tss/run";
 
 describe("official TSS fixture sweeps", () => {
@@ -24,7 +23,7 @@ describe("official TSS fixture sweeps", () => {
     expect(files.length).toBeGreaterThanOrEqual(10);
 
     for (const filePath of files) {
-      const xml = await readFile(filePath, "utf8");
+      const xml = await runEffect(fileSystem.readFileString(filePath));
       const parsed = parseOfficialTssSearchsetXml(xml);
       const result = runTssOracle({
         payloadPreviewXml: xml,
@@ -61,8 +60,10 @@ describe("official TSS fixture sweeps", () => {
     expect(vsdXml).toBeDefined();
     expect(patientXml).toBeDefined();
 
-    const vsdContent = await readFile(vsdXml!, "utf8");
-    const patientContent = await readFile(patientXml!, "utf8");
+    const vsdContent = await runEffect(fileSystem.readFileString(vsdXml!));
+    const patientContent = await runEffect(
+      fileSystem.readFileString(patientXml!),
+    );
 
     expect(vsdContent.includes("Versicherter")).toBe(true);
     expect(patientContent.includes("UC_PersoenlicheVersichertendatenXML")).toBe(

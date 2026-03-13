@@ -1,25 +1,25 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { ensureKvdtAssets } from "../tools/oracles/assets";
 import { runExecutableKvdtOracle } from "../tools/oracles/kvdt/run";
+import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 
 describe("executable KVDT oracle", () => {
   it("downloads KVDT assets and validates an official KBV .con example from an empty cache", async () => {
-    const cacheDir = await mkdtemp(join(tmpdir(), "kbv-kvdt-cache-"));
+    const cacheDir = await runEffect(
+      fileSystem.makeTempDirectory({ prefix: "kbv-kvdt-cache-" }),
+    );
     let shouldCleanup = true;
 
     try {
       const assets = await ensureKvdtAssets({ cacheDir });
-      const officialConPath = join(
+      const officialConPath = path.join(
         assets.xpmDir,
         "XPM_KVDT.Praxis",
         "Daten",
         "Z30123456699_27.04.2026_12.00.con",
       );
-      const officialCon = await readFile(officialConPath);
+      const officialCon = await runEffect(fileSystem.readFile(officialConPath));
 
       const result = await runExecutableKvdtOracle({
         cacheDir,
@@ -48,7 +48,9 @@ describe("executable KVDT oracle", () => {
       throw error;
     } finally {
       if (shouldCleanup) {
-        await rm(cacheDir, { force: true, recursive: true });
+        await runEffect(
+          fileSystem.remove(cacheDir, { force: true, recursive: true }),
+        );
       }
     }
   }, 420_000);

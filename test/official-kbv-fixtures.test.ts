@@ -1,5 +1,3 @@
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -11,8 +9,9 @@ import {
   runExecutableFhirValidationBatch,
   toBatchValidationSourcePathKey,
 } from "../tools/oracles/fhir/run";
+import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 
-const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
+const cacheDir = path.join(process.cwd(), ".cache", "kbv-oracles");
 
 describe("official KBV fixture sweeps", () => {
   it("validates all official non-error eAU XML examples with the executable oracle", async () => {
@@ -20,7 +19,7 @@ describe("official KBV fixture sweeps", () => {
       kbvOracleAssets.kbvEauExamples_1_2,
       cacheDir,
     );
-    const entries = await readdir(eauExamplesDir);
+    const entries = await runEffect(fileSystem.readDirectory(eauExamplesDir));
     const xmlExamples = entries
       .filter((entry) => entry.endsWith(".xml"))
       .filter((entry) => !entry.includes("_Fehler_"))
@@ -28,7 +27,7 @@ describe("official KBV fixture sweeps", () => {
 
     expect(xmlExamples.length).toBeGreaterThan(5);
     const xmlPaths = xmlExamples.map((exampleName) =>
-      join(eauExamplesDir, exampleName),
+      path.join(eauExamplesDir, exampleName),
     );
     const result = await runExecutableFhirValidationBatch({
       cacheDir,
@@ -44,7 +43,7 @@ describe("official KBV fixture sweeps", () => {
 
     for (const exampleName of xmlExamples) {
       const xmlPath = toBatchValidationSourcePathKey(
-        join(eauExamplesDir, exampleName),
+        path.join(eauExamplesDir, exampleName),
       );
       const summary = summaries.get(xmlPath);
 
@@ -75,7 +74,7 @@ describe("official KBV fixture sweeps", () => {
     await ensureExtractedAsset(kbvOracleAssets.kbvFhirErp_1_4_1, cacheDir);
     await ensureFhirValidatorDependencyCache({ cacheDir });
 
-    const entries = await readdir(erpExamplesDir);
+    const entries = await runEffect(fileSystem.readDirectory(erpExamplesDir));
     const xmlExamples = entries
       .filter((entry) => entry.endsWith(".xml"))
       .sort();
@@ -83,7 +82,7 @@ describe("official KBV fixture sweeps", () => {
     expect(xmlExamples.length).toBeGreaterThan(50);
 
     const xmlPaths = xmlExamples.map((exampleName) =>
-      join(erpExamplesDir, exampleName),
+      path.join(erpExamplesDir, exampleName),
     );
     const result = await runExecutableFhirValidationBatch({
       cacheDir,
@@ -99,7 +98,7 @@ describe("official KBV fixture sweeps", () => {
 
     for (const exampleName of xmlExamples) {
       const xmlPath = toBatchValidationSourcePathKey(
-        join(erpExamplesDir, exampleName),
+        path.join(erpExamplesDir, exampleName),
       );
       const summary = summaries.get(xmlPath);
 

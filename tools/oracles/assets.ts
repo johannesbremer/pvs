@@ -1,20 +1,7 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import {
-  cp,
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { promisify } from "node:util";
 
-const execFileAsync = promisify(execFile);
+import { fileSystem, path, runCommand, runEffect } from "./platform";
+
 const KBV_MIRROR_ROOT = "/Users/johannes/Code/kbv-mirror";
 const fhirValidatorAssetsCache = new Map<
   string,
@@ -35,6 +22,8 @@ const fhirValidatorDependencyCache = new Map<
   >
 >();
 const fhirValidatorRuntimeHomeCache = new Map<string, Promise<string>>();
+
+const fileExists = (filePath: string) => runEffect(fileSystem.exists(filePath));
 
 export interface ExternalFhirPackage {
   readonly packageId: string;
@@ -246,10 +235,10 @@ export const fhirValidatorPrerequisitePackages = [
 
 export const getKbvOracleCacheDir = () =>
   process.env.KBV_UPDATE_CACHE_DIR ??
-  join(process.cwd(), ".cache", "kbv-oracles");
+  path.join(process.cwd(), ".cache", "kbv-oracles");
 
 export const getFhirPackageCacheRoot = (cacheDir = getKbvOracleCacheDir()) =>
-  join(resolve(cacheDir), "fhir-home", ".fhir", "packages");
+  path.join(path.resolve(cacheDir), "fhir-home", ".fhir", "packages");
 
 export const getFhirRuntimeHomeRoot = ({
   cacheDir = getKbvOracleCacheDir(),
@@ -258,24 +247,24 @@ export const getFhirRuntimeHomeRoot = ({
   cacheDir?: string;
   runtimeKey: string;
 }) =>
-  join(
-    resolve(cacheDir),
+  path.join(
+    path.resolve(cacheDir),
     "fhir-home-runtimes",
     runtimeKey.replaceAll(/[^\w.-]/g, "_"),
   );
 
 const getFhirDependencyMarkerPath = (cacheDir = getKbvOracleCacheDir()) =>
-  join(getFhirPackageCacheRoot(cacheDir), ".kbv-prerequisites.json");
+  path.join(getFhirPackageCacheRoot(cacheDir), ".kbv-prerequisites.json");
 
 export const getKbvOracleCacheManifestPath = (
   cacheDir = getKbvOracleCacheDir(),
-) => join(resolve(cacheDir), "asset-cache.json");
+) => path.join(path.resolve(cacheDir), "asset-cache.json");
 
-export const computeBufferSha256 = (buffer: Buffer) =>
+export const computeBufferSha256 = (buffer: Uint8Array) =>
   createHash("sha256").update(buffer).digest("hex");
 
 export const computeFileSha256 = async (filePath: string) => {
-  const content = await readFile(filePath);
+  const content = await runEffect(fileSystem.readFile(filePath));
   return computeBufferSha256(content);
 };
 
@@ -295,11 +284,11 @@ const readAssetCacheManifest = async (
   cacheDir = getKbvOracleCacheDir(),
 ): Promise<Record<string, KbvOracleAssetCacheEntry>> => {
   const manifestPath = getKbvOracleCacheManifestPath(cacheDir);
-  if (!existsSync(manifestPath)) {
+  if (!(await fileExists(manifestPath))) {
     return {};
   }
 
-  const content = await readFile(manifestPath, "utf8");
+  const content = await runEffect(fileSystem.readFileString(manifestPath));
   try {
     return JSON.parse(content) as Record<string, KbvOracleAssetCacheEntry>;
   } catch {
@@ -314,11 +303,13 @@ const writeAssetCacheManifest = async ({
   cacheDir: string;
   manifest: Record<string, KbvOracleAssetCacheEntry>;
 }) => {
-  await mkdir(cacheDir, { recursive: true });
+  await runEffect(fileSystem.makeDirectory(cacheDir, { recursive: true }));
   const manifestPath = getKbvOracleCacheManifestPath(cacheDir);
   const tempPath = `${manifestPath}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(tempPath, JSON.stringify(manifest, null, 2), "utf8");
-  await rename(tempPath, manifestPath);
+  await runEffect(
+    fileSystem.writeFileString(tempPath, JSON.stringify(manifest, null, 2)),
+  );
+  await runEffect(fileSystem.rename(tempPath, manifestPath));
 };
 
 const updateAssetCacheManifest = async ({
@@ -363,13 +354,13 @@ export const downloadManagedAsset = async (
   asset: KbvOracleAsset,
   cacheDir = getKbvOracleCacheDir(),
 ) => {
-  const resolvedCacheDir = resolve(cacheDir);
-  const downloadDir = join(resolvedCacheDir, "downloads");
-  const downloadPath = join(downloadDir, asset.fileName);
+  const resolvedCacheDir = path.resolve(cacheDir);
+  const downloadDir = path.join(resolvedCacheDir, "downloads");
+  const downloadPath = path.join(downloadDir, asset.fileName);
 
-  await mkdir(downloadDir, { recursive: true });
+  await runEffect(fileSystem.makeDirectory(downloadDir, { recursive: true }));
 
-  if (existsSync(downloadPath)) {
+  if (await fileExists(downloadPath)) {
     try {
       await verifyFileHash(downloadPath, asset.sha256);
       await updateAssetCacheManifest({
@@ -379,7 +370,7 @@ export const downloadManagedAsset = async (
       });
       return downloadPath;
     } catch {
-      await rm(downloadPath, { force: true });
+      await runEffect(fileSystem.remove(downloadPath, { force: true }));
     }
   }
 
@@ -398,15 +389,17 @@ export const downloadManagedAsset = async (
     }
   }
 
-  const tempPath = join(
+  const tempPath = path.join(
     downloadDir,
     `${asset.fileName}.${process.pid}.${Date.now()}.tmp`,
   );
-  await writeFile(tempPath, content);
-  await mkdir(dirname(downloadPath), { recursive: true });
-  await rm(downloadPath, { force: true });
-  await writeFile(downloadPath, content);
-  await rm(tempPath, { force: true });
+  await runEffect(fileSystem.writeFile(tempPath, content));
+  await runEffect(
+    fileSystem.makeDirectory(path.dirname(downloadPath), { recursive: true }),
+  );
+  await runEffect(fileSystem.remove(downloadPath, { force: true }));
+  await runEffect(fileSystem.writeFile(downloadPath, content));
+  await runEffect(fileSystem.remove(tempPath, { force: true }));
   await updateAssetCacheManifest({
     asset,
     cacheDir: resolvedCacheDir,
@@ -419,16 +412,16 @@ export const ensureExtractedAsset = async (
   asset: KbvOracleAsset,
   cacheDir = getKbvOracleCacheDir(),
 ) => {
-  const resolvedCacheDir = resolve(cacheDir);
+  const resolvedCacheDir = path.resolve(cacheDir);
   if (asset.extract !== true) {
     const archivePath = await downloadManagedAsset(asset, resolvedCacheDir);
     return archivePath;
   }
 
   const archivePath = await downloadManagedAsset(asset, resolvedCacheDir);
-  const extractDir = join(resolvedCacheDir, "extracted", asset.assetId);
-  const markerPath = join(extractDir, ".ok");
-  if (existsSync(markerPath)) {
+  const extractDir = path.join(resolvedCacheDir, "extracted", asset.assetId);
+  const markerPath = path.join(extractDir, ".ok");
+  if (await fileExists(markerPath)) {
     await updateAssetCacheManifest({
       asset,
       cacheDir: resolvedCacheDir,
@@ -438,11 +431,11 @@ export const ensureExtractedAsset = async (
     return extractDir;
   }
 
-  if (existsSync(extractDir)) {
-    const entries = await readdir(extractDir);
+  if (await fileExists(extractDir)) {
+    const entries = await runEffect(fileSystem.readDirectory(extractDir));
     const hasExtractedContent = entries.some((entry) => entry !== ".ok");
     if (hasExtractedContent) {
-      await writeFile(markerPath, "ok");
+      await runEffect(fileSystem.writeFileString(markerPath, "ok"));
       await updateAssetCacheManifest({
         asset,
         cacheDir: resolvedCacheDir,
@@ -453,13 +446,22 @@ export const ensureExtractedAsset = async (
     }
   }
 
-  await rm(extractDir, { force: true, recursive: true });
-  await mkdir(extractDir, { recursive: true });
+  await runEffect(
+    fileSystem.remove(extractDir, { force: true, recursive: true }),
+  );
+  await runEffect(fileSystem.makeDirectory(extractDir, { recursive: true }));
 
-  await execFileAsync("unzip", ["-oq", archivePath, "-d", extractDir], {
-    cwd: tmpdir(),
+  const unzipResult = await runCommand({
+    args: ["-oq", archivePath, "-d", extractDir],
+    command: "unzip",
   });
-  await writeFile(markerPath, "ok");
+  if (unzipResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to extract ${archivePath}: ${(unzipResult.stderr || unzipResult.stdout).trim()}`,
+    );
+  }
+
+  await runEffect(fileSystem.writeFileString(markerPath, "ok"));
   await updateAssetCacheManifest({
     asset,
     cacheDir: resolvedCacheDir,
@@ -473,14 +475,11 @@ export const findFileRecursive = async (
   rootDir: string,
   matcher: (entryPath: string) => boolean,
 ): Promise<string | undefined> => {
-  const { readdir } = await import("node:fs/promises");
-  const { stat } = await import("node:fs/promises");
-
-  const entries = await readdir(rootDir);
+  const entries = await runEffect(fileSystem.readDirectory(rootDir));
   for (const entry of entries) {
-    const entryPath = join(rootDir, entry);
-    const entryStat = await stat(entryPath);
-    if (entryStat.isDirectory()) {
+    const entryPath = path.join(rootDir, entry);
+    const entryStat = await runEffect(fileSystem.stat(entryPath));
+    if (entryStat.type === "Directory") {
       const nested = await findFileRecursive(entryPath, matcher);
       if (nested) {
         return nested;
@@ -500,22 +499,22 @@ const collectIgDirectories = async (rootDir: string): Promise<string[]> => {
   const directories = new Set<string>();
 
   const visit = async (currentDir: string) => {
-    const entries = await readdir(currentDir, {
-      withFileTypes: true,
-    });
+    const entries = await runEffect(fileSystem.readDirectory(currentDir));
     let hasResourceLikeFiles = false;
 
     for (const entry of entries) {
-      const entryPath = join(currentDir, entry.name);
-      if (entry.isDirectory()) {
+      const entryPath = path.join(currentDir, entry);
+      const entryStat = await runEffect(fileSystem.stat(entryPath));
+
+      if (entryStat.type === "Directory") {
         await visit(entryPath);
         continue;
       }
 
       if (
-        entry.name.endsWith(".xml") ||
-        entry.name.endsWith(".json") ||
-        entry.name.endsWith(".map")
+        entry.endsWith(".xml") ||
+        entry.endsWith(".json") ||
+        entry.endsWith(".map")
       ) {
         hasResourceLikeFiles = true;
       }
@@ -553,7 +552,7 @@ export const ensureFhirValidatorAssets = async ({
   cacheDir?: string;
   family: "eAU" | "eRezept" | "eVDGA";
 }) => {
-  const resolvedCacheDir = resolve(cacheDir);
+  const resolvedCacheDir = path.resolve(cacheDir);
   const cacheKey = `${family}:${resolvedCacheDir}`;
   const cached = fhirValidatorAssetsCache.get(cacheKey);
   if (cached) {
@@ -587,12 +586,12 @@ export const ensureFhirValidatorAssets = async ({
               kbvOracleAssets.kbvFhirErp_1_4_1,
               resolvedCacheDir,
             )
-          : resolve(
+          : path.resolve(
               KBV_MIRROR_ROOT,
               "DigitaleMuster/eVDGA/KBV_FHIR_eVDGA_V1.2.2_zur_Validierung.zip.extracted",
             );
 
-    if (!existsSync(packageRoot)) {
+    if (!(await fileExists(packageRoot))) {
       throw new Error(
         family === "eVDGA"
           ? "eVDGA validator package was not found in /Users/johannes/Code/kbv-mirror"
@@ -620,7 +619,7 @@ export const ensureKvdtAssets = async ({
 }: {
   cacheDir?: string;
 }) => {
-  const resolvedCacheDir = resolve(cacheDir);
+  const resolvedCacheDir = path.resolve(cacheDir);
   const xpmDir = await ensureExtractedAsset(
     kbvOracleAssets.xpmKvdtPraxis_2026_2_1,
     resolvedCacheDir,
@@ -672,7 +671,7 @@ export const ensureBmpAssets = async ({
 }: {
   cacheDir?: string;
 }) => {
-  const resolvedCacheDir = resolve(cacheDir);
+  const resolvedCacheDir = path.resolve(cacheDir);
   const bmpDir = await ensureExtractedAsset(
     kbvOracleAssets.bmp_2_8_q3_2026,
     resolvedCacheDir,
@@ -701,7 +700,7 @@ export const ensureTssAssets = async ({
 }: {
   cacheDir?: string;
 }) => {
-  const resolvedCacheDir = resolve(cacheDir);
+  const resolvedCacheDir = path.resolve(cacheDir);
   const responseExamplesDir = await ensureExtractedAsset(
     kbvOracleAssets.tssResponseExamples_7_2,
     resolvedCacheDir,
@@ -733,7 +732,7 @@ const getExternalFhirPackageArchivePath = ({
   packageId: string;
   version: string;
 }) =>
-  join(
+  path.join(
     cacheDir,
     "fhir-package-cache",
     `${sanitizePackageId(packageId)}-${version}.tgz`,
@@ -747,15 +746,19 @@ const getExternalFhirPackageInstallDir = ({
   cacheDir: string;
   packageId: string;
   version: string;
-}) => join(getFhirPackageCacheRoot(cacheDir), `${packageId}#${version}`);
+}) => path.join(getFhirPackageCacheRoot(cacheDir), `${packageId}#${version}`);
 
 const ensureFhirPackageCacheMetadata = async (cacheDir: string) => {
   const packageCacheRoot = getFhirPackageCacheRoot(cacheDir);
-  await mkdir(packageCacheRoot, { recursive: true });
-  const packagesIniPath = join(packageCacheRoot, "packages.ini");
+  await runEffect(
+    fileSystem.makeDirectory(packageCacheRoot, { recursive: true }),
+  );
+  const packagesIniPath = path.join(packageCacheRoot, "packages.ini");
 
-  if (!existsSync(packagesIniPath)) {
-    await writeFile(packagesIniPath, "[cache]\nversion = 3\n", "utf8");
+  if (!(await fileExists(packagesIniPath))) {
+    await runEffect(
+      fileSystem.writeFileString(packagesIniPath, "[cache]\nversion = 3\n"),
+    );
   }
 
   return packageCacheRoot;
@@ -769,8 +772,8 @@ const areFhirPrerequisitesInstalled = async (cacheDir: string) => {
         packageId: externalPackage.packageId,
         version: externalPackage.version,
       });
-      const packageJsonPath = join(installDir, "package", "package.json");
-      return existsSync(packageJsonPath);
+      const packageJsonPath = path.join(installDir, "package", "package.json");
+      return fileExists(packageJsonPath);
     }),
   );
 
@@ -779,22 +782,23 @@ const areFhirPrerequisitesInstalled = async (cacheDir: string) => {
 
 const writeFhirDependencyMarker = async (cacheDir: string) => {
   const markerPath = getFhirDependencyMarkerPath(cacheDir);
-  await writeFile(
-    markerPath,
-    JSON.stringify(
-      {
-        prerequisites: fhirValidatorPrerequisitePackages.map(
-          ({ packageId, version }) => ({
-            packageId,
-            version,
-          }),
-        ),
-        writtenAt: new Date().toISOString(),
-      },
-      null,
-      2,
+  await runEffect(
+    fileSystem.writeFileString(
+      markerPath,
+      JSON.stringify(
+        {
+          prerequisites: fhirValidatorPrerequisitePackages.map(
+            ({ packageId, version }) => ({
+              packageId,
+              version,
+            }),
+          ),
+          writtenAt: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
     ),
-    "utf8",
   );
 };
 
@@ -813,14 +817,16 @@ const downloadExternalFhirPackage = async ({
     version,
   });
 
-  await mkdir(dirname(archivePath), { recursive: true });
+  await runEffect(
+    fileSystem.makeDirectory(path.dirname(archivePath), { recursive: true }),
+  );
 
-  if (existsSync(archivePath)) {
+  if (await fileExists(archivePath)) {
     try {
       await verifyFileHash(archivePath, sha256);
       return archivePath;
     } catch {
-      await rm(archivePath, { force: true });
+      await runEffect(fileSystem.remove(archivePath, { force: true }));
     }
   }
 
@@ -841,7 +847,7 @@ const downloadExternalFhirPackage = async ({
     }
   }
 
-  await writeFile(archivePath, content);
+  await runEffect(fileSystem.writeFile(archivePath, content));
   return archivePath;
 };
 
@@ -854,17 +860,17 @@ export const ensureExternalFhirPackageInstalled = async ({
 }: ExternalFhirPackage & {
   cacheDir?: string;
 }) => {
-  const resolvedCacheDir = resolve(cacheDir);
+  const resolvedCacheDir = path.resolve(cacheDir);
   const installDir = getExternalFhirPackageInstallDir({
     cacheDir: resolvedCacheDir,
     packageId,
     version,
   });
-  const packageJsonPath = join(installDir, "package", "package.json");
+  const packageJsonPath = path.join(installDir, "package", "package.json");
 
   await ensureFhirPackageCacheMetadata(resolvedCacheDir);
 
-  if (!existsSync(packageJsonPath)) {
+  if (!(await fileExists(packageJsonPath))) {
     const archivePath = await downloadExternalFhirPackage({
       cacheDir: resolvedCacheDir,
       packageId,
@@ -872,26 +878,43 @@ export const ensureExternalFhirPackageInstalled = async ({
       url,
       version,
     });
-    const extractDir = join(
+    const extractDir = path.join(
       resolvedCacheDir,
       "fhir-package-cache",
       "extract",
       `${sanitizePackageId(packageId)}-${version}`,
     );
-    await rm(extractDir, { force: true, recursive: true });
-    await mkdir(extractDir, { recursive: true });
-    await execFileAsync("tar", ["-xzf", archivePath, "-C", extractDir], {
-      cwd: tmpdir(),
+    await runEffect(
+      fileSystem.remove(extractDir, { force: true, recursive: true }),
+    );
+    await runEffect(fileSystem.makeDirectory(extractDir, { recursive: true }));
+    const tarResult = await runCommand({
+      args: ["-xzf", archivePath, "-C", extractDir],
+      command: "tar",
     });
-    await rm(installDir, { force: true, recursive: true });
-    await mkdir(dirname(installDir), { recursive: true });
-    await cp(join(extractDir, "package"), join(installDir, "package"), {
-      force: true,
-      recursive: true,
-    });
+    if (tarResult.exitCode !== 0) {
+      throw new Error(
+        `Failed to extract ${archivePath}: ${(tarResult.stderr || tarResult.stdout).trim()}`,
+      );
+    }
+    await runEffect(
+      fileSystem.remove(installDir, { force: true, recursive: true }),
+    );
+    await runEffect(
+      fileSystem.makeDirectory(path.dirname(installDir), { recursive: true }),
+    );
+    await runEffect(
+      fileSystem.copy(
+        path.join(extractDir, "package"),
+        path.join(installDir, "package"),
+        { overwrite: true },
+      ),
+    );
   }
 
-  const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
+  const packageJson = JSON.parse(
+    await runEffect(fileSystem.readFileString(packageJsonPath)),
+  ) as {
     dependencies?: Record<string, string>;
   };
 
@@ -913,7 +936,7 @@ export const ensureFhirValidatorDependencyCache = async ({
 }: {
   cacheDir?: string;
 }) => {
-  const resolvedCacheDir = resolve(cacheDir);
+  const resolvedCacheDir = path.resolve(cacheDir);
   const cached = fhirValidatorDependencyCache.get(resolvedCacheDir);
   if (cached) {
     return cached;
@@ -963,7 +986,7 @@ export const ensureFhirValidatorRuntimeHome = async ({
   cacheDir?: string;
   runtimeKey: string;
 }) => {
-  const resolvedCacheDir = resolve(cacheDir);
+  const resolvedCacheDir = path.resolve(cacheDir);
   const cacheKey = `${resolvedCacheDir}:${runtimeKey}`;
   const cached = fhirValidatorRuntimeHomeCache.get(cacheKey);
   if (cached) {
@@ -980,31 +1003,43 @@ export const ensureFhirValidatorRuntimeHome = async ({
       cacheDir: resolvedCacheDir,
       runtimeKey,
     });
-    const runtimePackageCacheRoot = join(runtimeHomeRoot, ".fhir", "packages");
-    const markerPath = join(runtimeHomeRoot, ".kbv-runtime-ready");
+    const runtimePackageCacheRoot = path.join(
+      runtimeHomeRoot,
+      ".fhir",
+      "packages",
+    );
+    const markerPath = path.join(runtimeHomeRoot, ".kbv-runtime-ready");
 
-    if (existsSync(markerPath)) {
+    if (await fileExists(markerPath)) {
       return runtimeHomeRoot;
     }
 
-    await rm(runtimeHomeRoot, { force: true, recursive: true });
-    await mkdir(join(runtimeHomeRoot, ".fhir"), { recursive: true });
-    await cp(sharedPackageCacheRoot, runtimePackageCacheRoot, {
-      force: true,
-      recursive: true,
-    });
-    await writeFile(
-      markerPath,
-      JSON.stringify(
-        {
-          createdAt: new Date().toISOString(),
-          runtimeKey,
-          sharedPackageCacheRoot,
-        },
-        null,
-        2,
+    await runEffect(
+      fileSystem.remove(runtimeHomeRoot, { force: true, recursive: true }),
+    );
+    await runEffect(
+      fileSystem.makeDirectory(path.join(runtimeHomeRoot, ".fhir"), {
+        recursive: true,
+      }),
+    );
+    await runEffect(
+      fileSystem.copy(sharedPackageCacheRoot, runtimePackageCacheRoot, {
+        overwrite: true,
+      }),
+    );
+    await runEffect(
+      fileSystem.writeFileString(
+        markerPath,
+        JSON.stringify(
+          {
+            createdAt: new Date().toISOString(),
+            runtimeKey,
+            sharedPackageCacheRoot,
+          },
+          null,
+          2,
+        ),
       ),
-      "utf8",
     );
 
     return runtimeHomeRoot;
@@ -1021,7 +1056,7 @@ export const prefetchKbvOracleAssets = async ({
   assetIds?: readonly (keyof typeof kbvOracleAssets)[];
   cacheDir?: string;
 }) => {
-  const resolvedCacheDir = resolve(cacheDir);
+  const resolvedCacheDir = path.resolve(cacheDir);
   const selectedAssetIds =
     assetIds ??
     (Object.keys(kbvOracleAssets) as (keyof typeof kbvOracleAssets)[]);
@@ -1049,11 +1084,12 @@ export const cloneAssetWorkspace = async ({
   sourceDir: string;
   targetDir: string;
 }) => {
-  await rm(targetDir, { force: true, recursive: true });
-  await mkdir(dirname(targetDir), { recursive: true });
-  await cp(sourceDir, targetDir, {
-    force: true,
-    recursive: true,
-  });
+  await runEffect(
+    fileSystem.remove(targetDir, { force: true, recursive: true }),
+  );
+  await runEffect(
+    fileSystem.makeDirectory(path.dirname(targetDir), { recursive: true }),
+  );
+  await runEffect(fileSystem.copy(sourceDir, targetDir, { overwrite: true }));
   return targetDir;
 };
