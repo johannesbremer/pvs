@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { ensureExtractedAsset, kbvOracleAssets } from "../tools/oracles/assets";
 import {
+  reconcileBatchValidationSummarySourcePaths,
   runExecutableFhirOracle,
   toBatchValidationSourcePathKey,
 } from "../tools/oracles/fhir/run";
@@ -25,6 +26,29 @@ describe("executable FHIR oracle", () => {
     expect(macStyle).not.toBe(linuxStyle);
     expect(toBatchValidationSourcePathKey(macStyle)).toBe(
       toBatchValidationSourcePathKey(linuxStyle),
+    );
+  });
+
+  it("reconciles batch validation summary paths against the original input order", () => {
+    const xmlPaths = ["/tmp/Beispiel_69_Kombipr\u00E4parat.xml"];
+
+    const summaries = reconcileBatchValidationSummarySourcePaths({
+      summaries: [
+        {
+          errorCount: 0,
+          noteCount: 5,
+          passed: true,
+          rawSection: "Success: 0 errors, 9 warnings, 5 notes",
+          sourcePath: "/tmp/Beispiel_69_Kombipr\uFFC3\uFFA4parat.xml",
+          summaryLine: "Success: 0 errors, 9 warnings, 5 notes",
+          warningCount: 9,
+        },
+      ],
+      xmlPaths,
+    });
+
+    expect(summaries[0]?.sourcePath).toBe(
+      toBatchValidationSourcePathKey(xmlPaths[0]),
     );
   });
 

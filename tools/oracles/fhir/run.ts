@@ -241,6 +241,35 @@ const parseBatchValidationSections = (stdout: string) => {
   return summaries;
 };
 
+const alignBatchValidationSummarySourcePaths = ({
+  summaries,
+  xmlPaths,
+}: {
+  summaries: readonly {
+    errorCount: number;
+    noteCount: number;
+    passed: boolean;
+    rawSection: string;
+    sourcePath: string;
+    summaryLine: string;
+    warningCount: number;
+  }[];
+  xmlPaths: readonly string[];
+}) => {
+  if (summaries.length !== xmlPaths.length) {
+    return summaries;
+  }
+
+  return summaries.map((summary, index) => ({
+    ...summary,
+    // The validator's section header path can be mojibake in CI, so we use the
+    // original batch input ordering as the stable identifier when counts align.
+    sourcePath: toBatchValidationSourcePathKey(
+      xmlPaths[index] ?? summary.sourcePath,
+    ),
+  }));
+};
+
 export interface ExecutableFhirBatchValidationResult {
   readonly passed: boolean;
   readonly stderr: string;
@@ -255,6 +284,10 @@ export interface ExecutableFhirBatchValidationResult {
     readonly warningCount: number;
   }[];
 }
+
+export const reconcileBatchValidationSummarySourcePaths = (
+  args: Parameters<typeof alignBatchValidationSummarySourcePaths>[0],
+) => alignBatchValidationSummarySourcePaths(args);
 
 export const runFhirOracle = ({
   family,
@@ -579,7 +612,10 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
         ),
       );
 
-      const summaries = parseBatchValidationSections(stdout);
+      const summaries = alignBatchValidationSummarySourcePaths({
+        summaries: parseBatchValidationSections(stdout),
+        xmlPaths,
+      });
       return {
         passed:
           summaries.length === xmlPaths.length &&
@@ -608,7 +644,10 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
         passed: false,
         stderr,
         stdout,
-        summaries: parseBatchValidationSections(stdout),
+        summaries: alignBatchValidationSummarySourcePaths({
+          summaries: parseBatchValidationSections(stdout),
+          xmlPaths,
+        }),
       } satisfies ExecutableFhirBatchValidationResult);
     }),
   );
