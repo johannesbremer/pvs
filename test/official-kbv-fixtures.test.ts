@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -7,10 +7,7 @@ import {
   ensureFhirValidatorDependencyCache,
   kbvOracleAssets,
 } from "../tools/oracles/assets";
-import {
-  runExecutableFhirOracle,
-  runExecutableFhirValidationBatch,
-} from "../tools/oracles/fhir/run";
+import { runExecutableFhirValidationBatch } from "../tools/oracles/fhir/run";
 
 const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
 
@@ -27,22 +24,34 @@ describe("official KBV fixture sweeps", () => {
       .sort();
 
     expect(xmlExamples.length).toBeGreaterThan(5);
+    const xmlPaths = xmlExamples.map((exampleName) =>
+      join(eauExamplesDir, exampleName),
+    );
+    const result = await runExecutableFhirValidationBatch({
+      cacheDir,
+      family: "eAU",
+      xmlPaths,
+    });
+    const summaries = new Map(
+      result.summaries.map((summary) => [summary.sourcePath, summary]),
+    );
 
     for (const exampleName of xmlExamples) {
-      const xml = await readFile(join(eauExamplesDir, exampleName), "utf8");
-      const result = await runExecutableFhirOracle({
-        cacheDir,
-        family: "eAU",
-        xml,
-      });
+      const xmlPath = join(eauExamplesDir, exampleName);
+      const summary = summaries.get(xmlPath);
 
       expect(
-        result.findings.filter((finding) => finding.severity === "error"),
-        `eAU example ${exampleName} should validate without errors`,
-      ).toHaveLength(0);
-      expect(result.passed, `eAU example ${exampleName} should pass`).toBe(
-        true,
-      );
+        summary,
+        `eAU example ${exampleName} should appear in the batch validator output.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+      ).toBeDefined();
+      expect(
+        summary?.errorCount,
+        `eAU example ${exampleName} should validate without errors.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+      ).toBe(0);
+      expect(
+        summary?.passed,
+        `eAU example ${exampleName} should pass.\nSECTION:\n${summary?.rawSection ?? "<missing>"}\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+      ).toBe(true);
     }
   }, 1_200_000);
 
