@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   downloadManagedAsset,
   getAssetCacheEntry,
+  getFhirRuntimeHomeRoot,
   getKbvOracleCacheManifestPath,
   kbvOracleAssets,
 } from "../tools/oracles/assets";
@@ -138,5 +139,16 @@ describe("oracle asset downloader", () => {
       cacheDir: tempDir,
     });
     expect(cacheEntry?.downloadPath).toBe(downloadedPath);
+  });
+
+  it("builds a sanitized runtime-home path for isolated FHIR validator workers", () => {
+    const runtimeHomeRoot = getFhirRuntimeHomeRoot({
+      cacheDir: "/tmp/kbv-cache",
+      runtimeKey: "exec/worker:1#eRezept",
+    });
+
+    expect(runtimeHomeRoot).toBe(
+      "/tmp/kbv-cache/fhir-home-runtimes/exec_worker_1_eRezept",
+    );
   });
 });

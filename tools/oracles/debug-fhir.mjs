@@ -19,11 +19,53 @@ if (!family || !xmlPathArg || !["eAU", "eRezept"].includes(family)) {
 const cwd = process.cwd();
 const cacheDir = join(cwd, ".cache", "kbv-oracles");
 const xmlPath = resolve(cwd, xmlPathArg);
-const userHomeOverride = join(cacheDir, "fhir-home");
 const effectiveFamily = family;
+const sharedPackageCacheRoot = join(cacheDir, "fhir-home", ".fhir", "packages");
 
 const log = (message) => {
   console.error(`[kbv-oracle] ${message}`);
+};
+
+const ensureRuntimeHome = async () => {
+  const runtimeHomeRoot = join(
+    cacheDir,
+    "fhir-home-runtimes",
+    `debug-${process.ppid}-${effectiveFamily}`,
+  );
+  const runtimePackageCacheRoot = join(runtimeHomeRoot, ".fhir", "packages");
+  const markerPath = join(runtimeHomeRoot, ".kbv-runtime-ready");
+
+  if (existsSync(markerPath)) {
+    return runtimeHomeRoot;
+  }
+
+  if (!existsSync(sharedPackageCacheRoot)) {
+    throw new Error(
+      `Shared FHIR package cache is missing at ${sharedPackageCacheRoot}.`,
+    );
+  }
+
+  await fs.rm(runtimeHomeRoot, { recursive: true, force: true });
+  await fs.mkdir(join(runtimeHomeRoot, ".fhir"), { recursive: true });
+  await fs.cp(sharedPackageCacheRoot, runtimePackageCacheRoot, {
+    force: true,
+    recursive: true,
+  });
+  await fs.writeFile(
+    markerPath,
+    JSON.stringify(
+      {
+        createdAt: new Date().toISOString(),
+        runtimePackageCacheRoot,
+        sharedPackageCacheRoot,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  return runtimeHomeRoot;
 };
 
 const extractOfflineLanguageCodes = (xml) => {
@@ -216,6 +258,7 @@ const tmpStart = Date.now();
 const tempDir = await fs.mkdtemp(join(tmpdir(), "kbv-fhir-debug-"));
 const tempXmlPath = join(tempDir, `${effectiveFamily}.xml`);
 const supportDir = join(tempDir, "support");
+const userHomeOverride = await ensureRuntimeHome();
 await fs.mkdir(userHomeOverride, { recursive: true });
 await fs.writeFile(tempXmlPath, xml, "utf8");
 if (offlineLanguageCodes.length > 0) {
@@ -245,7 +288,6 @@ try {
   const mountedIgPaths =
     offlineLanguageCodes.length > 0 ? [supportDir, ...igPaths] : igPaths;
   const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
-
   log(`starting validator cli`);
   const cliStart = Date.now();
   const { stdout, stderr } = await execFileAsync(

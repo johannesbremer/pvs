@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
-import { ensureExtractedAsset, kbvOracleAssets } from "../tools/oracles/assets";
+import {
+  ensureExtractedAsset,
+  ensureFhirValidatorDependencyCache,
+  kbvOracleAssets,
+} from "../tools/oracles/assets";
 import { runExecutableFhirOracle } from "../tools/oracles/fhir/run";
 
 const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
@@ -125,6 +129,7 @@ describe("official KBV fixture sweeps", () => {
       cacheDir,
     );
     await ensureExtractedAsset(kbvOracleAssets.kbvFhirErp_1_4_1, cacheDir);
+    await ensureFhirValidatorDependencyCache({ cacheDir });
 
     const entries = await readdir(erpExamplesDir);
     const xmlExamples = entries

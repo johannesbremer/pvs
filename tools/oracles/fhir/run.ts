@@ -9,6 +9,7 @@ import type { OracleExecutionResult } from "../types";
 import {
   ensureFhirValidatorAssets,
   ensureFhirValidatorDependencyCache,
+  ensureFhirValidatorRuntimeHome,
 } from "../assets";
 import { resolveJavaCommand } from "../system";
 
@@ -221,10 +222,18 @@ export const runExecutableFhirOracle = async ({
   }
 
   const effectiveCacheDir = cacheDir ?? process.env.KBV_UPDATE_CACHE_DIR;
-  const userHomeOverride = join(
-    effectiveCacheDir ?? join(process.cwd(), ".cache", "kbv-oracles"),
-    "fhir-home",
-  );
+  const resolvedCacheDir =
+    effectiveCacheDir ?? join(process.cwd(), ".cache", "kbv-oracles");
+  const runtimeKey = [
+    "exec",
+    process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? "main",
+    String(process.pid),
+    family,
+  ].join("-");
+  const userHomeOverride = await ensureFhirValidatorRuntimeHome({
+    cacheDir: resolvedCacheDir,
+    runtimeKey,
+  });
 
   const tempDir = await mkdtemp(join(tmpdir(), "kbv-fhir-oracle-"));
   const xmlPath = join(tempDir, `${family}.xml`);

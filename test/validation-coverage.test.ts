@@ -58,7 +58,7 @@ describe("validation coverage inventory", () => {
     expect(bfb?.testStatus).toBe("covered");
     expect(tss?.oracleStatus).toBe("fixture-backed-local");
     expect(tss?.testStatus).toBe("covered");
-    expect(evdga?.oracleStatus).toBe("fixture-backed-local");
+    expect(evdga?.oracleStatus).toBe("executable-fhir");
     expect(evdga?.runtimeWorkflow).toBe(true);
     expect(evdga?.testStatus).toBe("covered");
     expect(vos?.runtimeWorkflow).toBe(true);

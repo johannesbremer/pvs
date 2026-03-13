@@ -34,6 +34,7 @@ const fhirValidatorDependencyCache = new Map<
     }[]
   >
 >();
+const fhirValidatorRuntimeHomeCache = new Map<string, Promise<string>>();
 
 export interface ExternalFhirPackage {
   readonly packageId: string;
@@ -249,6 +250,19 @@ export const getKbvOracleCacheDir = () =>
 
 export const getFhirPackageCacheRoot = (cacheDir = getKbvOracleCacheDir()) =>
   join(resolve(cacheDir), "fhir-home", ".fhir", "packages");
+
+export const getFhirRuntimeHomeRoot = ({
+  cacheDir = getKbvOracleCacheDir(),
+  runtimeKey,
+}: {
+  cacheDir?: string;
+  runtimeKey: string;
+}) =>
+  join(
+    resolve(cacheDir),
+    "fhir-home-runtimes",
+    runtimeKey.replaceAll(/[^\w.-]/g, "_"),
+  );
 
 const getFhirDependencyMarkerPath = (cacheDir = getKbvOracleCacheDir()) =>
   join(getFhirPackageCacheRoot(cacheDir), ".kbv-prerequisites.json");
@@ -939,6 +953,64 @@ export const ensureFhirValidatorDependencyCache = async ({
   })();
 
   fhirValidatorDependencyCache.set(resolvedCacheDir, pending);
+  return pending;
+};
+
+export const ensureFhirValidatorRuntimeHome = async ({
+  cacheDir = getKbvOracleCacheDir(),
+  runtimeKey,
+}: {
+  cacheDir?: string;
+  runtimeKey: string;
+}) => {
+  const resolvedCacheDir = resolve(cacheDir);
+  const cacheKey = `${resolvedCacheDir}:${runtimeKey}`;
+  const cached = fhirValidatorRuntimeHomeCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = (async () => {
+    await ensureFhirValidatorDependencyCache({
+      cacheDir: resolvedCacheDir,
+    });
+
+    const sharedPackageCacheRoot = getFhirPackageCacheRoot(resolvedCacheDir);
+    const runtimeHomeRoot = getFhirRuntimeHomeRoot({
+      cacheDir: resolvedCacheDir,
+      runtimeKey,
+    });
+    const runtimePackageCacheRoot = join(runtimeHomeRoot, ".fhir", "packages");
+    const markerPath = join(runtimeHomeRoot, ".kbv-runtime-ready");
+
+    if (existsSync(markerPath)) {
+      return runtimeHomeRoot;
+    }
+
+    await rm(runtimeHomeRoot, { force: true, recursive: true });
+    await mkdir(join(runtimeHomeRoot, ".fhir"), { recursive: true });
+    await cp(sharedPackageCacheRoot, runtimePackageCacheRoot, {
+      force: true,
+      recursive: true,
+    });
+    await writeFile(
+      markerPath,
+      JSON.stringify(
+        {
+          createdAt: new Date().toISOString(),
+          runtimeKey,
+          sharedPackageCacheRoot,
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    return runtimeHomeRoot;
+  })();
+
+  fhirValidatorRuntimeHomeCache.set(cacheKey, pending);
   return pending;
 };
 
