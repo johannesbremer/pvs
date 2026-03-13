@@ -29,6 +29,9 @@ importers:
       effect:
         specifier: latest
         version: 3.19.19
+      pvs:
+        specifier: 'link:'
+        version: 'link:'
     devDependencies:
       '@confect/test':
         specifier: latest
