@@ -1,7 +1,5 @@
-import { execFile } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,83 +7,12 @@ import {
   ensureFhirValidatorDependencyCache,
   kbvOracleAssets,
 } from "../tools/oracles/assets";
-import { runExecutableFhirOracle } from "../tools/oracles/fhir/run";
+import {
+  runExecutableFhirOracle,
+  runExecutableFhirValidationBatch,
+} from "../tools/oracles/fhir/run";
 
 const cacheDir = join(process.cwd(), ".cache", "kbv-oracles");
-const execFileAsync = promisify(execFile);
-// eslint-disable-next-line no-control-regex
-const ansiColorCodePattern = /\x1B\[[0-9;]*m/gu;
-
-const coerceExecOutput = (value: unknown) => {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (Buffer.isBuffer(value)) {
-    return value.toString("utf8");
-  }
-  return "";
-};
-
-const runStandaloneFhirValidation = async ({
-  family,
-  xmlPath,
-}: {
-  family: "eAU" | "eRezept";
-  xmlPath: string;
-}) => {
-  try {
-    const { stderr, stdout } = await execFileAsync(
-      process.execPath,
-      ["tools/oracles/debug-fhir.mjs", family, xmlPath],
-      {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          NODE_OPTIONS: "",
-          VITEST: "",
-          VITEST_POOL_ID: "",
-          VITEST_WORKER_ID: "",
-        },
-        maxBuffer: 64 * 1024 * 1024,
-        timeout: 300_000,
-      },
-    );
-
-    return {
-      exitCode: 0,
-      passed: true,
-      stderr,
-      stdout,
-    };
-  } catch (error) {
-    return {
-      exitCode:
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        typeof error.code === "number"
-          ? error.code
-          : 1,
-      passed: false,
-      stderr:
-        typeof error === "object" && error !== null && "stderr" in error
-          ? coerceExecOutput(error.stderr)
-          : error instanceof Error
-            ? error.message
-            : String(error),
-      stdout:
-        typeof error === "object" && error !== null && "stdout" in error
-          ? coerceExecOutput(error.stdout)
-          : "",
-    };
-  }
-};
-
-const parseValidatorErrorLines = (stdout: string) =>
-  stdout
-    .split("\n")
-    .map((line) => line.replace(ansiColorCodePattern, "").trim())
-    .filter((line) => line.startsWith("Error @"));
 
 describe("official KBV fixture sweeps", () => {
   it("validates all official non-error eAU XML examples with the executable oracle", async () => {
@@ -138,21 +65,33 @@ describe("official KBV fixture sweeps", () => {
 
     expect(xmlExamples.length).toBeGreaterThan(50);
 
+    const xmlPaths = xmlExamples.map((exampleName) =>
+      join(erpExamplesDir, exampleName),
+    );
+    const result = await runExecutableFhirValidationBatch({
+      cacheDir,
+      family: "eRezept",
+      xmlPaths,
+    });
+    const summaries = new Map(
+      result.summaries.map((summary) => [summary.sourcePath, summary]),
+    );
+
     for (const exampleName of xmlExamples) {
       const xmlPath = join(erpExamplesDir, exampleName);
-      const result = await runStandaloneFhirValidation({
-        family: "eRezept",
-        xmlPath,
-      });
-      const validatorErrors = parseValidatorErrorLines(result.stdout);
+      const summary = summaries.get(xmlPath);
 
       expect(
-        validatorErrors,
-        `eRezept example ${exampleName} should validate without error findings.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
-      ).toHaveLength(0);
+        summary,
+        `eRezept example ${exampleName} should appear in the batch validator output.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+      ).toBeDefined();
       expect(
-        result.stdout.includes("Success: 0 errors"),
-        `eRezept example ${exampleName} should complete with Success: 0 errors.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+        summary?.errorCount,
+        `eRezept example ${exampleName} should validate without error findings.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+      ).toBe(0);
+      expect(
+        summary?.passed,
+        `eRezept example ${exampleName} should complete with Success: 0 errors.\nSECTION:\n${summary?.rawSection ?? "<missing>"}\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
       ).toBe(true);
     }
   }, 2_400_000);
