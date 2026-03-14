@@ -88,12 +88,16 @@ export default defineConfig(
         "error",
         {
           message:
-            "Use Effect composition instead of async/" + "a" + "wait in this codebase.",
+            "Use Effect composition instead of async/" +
+            "a" +
+            "wait in this codebase.",
           selector: forbiddenAsyncSyntax,
         },
         {
           message:
-            "Use Effect composition instead of for-" + "a" + "wait-of in this codebase.",
+            "Use Effect composition instead of for-" +
+            "a" +
+            "wait-of in this codebase.",
           selector: forbiddenAsyncLoop,
         },
       ],
