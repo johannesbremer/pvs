@@ -269,6 +269,63 @@ const getFhirRuntimeKey = (
     family,
   ].join("-");
 
+const formatFallbackBatchRawSection = (
+  findings: readonly OracleExecutionResult["findings"][number][],
+) =>
+  findings.length === 0
+    ? "Success: 0 errors, 0 warnings, 0 notes"
+    : findings
+        .map(
+          (finding) =>
+            `${finding.severity.toUpperCase()}: ${finding.code}: ${finding.message}`,
+        )
+        .join("\n");
+
+const runExecutableFhirValidationFallbackEffect = Effect.fn(
+  "oracles.runExecutableFhirValidationFallback",
+)(function* ({
+  cacheDir,
+  family,
+  xmlPaths,
+}: {
+  cacheDir?: string;
+  family: "eAU" | "eRezept" | "eVDGA";
+  xmlPaths: readonly string[];
+}) {
+  return yield* Effect.forEach(
+    xmlPaths,
+    (xmlPath) =>
+      Effect.gen(function* () {
+        const xml = yield* fileSystem.readFileString(xmlPath);
+        const result = yield* runExecutableFhirOracleEffect({
+          cacheDir,
+          family,
+          xml,
+        });
+        const errorCount = result.findings.filter(
+          (finding) => finding.severity === "error",
+        ).length;
+        const warningCount = result.findings.filter(
+          (finding) => finding.severity === "warning",
+        ).length;
+        const noteCount = result.findings.filter(
+          (finding) => finding.severity === "info",
+        ).length;
+
+        return {
+          errorCount,
+          noteCount,
+          passed: result.passed,
+          rawSection: formatFallbackBatchRawSection(result.findings),
+          sourcePath: toBatchValidationSourcePathKey(xmlPath),
+          summaryLine: result.summary,
+          warningCount,
+        };
+      }),
+    { concurrency: 1 },
+  );
+});
+
 export interface ExecutableFhirBatchValidationResult {
   readonly passed: boolean;
   readonly stderr: string;
@@ -613,16 +670,35 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
           : error instanceof Error
             ? error.message
             : String(error);
+      const parsedSummaries = alignBatchValidationSummarySourcePaths({
+        summaries: parseBatchValidationSections(stdout),
+        xmlPaths,
+      });
 
-      return Effect.succeed({
-        passed: false,
-        stderr,
-        stdout,
-        summaries: alignBatchValidationSummarySourcePaths({
-          summaries: parseBatchValidationSections(stdout),
-          xmlPaths,
-        }),
-      } satisfies ExecutableFhirBatchValidationResult);
+      if (parsedSummaries.length > 0) {
+        return Effect.succeed<ExecutableFhirBatchValidationResult>({
+          passed: false,
+          stderr,
+          stdout,
+          summaries: parsedSummaries,
+        });
+      }
+
+      return runExecutableFhirValidationFallbackEffect({
+        cacheDir: effectiveCacheDir,
+        family,
+        xmlPaths,
+      }).pipe(
+        Effect.orDie,
+        Effect.map(
+          (fallbackSummaries): ExecutableFhirBatchValidationResult => ({
+            passed: fallbackSummaries.every((summary) => summary.passed),
+            stderr,
+            stdout,
+            summaries: fallbackSummaries,
+          }),
+        ),
+      );
     }),
   );
 });

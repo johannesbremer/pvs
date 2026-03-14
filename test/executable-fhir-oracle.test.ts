@@ -142,6 +142,6 @@ describe("executable FHIR oracle", () => {
           result.findings.filter((finding) => finding.severity === "error"),
         ).toHaveLength(0);
       }),
-    120_000,
+    420_000,
   );
 });
