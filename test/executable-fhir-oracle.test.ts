@@ -193,7 +193,8 @@ describe("executable FHIR oracle", () => {
                     expect(localResult.passed).toBe(false);
                     expect(
                       localResult.findings.some(
-                        (finding) => finding.code === mutation.expectedLocalCode,
+                        (finding) =>
+                          finding.code === mutation.expectedLocalCode,
                       ),
                     ).toBe(true);
                     expect(
@@ -366,7 +367,9 @@ const loadErpExampleXmlEffect = (cacheDir: string) =>
       kbvOracleAssets.kbvErpExamples_1_4,
       cacheDir,
     );
-    return yield* fileSystem.readFileString(path.join(examplesDir, "Beispiel_19.xml"));
+    return yield* fileSystem.readFileString(
+      path.join(examplesDir, "Beispiel_19.xml"),
+    );
   });
 
 const removeRequiredTag = (
