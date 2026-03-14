@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
+import fc from "fast-check";
 
 import { ensureExtractedAsset, kbvOracleAssets } from "../tools/oracles/assets";
 import {
   reconcileBatchValidationSummarySourcePaths,
   runExecutableFhirOracleEffect,
+  runFhirOracle,
   toBatchValidationSourcePathKey,
 } from "../tools/oracles/fhir/run";
 import { fileSystem, path, runEffect } from "../tools/oracles/platform";
@@ -96,10 +98,89 @@ describe("executable FHIR oracle", () => {
           xml: exampleXml,
         });
 
-        expect(result.passed).toBe(true);
+        expect(
+          result.passed,
+          `Executable eRezept validation should pass.\n${JSON.stringify(result, null, 2)}`,
+        ).toBe(true);
         expect(
           result.findings.filter((finding) => finding.severity === "error"),
         ).toHaveLength(0);
+      }),
+    420_000,
+  );
+
+  it.effect(
+    "stays compatible with the executable eRezept oracle when required resources are removed",
+    () =>
+      Effect.gen(function* () {
+        const { cacheDir, usesSharedCache } = yield* resolveOracleTestCache({
+          assetIds: [
+            "fhirValidatorService_2_2_0",
+            "kbvErpExamples_1_4",
+            "kbvFhirErp_1_4_1",
+          ],
+          needsFhirDependencies: true,
+          tempPrefix: "kbv-fhir-erp-prop-test-",
+        });
+        if (!usesSharedCache) {
+          tempDirs.push(cacheDir);
+        }
+
+        const examplesDir = yield* ensureExtractedAsset(
+          kbvOracleAssets.kbvErpExamples_1_4,
+          cacheDir,
+        );
+        const exampleXml = yield* fileSystem.readFileString(
+          path.join(examplesDir, "Beispiel_19.xml"),
+        );
+
+        yield* Effect.tryPromise(() =>
+          fc.assert(
+            fc.asyncProperty(
+              fc.constantFrom<RequiredErpTag>("Bundle", "Composition"),
+              fc.constantFrom("Missing", "Broken", "Removed"),
+              (tagName, replacementPrefix) => {
+                // Arrange
+                const mutatedXml = removeRequiredTag(
+                  exampleXml,
+                  tagName,
+                  replacementPrefix,
+                );
+
+                return Effect.runPromise(
+                  Effect.gen(function* () {
+                    // Act
+                    const localResult = runFhirOracle({
+                      family: "eRezept",
+                      xml: mutatedXml,
+                    });
+                    const executableResult =
+                      yield* runExecutableFhirOracleEffect({
+                        cacheDir,
+                        family: "eRezept",
+                        xml: mutatedXml,
+                      });
+
+                    // Assert
+                    expect(localResult.passed).toBe(false);
+                    expect(
+                      localResult.findings.some(
+                        (finding) =>
+                          finding.code ===
+                          `FHIR_TAG_${tagName.toUpperCase()}_MISSING`,
+                      ),
+                    ).toBe(true);
+                    expect(
+                      executableResult.passed,
+                      `Executable oracle unexpectedly accepted an eRezept document missing ${tagName}.\n${JSON.stringify(executableResult, null, 2)}`,
+                    ).toBe(false);
+                  }),
+                );
+              },
+            ),
+            { numRuns: 12 },
+          ),
+        );
       }),
     420_000,
   );
@@ -143,3 +224,21 @@ describe("executable FHIR oracle", () => {
     420_000,
   );
 });
+
+// Helpers
+
+type RequiredErpTag = "Bundle" | "Composition";
+
+const removeRequiredTag = (
+  xml: string,
+  tagName: RequiredErpTag,
+  replacementPrefix: string,
+) => {
+  const tagPattern = new RegExp(`<${tagName}(?=[\\s>])`, "g");
+
+  if (!tagPattern.test(xml)) {
+    throw new Error(`expected official eRezept XML to contain <${tagName}`);
+  }
+
+  return xml.replace(tagPattern, `<${replacementPrefix}${tagName}`);
+};

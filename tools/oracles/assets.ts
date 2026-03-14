@@ -25,7 +25,7 @@ const fhirValidatorDependencyCache = new Map<
 const fhirValidatorRuntimeHomeCache = new Map<string, Promise<string>>();
 const fhirRuntimeHomePruneCache = new Map<string, Promise<void>>();
 const legacyFhirRuntimeHomePattern =
-  /^(?:exec|exec-batch)-[^-]+-\d+-(?:eAU|eRezept|eVDGA)$/;
+  /^exec-(?!batch-)[^-]+-\d+-(?:eAU|eRezept|eVDGA)$|^exec-batch-[^-]+-\d+-(?:eAU|eRezept|eVDGA)$/;
 
 const fileExists = (filePath: string) => fileSystem.exists(filePath);
 
