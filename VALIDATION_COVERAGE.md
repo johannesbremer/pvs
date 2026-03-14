@@ -1,6 +1,6 @@
 # Validation Coverage
 
-Status as of 2026-03-11.
+Status as of 2026-03-14.
 
 This file is intentionally blunt. "Implemented" means there is code. "Validated" means we actually execute an oracle or fixture sweep that proves something beyond type safety.
 
@@ -17,7 +17,7 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 | Heilmittel canonical orders            | Yes             | Yes              | Official fixture-backed | Yes         | Local oracle checks now run official KBV Heilmittel Prüfpaket-derived fixtures for blanko handling, approvals, and quantity limits.                                                                                                                                                                                                                       |
 | BFB / form rendering                   | Schema only     | Partial          | Fixture-backed local    | Yes         | Local BFB oracle fixtures now validate deterministic golden template snapshots for field layout, required values, and barcode payload or placement semantics, anchored to the published KBV Blankoformulare assets on `update.kbv.de`. No full certified PDF renderer exists yet.                                                                         |
 | Documents / revisions / artifacts      | Yes             | Yes              | Indirect                | Yes         | Immutability and issuance flows are tested through medication/eAU/heilmittel flows.                                                                                                                                                                                                                                                                       |
-| Ti / KIM / mailboxes                   | Yes             | Minimal          | None                    | No          | Schema is present; production workflows are largely unimplemented.                                                                                                                                                                                                                                                                                        |
+| Ti / KIM / mailboxes                   | Yes             | Minimal          | None                    | Yes         | Schema is present and repo tests now cover mailbox registration plus eEB receive/list/view/adoption flows, but broader production transport workflows remain largely unimplemented.                                                                                                                                                                       |
 | eVDGA                                  | Yes             | Yes              | Executable FHIR         | Yes         | DiGA catalog import, canonical order finalization, immutable document issuance, and DeviceRequest-based eVDGA bundle rendering are covered by workflow tests. The shared FHIR oracle now validates the mirrored official eVDGA example archive against the official validator package, while emitted bundles also pass local schema-backed oracle checks. |
 | VoS                                    | Yes             | Yes              | None                    | Yes         | Outbound VoS Aufruf-Bundle publication, kID-bounded read/search projection, immutable artifact issuance, and inbound Speicher-Bundle import into medication orders and medication plans are covered by workflow tests.                                                                                                                                    |
 | TSS                                    | Yes             | Partial          | Fixture-backed local    | Yes         | Public workflows now cover simulated and official-searchset TSS import, listing/filtering/selection, booking, referral consumption, and automatic billing-case plus encounter mapping. Pinned KBV response XML, VSD, and test-patient ZIP assets from `update.kbv.de` are exercised in the TSS tests.                                                     |
@@ -32,6 +32,7 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 - Core downloaded KBV assets used in the executable suite, including the registered BFB source assets, are hash-pinned and are re-fetched automatically if cached bytes do not match the pinned digest.
 - Official executable-backed FHIR validation runs from a cold cache.
 - A good chunk of official KBV XML examples is validated end to end.
+- One property-based compatibility test now checks that selected structural eRezept mutations are rejected by both the local FHIR oracle and the executable validator.
 
 ## What Green Tests Do Not Mean
 
@@ -40,6 +41,7 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 - Exhaustive quarter/version compatibility.
 - Full fidelity of all emitters against every official example set.
 - Production-hard handling of all validator warnings, terminology servers, or profile-package combinations.
+- Perfect parity between the local heuristic FHIR oracle and the executable validator; some checks still intentionally differ.
 
 ## Current Executable Fixture Coverage
 
@@ -51,6 +53,7 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
   - the full archive of 62 XML examples is executed through the real `validator_cli`
   - the archive now validates without error findings in the automated suite
   - the previous offline `GeneratedDosageInstructionsMeta.language` / `de-DE` limitation is covered by an injected offline `ValueSet` plus `CodeSystem` support payload
+  - property-based compatibility coverage now mutates an official example and asserts that missing `Bundle` or `Composition` is rejected by both the local oracle and the executable validator
 - `eVDGA`
   - official mirrored `eVDGA_Beispieldaten_V1.2.zip.extracted`
   - the positive example archive is executed through the real `validator_cli`
@@ -113,7 +116,8 @@ This file is intentionally blunt. "Implemented" means there is code. "Validated"
 1. Add executable package authenticity or signature validation for SDICD/SDKH/SDKRW coding master-data imports.
 2. Move BFB from golden template parity to actual renderer or artifact comparison against certified output.
 3. Move TSS from local fixture-backed selection semantics to a real transport adapter and Prüfpaket-backed exchange flow.
-4. Replace the mirror-backed eVDGA executable sweep with pinned updater assets in the checked-in oracle inventory.
+4. Tighten local FHIR oracle parity with the executable validator; current heuristics do not fully match executable behavior for every eAU/eRezept structural expectation, so compatibility properties are currently scoped to the overlapping subset.
+5. Replace the mirror-backed eVDGA executable sweep with pinned updater assets in the checked-in oracle inventory.
 
 ## Machine-Readable Inventory
 

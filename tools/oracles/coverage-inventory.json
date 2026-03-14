@@ -1,5 +1,5 @@
 {
-  "asOf": "2026-03-11",
+  "asOf": "2026-03-14",
   "inventoryVersion": 1,
   "families": [
     {
@@ -36,7 +36,7 @@
       "runtimeWorkflow": true,
       "oracleStatus": "executable-fhir",
       "testStatus": "covered",
-      "currentNote": "The full official Q3_2026 ERP XML archive runs through the real validator and now completes without error findings in the automated suite."
+      "currentNote": "The full official Q3_2026 ERP XML archive runs through the real validator and now completes without error findings in the automated suite. A property-based compatibility test also checks that selected structural mutations to an official example are rejected by both the local FHIR oracle and the executable validator, but local-vs-executable parity is not yet complete for every structural expectation."
     },
     {
       "family": "eAU",
@@ -89,8 +89,8 @@
       "canonicalModel": true,
       "runtimeWorkflow": "minimal",
       "oracleStatus": "none",
-      "testStatus": "not-covered",
-      "currentNote": "Schema is present; production workflows are largely unimplemented."
+      "testStatus": "covered",
+      "currentNote": "Schema is present and repo tests now cover mailbox registration plus eEB receive, list, view, and adoption-gating flows, but broader production transport workflows remain largely unimplemented."
     },
     {
       "family": "eVDGA",

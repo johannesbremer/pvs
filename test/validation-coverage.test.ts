@@ -33,7 +33,7 @@ describe("validation coverage inventory", () => {
       ) as CoverageInventory;
       const markdown = yield* fileSystem.readFileString(markdownPath);
 
-      expect(inventory.asOf).toBe("2026-03-11");
+      expect(inventory.asOf).toBe("2026-03-14");
       expect(inventory.inventoryVersion).toBe(1);
       expect(inventory.families.length).toBeGreaterThanOrEqual(12);
 
