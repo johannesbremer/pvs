@@ -286,15 +286,6 @@ const erpExecutableMutations: readonly ExecutableErpMutation[] = [
     mutate: (xml) => removeRequiredTag(xml, "Composition", "Missing"),
   },
   {
-    id: "invalid-bundle-profile",
-    mutate: (xml) =>
-      replaceRequiredSubstring(
-        xml,
-        "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Bundle|1.4",
-        "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Bundle_Broken|1.4",
-      ),
-  },
-  {
     id: "invalid-composition-profile",
     mutate: (xml) =>
       replaceRequiredSubstring(
@@ -331,6 +322,10 @@ const erpExecutableMutations: readonly ExecutableErpMutation[] = [
       ),
   },
 ];
+
+// The official executable validator currently accepts a mutated ERP Bundle
+// profile on Beispiel_19.xml, so we only keep mutations here that are
+// observed to produce executable validation errors.
 
 const erpRequiredResourceMutations: readonly RequiredErpMutation[] = [
   {
