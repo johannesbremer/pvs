@@ -16,6 +16,7 @@
     "oracle:official-corpus-inventory": "node tools/oracles/print-official-corpus-inventory.mjs",
     "oracle:prefetch": "node --experimental-strip-types tools/oracles/prefetch.mjs",
     "test": "vitest run",
+    "test:ci": "PVS_PROPERTY_RUNS=100 vitest run",
     "tsc": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },

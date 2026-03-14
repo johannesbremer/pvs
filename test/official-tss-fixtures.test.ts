@@ -5,6 +5,7 @@ import { parseOfficialTssSearchsetXml } from "../src/codecs/xml/tss";
 import { ensureTssAssets, findFileRecursive } from "../tools/oracles/assets";
 import { fileSystem } from "../tools/oracles/platform";
 import { runTssOracle } from "../tools/oracles/tss/run";
+import { ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 describe("official TSS fixture sweeps", () => {
   it.effect(
@@ -49,7 +50,7 @@ describe("official TSS fixture sweeps", () => {
           }
         }
       }),
-    420_000,
+    ORACLE_TEST_TIMEOUT,
   );
 
   it.effect(
@@ -80,6 +81,6 @@ describe("official TSS fixture sweeps", () => {
           patientContent.includes("UC_PersoenlicheVersichertendatenXML"),
         ).toBe(true);
       }),
-    420_000,
+    ORACLE_TEST_TIMEOUT,
   );
 });

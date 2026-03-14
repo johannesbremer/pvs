@@ -11,6 +11,7 @@ import {
   toBatchValidationSourcePathKey,
 } from "../tools/oracles/fhir/run";
 import { fileSystem, path } from "../tools/oracles/platform";
+import { ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 const cacheDir = path.join(process.cwd(), ".cache", "kbv-oracles");
 
@@ -65,7 +66,7 @@ describe("official KBV fixture sweeps", () => {
           ).toBe(true);
         }
       }),
-    1_200_000,
+    ORACLE_TEST_TIMEOUT,
   );
 
   it.effect(
@@ -125,6 +126,6 @@ describe("official KBV fixture sweeps", () => {
           ).toBe(true);
         }
       }),
-    2_400_000,
+    ORACLE_TEST_TIMEOUT,
   );
 });

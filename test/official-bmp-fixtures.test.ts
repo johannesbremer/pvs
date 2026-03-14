@@ -4,6 +4,7 @@ import { Effect } from "effect";
 import { ensureBmpAssets } from "../tools/oracles/assets";
 import { runExecutableBmpOracleEffect } from "../tools/oracles/bmp/run";
 import { fileSystem, path } from "../tools/oracles/platform";
+import { ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 const cacheDir = path.join(process.cwd(), ".cache", "kbv-oracles");
 
@@ -35,6 +36,6 @@ describe("official BMP fixture sweeps", () => {
           ).toBe(true);
         }
       }),
-    420_000,
+    ORACLE_TEST_TIMEOUT,
   );
 });

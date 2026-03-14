@@ -11,6 +11,7 @@ import {
 } from "../tools/oracles/fhir/run";
 import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 import { resolveOracleTestCache } from "./oracle-test-cache";
+import { ORACLE_PROPERTY_NUM_RUNS, ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 const tempDirs: string[] = [];
 
@@ -106,7 +107,7 @@ describe("executable FHIR oracle", () => {
           result.findings.filter((finding) => finding.severity === "error"),
         ).toHaveLength(0);
       }),
-    420_000,
+    ORACLE_TEST_TIMEOUT,
   );
 
   it.effect(
@@ -178,11 +179,11 @@ describe("executable FHIR oracle", () => {
                 );
               },
             ),
-            { numRuns: 12 },
+            { numRuns: ORACLE_PROPERTY_NUM_RUNS },
           ),
         );
       }),
-    420_000,
+    ORACLE_TEST_TIMEOUT,
   );
 
   it.effect(
@@ -221,7 +222,7 @@ describe("executable FHIR oracle", () => {
           result.findings.filter((finding) => finding.severity === "error"),
         ).toHaveLength(0);
       }),
-    420_000,
+    ORACLE_TEST_TIMEOUT,
   );
 });
 

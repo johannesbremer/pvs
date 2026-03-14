@@ -5,6 +5,7 @@ import { ensureBmpAssets, findFileRecursive } from "../tools/oracles/assets";
 import { runExecutableBmpOracleEffect } from "../tools/oracles/bmp/run";
 import { fileSystem } from "../tools/oracles/platform";
 import { resolveOracleTestCache } from "./oracle-test-cache";
+import { ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 describe("executable BMP oracle", () => {
   it.effect(
@@ -47,6 +48,6 @@ describe("executable BMP oracle", () => {
           }
         }
       }),
-    420_000,
+    ORACLE_TEST_TIMEOUT,
   );
 });

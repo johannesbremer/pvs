@@ -8,6 +8,7 @@ import {
 } from "../tools/oracles/fhir/run";
 import { fileSystem, path } from "../tools/oracles/platform";
 import { OracleExecutionResultFields } from "../tools/oracles/types";
+import { ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 const cacheDir = path.join(process.cwd(), ".cache", "kbv-oracles");
 const evdgaExamplesDir = path.join(
@@ -74,7 +75,7 @@ describe("official eVDGA fixture sweeps", () => {
           ).toBe(true);
         }
       }),
-    1_200_000,
+    ORACLE_TEST_TIMEOUT,
   );
 
   it.effect(
@@ -109,6 +110,6 @@ describe("official eVDGA fixture sweeps", () => {
           result.findings.filter((finding) => finding.severity === "error"),
         ).not.toHaveLength(0);
       }),
-    300_000,
+    ORACLE_TEST_TIMEOUT,
   );
 });

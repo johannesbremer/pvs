@@ -5,6 +5,7 @@ import { ensureKvdtAssets } from "../tools/oracles/assets";
 import { runExecutableKvdtOracleEffect } from "../tools/oracles/kvdt/run";
 import { fileSystem, path } from "../tools/oracles/platform";
 import { resolveOracleTestCache } from "./oracle-test-cache";
+import { ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 describe("executable KVDT oracle", () => {
   it.effect(
@@ -68,6 +69,6 @@ describe("executable KVDT oracle", () => {
           }
         }
       }),
-    420_000,
+    ORACLE_TEST_TIMEOUT,
   );
 });
