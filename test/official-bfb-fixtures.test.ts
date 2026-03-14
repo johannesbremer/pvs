@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
 import { runBfbOracle } from "../tools/oracles/bfb/run";
-import { fileSystem, path, runEffect } from "../tools/oracles/platform";
+import { fileSystem, path } from "../tools/oracles/platform";
 
 interface BfbFixture {
   readonly caseId: string;
@@ -12,7 +12,7 @@ interface BfbFixture {
 
 describe("official BFB fixture sweeps", () => {
   it.effect("validates local BFB golden render-context fixtures", () =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       const fixturePath = path.join(
         process.cwd(),
         "test",
@@ -21,7 +21,7 @@ describe("official BFB fixture sweeps", () => {
         "render-context-fixtures.json",
       );
       const fixtures = JSON.parse(
-        await runEffect(fileSystem.readFileString(fixturePath)),
+        yield* fileSystem.readFileString(fixturePath),
       ) as readonly BfbFixture[];
 
       expect(fixtures.length).toBeGreaterThanOrEqual(4);

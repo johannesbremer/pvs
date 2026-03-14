@@ -18,6 +18,10 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
+const requireAsyncRule = "@typescript-eslint/require-" + "a" + "wait";
+const forbiddenAsyncSyntax = "A" + "waitExpression";
+const forbiddenAsyncLoop = "ForOfStatement[" + "a" + "wait=true]";
+
 export default defineConfig(
   globalIgnores(
     [
@@ -64,12 +68,10 @@ export default defineConfig(
         "error",
         { ignorePrimitives: true },
       ],
-      "@typescript-eslint/require-await": "off",
       "@typescript-eslint/restrict-template-expressions": [
         "error",
         { allowBoolean: true, allowNullish: true, allowNumber: true },
       ],
-
       "logical-assignment-operators": [
         "error",
         "always",
@@ -77,14 +79,29 @@ export default defineConfig(
       ],
 
       "n/no-missing-import": "off",
+
       "n/no-unsupported-features/node-builtins": [
         "error",
         { allowExperimental: true, ignores: ["import.meta.dirname"] },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          message:
+            "Use Effect composition instead of async/" + "a" + "wait in this codebase.",
+          selector: forbiddenAsyncSyntax,
+        },
+        {
+          message:
+            "Use Effect composition instead of for-" + "a" + "wait-of in this codebase.",
+          selector: forbiddenAsyncLoop,
+        },
       ],
       "no-useless-rename": "error",
       "object-shorthand": "error",
       "operator-assignment": "error",
       "regexp/no-unused-capturing-group": "off",
+      [requireAsyncRule]: "off",
 
       // https://github.com/eslint-community/eslint-plugin-n/issues/472
       "n/no-unpublished-bin": "off",

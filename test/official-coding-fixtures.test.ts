@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
 import { runCodingOracle } from "../tools/oracles/coding/run";
-import { fileSystem, path, runEffect } from "../tools/oracles/platform";
+import { fileSystem, path } from "../tools/oracles/platform";
 
 interface CodingFixture {
   readonly caseId: string;
@@ -13,7 +13,7 @@ interface CodingFixture {
 
 describe("official coding fixture sweeps", () => {
   it.effect("validates SDICD/SDKH/SDKRW rule fixtures", () =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       const fixturePath = path.join(
         process.cwd(),
         "test",
@@ -22,7 +22,7 @@ describe("official coding fixture sweeps", () => {
         "sdicd-sdkh-sdkrw-fixtures.json",
       );
       const fixtures = JSON.parse(
-        await runEffect(fileSystem.readFileString(fixturePath)),
+        yield* fileSystem.readFileString(fixturePath),
       ) as readonly CodingFixture[];
 
       expect(fixtures.length).toBeGreaterThanOrEqual(6);

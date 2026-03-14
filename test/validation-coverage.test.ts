@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
-import { fileSystem, path, runEffect } from "../tools/oracles/platform";
+import { fileSystem, path } from "../tools/oracles/platform";
 
 interface CoverageInventory {
   readonly asOf: string;
@@ -19,7 +19,7 @@ interface CoverageInventory {
 
 describe("validation coverage inventory", () => {
   it.effect("tracks the validated KBV families in machine-readable form", () =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       const inventoryPath = path.join(
         process.cwd(),
         "tools",
@@ -29,9 +29,9 @@ describe("validation coverage inventory", () => {
       const markdownPath = path.join(process.cwd(), "VALIDATION_COVERAGE.md");
 
       const inventory = JSON.parse(
-        await runEffect(fileSystem.readFileString(inventoryPath)),
+        yield* fileSystem.readFileString(inventoryPath),
       ) as CoverageInventory;
-      const markdown = await runEffect(fileSystem.readFileString(markdownPath));
+      const markdown = yield* fileSystem.readFileString(markdownPath);
 
       expect(inventory.asOf).toBe("2026-03-11");
       expect(inventory.inventoryVersion).toBe(1);

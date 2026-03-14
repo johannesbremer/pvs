@@ -7,10 +7,10 @@ import {
   kbvOracleAssets,
 } from "../tools/oracles/assets";
 import {
-  runExecutableFhirValidationBatch,
+  runExecutableFhirValidationBatchEffect,
   toBatchValidationSourcePathKey,
 } from "../tools/oracles/fhir/run";
-import { fileSystem, path, runEffect } from "../tools/oracles/platform";
+import { fileSystem, path } from "../tools/oracles/platform";
 
 const cacheDir = path.join(process.cwd(), ".cache", "kbv-oracles");
 
@@ -18,14 +18,12 @@ describe("official KBV fixture sweeps", () => {
   it.effect(
     "validates all official non-error eAU XML examples with the executable oracle",
     () =>
-      Effect.promise(async () => {
-        const eauExamplesDir = await ensureExtractedAsset(
+      Effect.gen(function* () {
+        const eauExamplesDir = yield* ensureExtractedAsset(
           kbvOracleAssets.kbvEauExamples_1_2,
           cacheDir,
         );
-        const entries = await runEffect(
-          fileSystem.readDirectory(eauExamplesDir),
-        );
+        const entries = yield* fileSystem.readDirectory(eauExamplesDir);
         const xmlExamples = entries
           .filter((entry) => entry.endsWith(".xml"))
           .filter((entry) => !entry.includes("_Fehler_"))
@@ -35,7 +33,7 @@ describe("official KBV fixture sweeps", () => {
         const xmlPaths = xmlExamples.map((exampleName) =>
           path.join(eauExamplesDir, exampleName),
         );
-        const result = await runExecutableFhirValidationBatch({
+        const result = yield* runExecutableFhirValidationBatchEffect({
           cacheDir,
           family: "eAU",
           xmlPaths,
@@ -73,21 +71,19 @@ describe("official KBV fixture sweeps", () => {
   it.effect(
     "validates all official eRezept XML examples in the archive with the executable oracle",
     () =>
-      Effect.promise(async () => {
-        const erpExamplesDir = await ensureExtractedAsset(
+      Effect.gen(function* () {
+        const erpExamplesDir = yield* ensureExtractedAsset(
           kbvOracleAssets.kbvErpExamples_1_4,
           cacheDir,
         );
-        await ensureExtractedAsset(
+        yield* ensureExtractedAsset(
           kbvOracleAssets.fhirValidatorService_2_2_0,
           cacheDir,
         );
-        await ensureExtractedAsset(kbvOracleAssets.kbvFhirErp_1_4_1, cacheDir);
-        await ensureFhirValidatorDependencyCache({ cacheDir });
+        yield* ensureExtractedAsset(kbvOracleAssets.kbvFhirErp_1_4_1, cacheDir);
+        yield* ensureFhirValidatorDependencyCache({ cacheDir });
 
-        const entries = await runEffect(
-          fileSystem.readDirectory(erpExamplesDir),
-        );
+        const entries = yield* fileSystem.readDirectory(erpExamplesDir);
         const xmlExamples = entries
           .filter((entry) => entry.endsWith(".xml"))
           .sort();
@@ -97,7 +93,7 @@ describe("official KBV fixture sweeps", () => {
         const xmlPaths = xmlExamples.map((exampleName) =>
           path.join(erpExamplesDir, exampleName),
         );
-        const result = await runExecutableFhirValidationBatch({
+        const result = yield* runExecutableFhirValidationBatchEffect({
           cacheDir,
           family: "eRezept",
           xmlPaths,

@@ -2,8 +2,8 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
 import { ensureKvdtAssets } from "../tools/oracles/assets";
-import { runExecutableKvdtOracle } from "../tools/oracles/kvdt/run";
-import { fileSystem, path, runEffect } from "../tools/oracles/platform";
+import { runExecutableKvdtOracleEffect } from "../tools/oracles/kvdt/run";
+import { fileSystem, path } from "../tools/oracles/platform";
 
 const cacheDir = path.join(process.cwd(), ".cache", "kbv-oracles");
 
@@ -11,10 +11,10 @@ describe("official KVDT fixture sweeps", () => {
   it.effect(
     "validates the official positive fixture and rejects the official negative fixtures shipped with the KVDT XPM package",
     () =>
-      Effect.promise(async () => {
-        const assets = await ensureKvdtAssets({ cacheDir });
+      Effect.gen(function* () {
+        const assets = yield* ensureKvdtAssets({ cacheDir });
         const fixtureDir = path.join(assets.xpmDir, "XPM_KVDT.Praxis", "Daten");
-        const entries = await runEffect(fileSystem.readDirectory(fixtureDir));
+        const entries = yield* fileSystem.readDirectory(fixtureDir);
         const conFixtures = entries
           .filter((entry) => entry.endsWith(".con"))
           .sort();
@@ -22,10 +22,10 @@ describe("official KVDT fixture sweeps", () => {
         expect(conFixtures.length).toBeGreaterThanOrEqual(3);
 
         for (const fixtureName of conFixtures) {
-          const payloadBytes = await runEffect(
-            fileSystem.readFile(path.join(fixtureDir, fixtureName)),
+          const payloadBytes = yield* fileSystem.readFile(
+            path.join(fixtureDir, fixtureName),
           );
-          const result = await runExecutableKvdtOracle({
+          const result = yield* runExecutableKvdtOracleEffect({
             cacheDir,
             payloadBytes,
             payloadFileName: fixtureName,

@@ -10,7 +10,7 @@ import {
   OracleExecutionResultFields,
   OraclePlanFields,
 } from "../tools/oracles/types";
-import { runWithTestConfect, TestConfect } from "./TestConfect";
+import { provideTestConfect, TestConfect } from "./TestConfect";
 
 const seedStorageId = "seed;_storage" as Id<"_storage">;
 
@@ -65,8 +65,8 @@ describe("diga and evdga workflows", () => {
   it.effect(
     "imports a DiGA catalog entry, finalizes an order, and renders an eVDGA bundle",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
             const patient = yield* test.mutation(

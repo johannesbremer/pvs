@@ -6,7 +6,7 @@ import { Effect, Schema } from "effect";
 
 import { DatabaseReader, DatabaseWriter } from "../confect/_generated/services";
 import { refs } from "../confect/refs";
-import { runWithTestConfect, TestConfect } from "./TestConfect";
+import { provideTestConfect, TestConfect } from "./TestConfect";
 
 const seedStorageId = "seed;_storage" as Id<"_storage">;
 
@@ -90,8 +90,8 @@ describe("prescribing, documents, and drafts workflows", () => {
   it.effect(
     "finalizes a medication order into immutable document, artifact, and form state",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
 
@@ -319,8 +319,8 @@ describe("prescribing, documents, and drafts workflows", () => {
   it.effect(
     "supersedes prior medication plans and promotes drafts out of the editable workspace set",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
 
@@ -500,8 +500,8 @@ describe("prescribing, documents, and drafts workflows", () => {
   it.effect(
     "publishes VoS bundles with a bounded kID window and imports storage bundles into canonical plan state",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
 
@@ -806,8 +806,8 @@ describe("prescribing, documents, and drafts workflows", () => {
   it.effect(
     "blocks invalid heilmittel finalization and finalizes valid approved orders into document state",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
 

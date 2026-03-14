@@ -2,12 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
 import { refs } from "../confect/refs";
-import { runWithTestConfect, TestConfect } from "./TestConfect";
+import { provideTestConfect, TestConfect } from "./TestConfect";
 
 describe("patient and vsd workflows", () => {
   it.effect("creates a manual patient and returns a chart projection", () =>
-    Effect.promise(async () => {
-      const result = await runWithTestConfect(
+    Effect.gen(function* () {
+      const result = yield* provideTestConfect(
         Effect.gen(function* () {
           const test = yield* TestConfect;
 
@@ -63,8 +63,8 @@ describe("patient and vsd workflows", () => {
   );
 
   it.effect("records a vsd snapshot and adopts it into a new patient", () =>
-    Effect.promise(async () => {
-      const result = await runWithTestConfect(
+    Effect.gen(function* () {
+      const result = yield* provideTestConfect(
         Effect.gen(function* () {
           const test = yield* TestConfect;
 
@@ -146,8 +146,8 @@ describe("patient and vsd workflows", () => {
   it.effect(
     "adopts a second snapshot onto an existing patient without creating a new patient",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
 

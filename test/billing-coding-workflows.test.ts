@@ -6,7 +6,7 @@ import { Effect, Schema } from "effect";
 
 import { DatabaseWriter } from "../confect/_generated/services";
 import { refs } from "../confect/refs";
-import { runWithTestConfect, TestConfect } from "./TestConfect";
+import { provideTestConfect, TestConfect } from "./TestConfect";
 
 const seedOrganization = () =>
   Effect.gen(function* () {
@@ -39,8 +39,8 @@ describe("billing and coding workflows", () => {
   it.effect(
     "imports ICD data, creates a billing case, and prepares a KVDT-ready view",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
 
@@ -190,8 +190,8 @@ describe("billing and coding workflows", () => {
   it.effect(
     "persists blocking SDICD evaluations when a diagnosis violates catalog constraints",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
             const patient = yield* test.mutation(
@@ -291,8 +291,8 @@ describe("billing and coding workflows", () => {
   it.effect(
     "blocks KVDT preparation when coding evaluations contain blocking errors",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
             const { organizationId } = yield* test.run(

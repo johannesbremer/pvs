@@ -27,7 +27,7 @@ const ensureBmpJavaValidatorEffect = Effect.fn(
 
   yield* fileSystem.makeDirectory(buildDir, { recursive: true });
 
-  const javacCommand = yield* Effect.tryPromise(() => resolveJavacCommand());
+  const javacCommand = yield* resolveJavacCommand();
   const javacResult = yield* Effect.tryPromise(() =>
     runCommand({
       args: ["-d", buildDir, bmpValidatorSourcePath],
@@ -124,11 +124,9 @@ export const runExecutableBmpOracleEffect = Effect.fn(
 
   const program = Effect.scoped(
     Effect.gen(function* () {
-      const assets = yield* Effect.tryPromise(() =>
-        ensureBmpAssets({
-          ...(cacheDir ? { cacheDir } : {}),
-        }),
-      );
+      const assets = yield* ensureBmpAssets({
+        ...(cacheDir ? { cacheDir } : {}),
+      });
       const validator = yield* ensureBmpJavaValidatorEffect(cacheDir);
       const tempDir = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "kbv-bmp-oracle-",
@@ -137,7 +135,7 @@ export const runExecutableBmpOracleEffect = Effect.fn(
 
       yield* fileSystem.writeFile(xmlPath, validatedXmlBytes);
 
-      const javaCommand = yield* Effect.tryPromise(() => resolveJavaCommand());
+      const javaCommand = yield* resolveJavaCommand();
       const result = yield* Effect.tryPromise(() =>
         runCommand({
           args: [

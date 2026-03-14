@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Effect } from "effect";
 
 const inventoryPath = join(
   process.cwd(),
@@ -8,5 +9,11 @@ const inventoryPath = join(
   "coverage-inventory.json",
 );
 
-const contents = await readFile(inventoryPath, "utf8");
-process.stdout.write(contents);
+void Effect.runPromise(
+  Effect.gen(function* () {
+    const contents = yield* Effect.promise(() =>
+      readFile(inventoryPath, "utf8"),
+    );
+    process.stdout.write(contents);
+  }),
+);

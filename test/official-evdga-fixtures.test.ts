@@ -2,11 +2,11 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
 import {
-  runExecutableFhirOracle,
-  runExecutableFhirValidationBatch,
+  runExecutableFhirOracleEffect,
+  runExecutableFhirValidationBatchEffect,
   toBatchValidationSourcePathKey,
 } from "../tools/oracles/fhir/run";
-import { fileSystem, path, runEffect } from "../tools/oracles/platform";
+import { fileSystem, path } from "../tools/oracles/platform";
 import { OracleExecutionResultFields } from "../tools/oracles/types";
 
 const cacheDir = path.join(process.cwd(), ".cache", "kbv-oracles");
@@ -21,11 +21,11 @@ describe("official eVDGA fixture sweeps", () => {
   it.effect(
     "validates the official non-negative eVDGA XML examples with the executable oracle",
     () =>
-      Effect.promise(async () => {
+      Effect.gen(function* () {
         // Arrange
-        const entries = await runEffect(
-          fileSystem.readDirectory(evdgaExamplesDir),
-        ).catch(() => []);
+        const entries = yield* fileSystem
+          .readDirectory(evdgaExamplesDir)
+          .pipe(Effect.catchAll(() => Effect.succeed([])));
         if (entries.length === 0) {
           return;
         }
@@ -41,7 +41,7 @@ describe("official eVDGA fixture sweeps", () => {
         );
 
         // Act
-        const result = await runExecutableFhirValidationBatch({
+        const result = yield* runExecutableFhirValidationBatchEffect({
           cacheDir,
           family: "eVDGA",
           xmlPaths,
@@ -80,23 +80,23 @@ describe("official eVDGA fixture sweeps", () => {
   it.effect(
     "fails the official negative eVDGA XML example with the executable oracle",
     () =>
-      Effect.promise(async () => {
+      Effect.gen(function* () {
         // Arrange
-        const xml = await runEffect(
-          fileSystem.readFileString(
+        const xml = yield* fileSystem
+          .readFileString(
             path.join(
               evdgaExamplesDir,
               "EVDGA_Bundle_PKV_negativer_Testfall.xml",
             ),
-          ),
-        ).catch(() => undefined);
+          )
+          .pipe(Effect.catchAll(() => Effect.succeed(undefined)));
         if (!xml) {
           return;
         }
 
         // Act
         const result = Schema.decodeUnknownSync(OracleExecutionResultFields)(
-          await runExecutableFhirOracle({
+          yield* runExecutableFhirOracleEffect({
             cacheDir,
             family: "eVDGA",
             xml,

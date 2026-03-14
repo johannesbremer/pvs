@@ -6,7 +6,7 @@ import { Effect, Schema } from "effect";
 
 import { DatabaseWriter } from "../confect/_generated/services";
 import { refs } from "../confect/refs";
-import { runWithTestConfect, TestConfect } from "./TestConfect";
+import { provideTestConfect, TestConfect } from "./TestConfect";
 
 const seedStorageId = "seed;_storage" as Id<"_storage">;
 
@@ -85,8 +85,8 @@ describe("emission and oracle workflows", () => {
   it.effect(
     "renders ERP XML and returns an oracle plan for a finalized medication order",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
             const patient = yield* test.mutation(
@@ -251,8 +251,8 @@ describe("emission and oracle workflows", () => {
   it.effect(
     "creates and renders eAU documents and exposes the eAU oracle plugin",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
             const patient = yield* test.mutation(
@@ -365,8 +365,8 @@ describe("emission and oracle workflows", () => {
   it.effect(
     "marks artifacts invalid when oracle validation receives broken XML",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
             const artifactId = yield* test.run(

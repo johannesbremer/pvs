@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { Effect } from "effect";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,47 +27,57 @@ const log = (message) => {
   console.error(`[kbv-oracle] ${message}`);
 };
 
-const ensureRuntimeHome = async () => {
-  const runtimeHomeRoot = join(
-    cacheDir,
-    "fhir-home-runtimes",
-    `debug-${process.ppid}-${effectiveFamily}`,
-  );
-  const runtimePackageCacheRoot = join(runtimeHomeRoot, ".fhir", "packages");
-  const markerPath = join(runtimeHomeRoot, ".kbv-runtime-ready");
-
-  if (existsSync(markerPath)) {
-    return runtimeHomeRoot;
-  }
-
-  if (!existsSync(sharedPackageCacheRoot)) {
-    throw new Error(
-      `Shared FHIR package cache is missing at ${sharedPackageCacheRoot}.`,
+const ensureRuntimeHome = Effect.fn("debugFhir.ensureRuntimeHome")(
+  function* () {
+    const runtimeHomeRoot = join(
+      cacheDir,
+      "fhir-home-runtimes",
+      `debug-${process.ppid}-${effectiveFamily}`,
     );
-  }
+    const runtimePackageCacheRoot = join(runtimeHomeRoot, ".fhir", "packages");
+    const markerPath = join(runtimeHomeRoot, ".kbv-runtime-ready");
 
-  await fs.rm(runtimeHomeRoot, { recursive: true, force: true });
-  await fs.mkdir(join(runtimeHomeRoot, ".fhir"), { recursive: true });
-  await fs.cp(sharedPackageCacheRoot, runtimePackageCacheRoot, {
-    force: true,
-    recursive: true,
-  });
-  await fs.writeFile(
-    markerPath,
-    JSON.stringify(
-      {
-        createdAt: new Date().toISOString(),
-        runtimePackageCacheRoot,
-        sharedPackageCacheRoot,
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
+    if (existsSync(markerPath)) {
+      return runtimeHomeRoot;
+    }
 
-  return runtimeHomeRoot;
-};
+    if (!existsSync(sharedPackageCacheRoot)) {
+      throw new Error(
+        `Shared FHIR package cache is missing at ${sharedPackageCacheRoot}.`,
+      );
+    }
+
+    yield* Effect.promise(() =>
+      fs.rm(runtimeHomeRoot, { recursive: true, force: true }),
+    );
+    yield* Effect.promise(() =>
+      fs.mkdir(join(runtimeHomeRoot, ".fhir"), { recursive: true }),
+    );
+    yield* Effect.promise(() =>
+      fs.cp(sharedPackageCacheRoot, runtimePackageCacheRoot, {
+        force: true,
+        recursive: true,
+      }),
+    );
+    yield* Effect.promise(() =>
+      fs.writeFile(
+        markerPath,
+        JSON.stringify(
+          {
+            createdAt: new Date().toISOString(),
+            runtimePackageCacheRoot,
+            sharedPackageCacheRoot,
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      ),
+    );
+
+    return runtimeHomeRoot;
+  },
+);
 
 const extractOfflineLanguageCodes = (xml) => {
   const matches = xml.matchAll(
@@ -145,75 +156,85 @@ const resolveJavaCommand = () => {
   return "java";
 };
 
-const findFileRecursive = async (rootDir, matcher) => {
-  const entries = await fs.readdir(rootDir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const entryPath = join(rootDir, entry.name);
-    if (entry.isDirectory()) {
-      const nested = await findFileRecursive(entryPath, matcher);
-      if (nested) {
-        return nested;
-      }
-      continue;
-    }
-
-    if (matcher(entryPath)) {
-      return entryPath;
-    }
-  }
-
-  return undefined;
-};
-
-const collectIgDirectories = async (rootDir) => {
-  const directories = new Set();
-
-  const visit = async (currentDir) => {
-    const entries = await fs.readdir(currentDir, { withFileTypes: true });
-    let hasResourceLikeFiles = false;
+const findFileRecursive = Effect.fn("debugFhir.findFileRecursive")(
+  function* (rootDir, matcher) {
+    const entries = yield* Effect.promise(() =>
+      fs.readdir(rootDir, { withFileTypes: true }),
+    );
 
     for (const entry of entries) {
-      const entryPath = join(currentDir, entry.name);
+      const entryPath = join(rootDir, entry.name);
       if (entry.isDirectory()) {
-        await visit(entryPath);
+        const nested = yield* findFileRecursive(entryPath, matcher);
+        if (nested) {
+          return nested;
+        }
         continue;
       }
 
-      if (
-        entry.name.endsWith(".xml") ||
-        entry.name.endsWith(".json") ||
-        entry.name.endsWith(".map")
-      ) {
-        hasResourceLikeFiles = true;
+      if (matcher(entryPath)) {
+        return entryPath;
       }
     }
 
-    if (hasResourceLikeFiles) {
-      directories.add(currentDir);
-    }
-  };
+    return undefined;
+  },
+);
 
-  await visit(rootDir);
+const collectIgDirectories = Effect.fn("debugFhir.collectIgDirectories")(
+  function* (rootDir) {
+    const directories = new Set();
 
-  return [...directories].sort((left, right) => {
-    const leftBase = left.split("/").at(-1) ?? left;
-    const rightBase = right.split("/").at(-1) ?? right;
-    const leftPriority = leftBase.startsWith("_") ? 0 : 1;
-    const rightPriority = rightBase.startsWith("_") ? 0 : 1;
+    const visit = Effect.fn("debugFhir.collectIgDirectories.visit")(
+      function* (currentDir) {
+        const entries = yield* Effect.promise(() =>
+          fs.readdir(currentDir, { withFileTypes: true }),
+        );
+        let hasResourceLikeFiles = false;
 
-    if (leftPriority !== rightPriority) {
-      return leftPriority - rightPriority;
-    }
+        for (const entry of entries) {
+          const entryPath = join(currentDir, entry.name);
+          if (entry.isDirectory()) {
+            yield* visit(entryPath);
+            continue;
+          }
 
-    const depthDelta = left.split("/").length - right.split("/").length;
-    if (depthDelta !== 0) {
-      return depthDelta;
-    }
+          if (
+            entry.name.endsWith(".xml") ||
+            entry.name.endsWith(".json") ||
+            entry.name.endsWith(".map")
+          ) {
+            hasResourceLikeFiles = true;
+          }
+        }
 
-    return left.localeCompare(right);
-  });
-};
+        if (hasResourceLikeFiles) {
+          directories.add(currentDir);
+        }
+      },
+    );
+
+    yield* visit(rootDir);
+
+    return [...directories].sort((left, right) => {
+      const leftBase = left.split("/").at(-1) ?? left;
+      const rightBase = right.split("/").at(-1) ?? right;
+      const leftPriority = leftBase.startsWith("_") ? 0 : 1;
+      const rightPriority = rightBase.startsWith("_") ? 0 : 1;
+
+      if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+      }
+
+      const depthDelta = left.split("/").length - right.split("/").length;
+      if (depthDelta !== 0) {
+        return depthDelta;
+      }
+
+      return left.localeCompare(right);
+    });
+  },
+);
 
 const serviceDir = join(cacheDir, "extracted", "fhirValidatorService_2_2_0");
 const packageRoot = join(
@@ -222,106 +243,123 @@ const packageRoot = join(
   effectiveFamily === "eAU" ? "kbvFhirEau_1_2_1" : "kbvFhirErp_1_4_1",
 );
 
-const start = Date.now();
-log(`debug start family=${effectiveFamily} xml=${xmlPath}`);
+const program = Effect.gen(function* () {
+  const start = Date.now();
+  log(`debug start family=${effectiveFamily} xml=${xmlPath}`);
 
-log(`starting validator jar discovery`);
-const jarStart = Date.now();
-const validatorJar = await findFileRecursive(
-  serviceDir,
-  (entryPath) =>
-    entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
-);
-if (!validatorJar) {
-  throw new Error("validator_cli jar not found");
-}
-log(`validator jar discovery: ${Date.now() - jarStart}ms`);
-log(`validatorJar=${validatorJar}`);
-
-log(`starting IG discovery`);
-const igStart = Date.now();
-const igPaths = (await collectIgDirectories(packageRoot)).filter(
-  (entryPath) => entryPath !== packageRoot,
-);
-igPaths.push(packageRoot);
-log(`IG discovery: ${Date.now() - igStart}ms`);
-log(`igPaths=${igPaths.length}`);
-
-log(`starting input read`);
-const readStart = Date.now();
-const xml = await fs.readFile(xmlPath, "utf8");
-log(`input read: ${Date.now() - readStart}ms`);
-const offlineLanguageCodes = extractOfflineLanguageCodes(xml);
-
-log(`starting temp workspace`);
-const tmpStart = Date.now();
-const tempDir = await fs.mkdtemp(join(tmpdir(), "kbv-fhir-debug-"));
-const tempXmlPath = join(tempDir, `${effectiveFamily}.xml`);
-const supportDir = join(tempDir, "support");
-const userHomeOverride = await ensureRuntimeHome();
-await fs.mkdir(userHomeOverride, { recursive: true });
-await fs.writeFile(tempXmlPath, xml, "utf8");
-if (offlineLanguageCodes.length > 0) {
-  await fs.mkdir(supportDir, { recursive: true });
-  await fs.writeFile(
-    join(supportDir, "CodeSystem-kbv-offline-ietf-bcp-47.json"),
-    JSON.stringify(
-      buildOfflineLanguageCodeSystem(offlineLanguageCodes),
-      null,
-      2,
-    ),
-    "utf8",
+  log("starting validator jar discovery");
+  const jarStart = Date.now();
+  const validatorJar = yield* findFileRecursive(
+    serviceDir,
+    (entryPath) =>
+      entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
   );
-  await fs.writeFile(
-    join(supportDir, "ValueSet-all-languages.json"),
-    JSON.stringify(
-      buildOfflineAllLanguagesValueSet(offlineLanguageCodes),
-      null,
-      2,
-    ),
-    "utf8",
-  );
-}
-log(`temp workspace: ${Date.now() - tmpStart}ms`);
-
-try {
-  const mountedIgPaths =
-    offlineLanguageCodes.length > 0 ? [supportDir, ...igPaths] : igPaths;
-  const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
-  log(`starting validator cli`);
-  const cliStart = Date.now();
-  const { stdout, stderr } = await execFileAsync(
-    resolveJavaCommand(),
-    [
-      `-Duser.home=${userHomeOverride}`,
-      "-jar",
-      validatorJar,
-      "-version",
-      "4.0.1",
-      tempXmlPath,
-      ...igArgs,
-      "-tx",
-      "n/a",
-    ],
-    {
-      maxBuffer: 10 * 1024 * 1024,
-    },
-  );
-  log(`validator cli: ${Date.now() - cliStart}ms`);
-  log(`debug done total=${Date.now() - start}ms`);
-  process.stdout.write(stdout);
-  process.stderr.write(stderr);
-} catch (error) {
-  log(`debug failed total=${Date.now() - start}ms`);
-  if (error && typeof error === "object") {
-    if ("stdout" in error && typeof error.stdout === "string") {
-      process.stdout.write(error.stdout);
-    }
-    if ("stderr" in error && typeof error.stderr === "string") {
-      process.stderr.write(error.stderr);
-    }
+  if (!validatorJar) {
+    throw new Error("validator_cli jar not found");
   }
-  throw error;
-} finally {
-  await fs.rm(tempDir, { recursive: true, force: true });
-}
+  log(`validator jar discovery: ${Date.now() - jarStart}ms`);
+  log(`validatorJar=${validatorJar}`);
+
+  log("starting IG discovery");
+  const igStart = Date.now();
+  const igPaths = (yield* collectIgDirectories(packageRoot)).filter(
+    (entryPath) => entryPath !== packageRoot,
+  );
+  igPaths.push(packageRoot);
+  log(`IG discovery: ${Date.now() - igStart}ms`);
+  log(`igPaths=${igPaths.length}`);
+
+  log("starting input read");
+  const readStart = Date.now();
+  const xml = yield* Effect.promise(() => fs.readFile(xmlPath, "utf8"));
+  log(`input read: ${Date.now() - readStart}ms`);
+  const offlineLanguageCodes = extractOfflineLanguageCodes(xml);
+
+  log("starting temp workspace");
+  const tmpStart = Date.now();
+  const tempDir = yield* Effect.promise(() =>
+    fs.mkdtemp(join(tmpdir(), "kbv-fhir-debug-")),
+  );
+  const tempXmlPath = join(tempDir, `${effectiveFamily}.xml`);
+  const supportDir = join(tempDir, "support");
+  const userHomeOverride = yield* ensureRuntimeHome();
+  yield* Effect.promise(() => fs.mkdir(userHomeOverride, { recursive: true }));
+  yield* Effect.promise(() => fs.writeFile(tempXmlPath, xml, "utf8"));
+  if (offlineLanguageCodes.length > 0) {
+    yield* Effect.promise(() => fs.mkdir(supportDir, { recursive: true }));
+    yield* Effect.promise(() =>
+      fs.writeFile(
+        join(supportDir, "CodeSystem-kbv-offline-ietf-bcp-47.json"),
+        JSON.stringify(
+          buildOfflineLanguageCodeSystem(offlineLanguageCodes),
+          null,
+          2,
+        ),
+        "utf8",
+      ),
+    );
+    yield* Effect.promise(() =>
+      fs.writeFile(
+        join(supportDir, "ValueSet-all-languages.json"),
+        JSON.stringify(
+          buildOfflineAllLanguagesValueSet(offlineLanguageCodes),
+          null,
+          2,
+        ),
+        "utf8",
+      ),
+    );
+  }
+  log(`temp workspace: ${Date.now() - tmpStart}ms`);
+
+  try {
+    const mountedIgPaths =
+      offlineLanguageCodes.length > 0 ? [supportDir, ...igPaths] : igPaths;
+    const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
+    log("starting validator cli");
+    const cliStart = Date.now();
+    const { stdout, stderr } = yield* Effect.promise(() =>
+      execFileAsync(
+        resolveJavaCommand(),
+        [
+          `-Duser.home=${userHomeOverride}`,
+          "-jar",
+          validatorJar,
+          "-version",
+          "4.0.1",
+          tempXmlPath,
+          ...igArgs,
+          "-tx",
+          "n/a",
+        ],
+        {
+          maxBuffer: 10 * 1024 * 1024,
+        },
+      ),
+    );
+    log(`validator cli: ${Date.now() - cliStart}ms`);
+    log(`debug done total=${Date.now() - start}ms`);
+    process.stdout.write(stdout);
+    process.stderr.write(stderr);
+  } catch (error) {
+    log(`debug failed total=${Date.now() - start}ms`);
+    if (error && typeof error === "object") {
+      if ("stdout" in error && typeof error.stdout === "string") {
+        process.stdout.write(error.stdout);
+      }
+      if ("stderr" in error && typeof error.stderr === "string") {
+        process.stderr.write(error.stderr);
+      }
+    }
+    throw error;
+  } finally {
+    yield* Effect.promise(() =>
+      fs.rm(tempDir, { recursive: true, force: true }),
+    );
+  }
+});
+
+void Effect.runPromise(program).catch((error) => {
+  process.exitCode = 1;
+  console.error(error);
+});

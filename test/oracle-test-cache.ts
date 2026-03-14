@@ -1,57 +1,53 @@
+import { Effect } from "effect";
+
 import {
   getFhirPackageCacheRoot,
   getKbvOracleCacheDir,
   kbvOracleAssets,
 } from "../tools/oracles/assets";
-import { fileSystem, path, runEffect } from "../tools/oracles/platform";
+import { fileSystem, path } from "../tools/oracles/platform";
 
-export const resolveOracleTestCache = async ({
-  assetIds,
-  needsFhirDependencies = false,
-  tempPrefix,
-}: {
-  assetIds: readonly (keyof typeof kbvOracleAssets)[];
-  needsFhirDependencies?: boolean;
-  tempPrefix: string;
-}) => {
-  const sharedCacheDir = getKbvOracleCacheDir();
-  const sharedDownloadsReady = await Promise.all(
-    assetIds.map(async (assetId) => {
+export const resolveOracleTestCache = Effect.fn("tests.resolveOracleTestCache")(
+  function* ({
+    assetIds,
+    needsFhirDependencies = false,
+    tempPrefix,
+  }: {
+    assetIds: readonly (keyof typeof kbvOracleAssets)[];
+    needsFhirDependencies?: boolean;
+    tempPrefix: string;
+  }) {
+    const sharedCacheDir = getKbvOracleCacheDir();
+    const sharedDownloadsReady = yield* Effect.forEach(assetIds, (assetId) => {
       const asset = kbvOracleAssets[assetId];
-      const hasDownload = await runEffect(
-        fileSystem.exists(
+      return Effect.gen(function* () {
+        const hasDownload = yield* fileSystem.exists(
           path.join(sharedCacheDir, "downloads", asset.fileName),
-        ),
-      );
+        );
 
-      if (hasDownload || !("extract" in asset) || asset.extract !== true) {
-        return hasDownload;
-      }
+        if (hasDownload || !("extract" in asset) || asset.extract !== true) {
+          return hasDownload;
+        }
 
-      return runEffect(
-        fileSystem.exists(
+        return yield* fileSystem.exists(
           path.join(sharedCacheDir, "extracted", asset.assetId, ".ok"),
-        ),
-      );
-    }),
-  );
-  const sharedFhirDependenciesReady = needsFhirDependencies
-    ? await runEffect(
-        fileSystem.exists(getFhirPackageCacheRoot(sharedCacheDir)),
-      )
-    : true;
+        );
+      });
+    });
+    const sharedFhirDependenciesReady = needsFhirDependencies
+      ? yield* fileSystem.exists(getFhirPackageCacheRoot(sharedCacheDir))
+      : true;
 
-  if (sharedDownloadsReady.every(Boolean) && sharedFhirDependenciesReady) {
+    if (sharedDownloadsReady.every(Boolean) && sharedFhirDependenciesReady) {
+      return {
+        cacheDir: sharedCacheDir,
+        usesSharedCache: true,
+      } as const;
+    }
+
     return {
-      cacheDir: sharedCacheDir,
-      usesSharedCache: true,
+      cacheDir: yield* fileSystem.makeTempDirectory({ prefix: tempPrefix }),
+      usesSharedCache: false,
     } as const;
-  }
-
-  return {
-    cacheDir: await runEffect(
-      fileSystem.makeTempDirectory({ prefix: tempPrefix }),
-    ),
-    usesSharedCache: false,
-  } as const;
-};
+  },
+);

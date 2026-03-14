@@ -4,15 +4,15 @@ import { Effect } from "effect";
 import type { OraclePlan } from "../tools/oracles/types";
 
 import {
-  buildAndExecuteOraclePlan,
-  executeOraclePlan,
+  buildAndExecuteOraclePlanEffect,
+  executeOraclePlanEffect,
 } from "../tools/oracles/runtime";
 
 describe("oracle runtime", () => {
   it.effect(
     "executes local BFB, ICD, ICD package, Heilmittel, and TSS runners",
     () =>
-      Effect.promise(async () => {
+      Effect.gen(function* () {
         const bfbPlan = {
           expectedOutputs: ["comparison.json"],
           family: "BFB",
@@ -63,8 +63,8 @@ describe("oracle runtime", () => {
           codingPackageResult,
           heilmittelResult,
           tssResult,
-        ] = await Promise.all([
-          executeOraclePlan({
+        ] = yield* Effect.all([
+          executeOraclePlanEffect({
             payloadPreview: JSON.stringify({
               barcodes: [
                 {
@@ -127,7 +127,7 @@ describe("oracle runtime", () => {
             }),
             plan: bfbPlan,
           }),
-          executeOraclePlan({
+          executeOraclePlanEffect({
             payloadPreview: JSON.stringify({
               caseId: "SDKH-CHRONIC-CERTAINTY",
               catalogEntry: {
@@ -147,7 +147,7 @@ describe("oracle runtime", () => {
             }),
             plan: codingPlan,
           }),
-          executeOraclePlan({
+          executeOraclePlanEffect({
             payloadPreview: JSON.stringify({
               caseId: "ICD-PACKAGE-RUNTIME-PREVIEW",
               entries: [
@@ -185,7 +185,7 @@ describe("oracle runtime", () => {
             }),
             plan: codingPlan,
           }),
-          executeOraclePlan({
+          executeOraclePlanEffect({
             payloadPreview: JSON.stringify({
               blankoFlag: true,
               caseId: "PF06-A1",
@@ -205,7 +205,7 @@ describe("oracle runtime", () => {
             }),
             plan: heilmittelPlan,
           }),
-          executeOraclePlan({
+          executeOraclePlanEffect({
             payloadPreview: JSON.stringify({
               appointments: [
                 {
@@ -251,12 +251,12 @@ describe("oracle runtime", () => {
   it.effect(
     "executes local KVDT and BMP runners through the plan builder",
     () =>
-      Effect.promise(async () => {
-        const kvdtExecuted = await buildAndExecuteOraclePlan({
+      Effect.gen(function* () {
+        const kvdtExecuted = yield* buildAndExecuteOraclePlanEffect({
           family: "KVDT",
           payloadPreview: "con0|adt0|sad0",
         });
-        const bmpExecuted = await buildAndExecuteOraclePlan({
+        const bmpExecuted = yield* buildAndExecuteOraclePlanEffect({
           family: "BMP",
           payloadPreviewXml: '<?xml version="1.0"?><bmp/>',
         });

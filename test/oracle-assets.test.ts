@@ -13,13 +13,13 @@ import { fileSystem, runEffect } from "../tools/oracles/platform";
 
 const tempDirs: string[] = [];
 
-afterEach(async () => {
-  for (const tempDir of tempDirs.splice(0)) {
-    await runEffect(
+afterEach(() =>
+  runEffect(
+    Effect.forEach(tempDirs.splice(0), (tempDir) =>
       fileSystem.remove(tempDir, { force: true, recursive: true }),
-    );
-  }
-});
+    ),
+  ),
+);
 
 describe("oracle asset downloader", () => {
   it.effect(
@@ -52,14 +52,14 @@ describe("oracle asset downloader", () => {
   );
 
   it.effect("downloads an asset into the cache and verifies its SHA-256", () =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       const payload = Buffer.from("kbv-test-payload");
       const sha256 = createHash("sha256").update(payload).digest("hex");
-      const tempDir = await runEffect(
-        fileSystem.makeTempDirectory({ prefix: "kbv-asset-test-" }),
-      );
+      const tempDir = yield* fileSystem.makeTempDirectory({
+        prefix: "kbv-asset-test-",
+      });
       tempDirs.push(tempDir);
-      const downloadedPath = await downloadManagedAsset(
+      const downloadedPath = yield* downloadManagedAsset(
         {
           assetId: "test-asset",
           fileName: "asset.bin",
@@ -69,15 +69,15 @@ describe("oracle asset downloader", () => {
         tempDir,
       );
 
-      const downloaded = await runEffect(fileSystem.readFile(downloadedPath));
+      const downloaded = yield* fileSystem.readFile(downloadedPath);
       expect(Buffer.from(downloaded).equals(payload)).toBe(true);
 
-      const manifestContent = await runEffect(
-        fileSystem.readFileString(getKbvOracleCacheManifestPath(tempDir)),
+      const manifestContent = yield* fileSystem.readFileString(
+        getKbvOracleCacheManifestPath(tempDir),
       );
       expect(manifestContent).toContain("test-asset");
 
-      const cacheEntry = await getAssetCacheEntry({
+      const cacheEntry = yield* getAssetCacheEntry({
         assetId: "test-asset",
         cacheDir: tempDir,
       });
@@ -88,15 +88,15 @@ describe("oracle asset downloader", () => {
   it.effect(
     "re-downloads a cached asset automatically when the cached hash no longer matches",
     () =>
-      Effect.promise(async () => {
+      Effect.gen(function* () {
         const payload = Buffer.from("kbv-test-payload");
         const sha256 = createHash("sha256").update(payload).digest("hex");
-        const tempDir = await runEffect(
-          fileSystem.makeTempDirectory({ prefix: "kbv-asset-test-" }),
-        );
+        const tempDir = yield* fileSystem.makeTempDirectory({
+          prefix: "kbv-asset-test-",
+        });
         tempDirs.push(tempDir);
 
-        const downloadedPath = await downloadManagedAsset(
+        const downloadedPath = yield* downloadManagedAsset(
           {
             assetId: "test-asset-corruption",
             fileName: "asset.bin",
@@ -106,11 +106,9 @@ describe("oracle asset downloader", () => {
           tempDir,
         );
 
-        await runEffect(
-          fileSystem.writeFileString(downloadedPath, "corrupted-cache"),
-        );
+        yield* fileSystem.writeFileString(downloadedPath, "corrupted-cache");
 
-        const redownloadedPath = await downloadManagedAsset(
+        const redownloadedPath = yield* downloadManagedAsset(
           {
             assetId: "test-asset-corruption",
             fileName: "asset.bin",
@@ -120,9 +118,7 @@ describe("oracle asset downloader", () => {
           tempDir,
         );
 
-        const redownloaded = await runEffect(
-          fileSystem.readFile(redownloadedPath),
-        );
+        const redownloaded = yield* fileSystem.readFile(redownloadedPath);
         expect(Buffer.from(redownloaded).equals(payload)).toBe(true);
       }),
   );
@@ -130,22 +126,20 @@ describe("oracle asset downloader", () => {
   it.effect(
     "recovers from a malformed asset-cache manifest by rewriting it on the next update",
     () =>
-      Effect.promise(async () => {
+      Effect.gen(function* () {
         const payload = Buffer.from("kbv-test-payload");
         const sha256 = createHash("sha256").update(payload).digest("hex");
-        const tempDir = await runEffect(
-          fileSystem.makeTempDirectory({ prefix: "kbv-asset-test-" }),
-        );
+        const tempDir = yield* fileSystem.makeTempDirectory({
+          prefix: "kbv-asset-test-",
+        });
         tempDirs.push(tempDir);
 
-        await runEffect(
-          fileSystem.writeFileString(
-            getKbvOracleCacheManifestPath(tempDir),
-            '{"broken": true}\n}',
-          ),
+        yield* fileSystem.writeFileString(
+          getKbvOracleCacheManifestPath(tempDir),
+          '{"broken": true}\n}',
         );
 
-        const downloadedPath = await downloadManagedAsset(
+        const downloadedPath = yield* downloadManagedAsset(
           {
             assetId: "test-asset-broken-manifest",
             fileName: "asset.bin",
@@ -155,10 +149,10 @@ describe("oracle asset downloader", () => {
           tempDir,
         );
 
-        const downloaded = await runEffect(fileSystem.readFile(downloadedPath));
+        const downloaded = yield* fileSystem.readFile(downloadedPath);
         expect(Buffer.from(downloaded).equals(payload)).toBe(true);
 
-        const cacheEntry = await getAssetCacheEntry({
+        const cacheEntry = yield* getAssetCacheEntry({
           assetId: "test-asset-broken-manifest",
           cacheDir: tempDir,
         });

@@ -5,7 +5,7 @@ import { Effect } from "effect";
 
 import { refs } from "../confect/refs";
 import { PatientIdentifierSystem } from "../src/domain/patients";
-import { runWithTestConfect, TestConfect } from "./TestConfect";
+import { provideTestConfect, TestConfect } from "./TestConfect";
 
 const seedStorageId = "seed;_storage" as Id<"_storage">;
 
@@ -13,8 +13,8 @@ describe("integration eeb workflows", () => {
   it.effect(
     "should receive a verified eEB inbox item, match the patient, and report quarter card-read status",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
 
@@ -134,8 +134,8 @@ describe("integration eeb workflows", () => {
   it.effect(
     "should block eEB adoption when the quarter has no prior card read",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
 
@@ -240,8 +240,8 @@ describe("integration eeb workflows", () => {
   it.effect(
     "should adopt a verified eEB inbox item into canonical coverage after a same-quarter card read",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
 

@@ -8,7 +8,7 @@ import {
   officialKbvCorpusInventoryByAssetId,
   officialKbvXmlCorpusEntries,
 } from "../tools/oracles/official-corpus-inventory";
-import { fileSystem, path, runEffect } from "../tools/oracles/platform";
+import { fileSystem, path } from "../tools/oracles/platform";
 
 const KBV_MIRROR_ROOT = "/Users/johannes/Code/kbv-mirror";
 
@@ -117,9 +117,9 @@ describe("official KBV corpus inventory", () => {
   it.effect(
     "should keep the current high-value executable backlog from the local KBV mirror explicit",
     () =>
-      Effect.promise(async () => {
+      Effect.gen(function* () {
         // Arrange
-        if (!(await runEffect(fileSystem.exists(KBV_MIRROR_ROOT)))) {
+        if (!(yield* fileSystem.exists(KBV_MIRROR_ROOT))) {
           return;
         }
 
@@ -131,14 +131,12 @@ describe("official KBV corpus inventory", () => {
                 familyKey !== null,
             ),
         );
-        const mirrorCandidateExists = await Promise.all(
-          highValueMirrorExecutableCandidates.map((candidate) =>
-            runEffect(
-              fileSystem.exists(
-                path.join(KBV_MIRROR_ROOT, candidate.relativePath),
-              ),
+        const mirrorCandidateExists = yield* Effect.forEach(
+          highValueMirrorExecutableCandidates,
+          (candidate) =>
+            fileSystem.exists(
+              path.join(KBV_MIRROR_ROOT, candidate.relativePath),
             ),
-          ),
         );
 
         // Act

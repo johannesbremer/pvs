@@ -2,16 +2,16 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
 import { ensureKvdtAssets } from "../tools/oracles/assets";
-import { runExecutableKvdtOracle } from "../tools/oracles/kvdt/run";
-import { fileSystem, path, runEffect } from "../tools/oracles/platform";
+import { runExecutableKvdtOracleEffect } from "../tools/oracles/kvdt/run";
+import { fileSystem, path } from "../tools/oracles/platform";
 import { resolveOracleTestCache } from "./oracle-test-cache";
 
 describe("executable KVDT oracle", () => {
   it.effect(
     "validates an official KBV .con example with reusable KVDT assets",
     () =>
-      Effect.promise(async () => {
-        const { cacheDir, usesSharedCache } = await resolveOracleTestCache({
+      Effect.gen(function* () {
+        const { cacheDir, usesSharedCache } = yield* resolveOracleTestCache({
           assetIds: [
             "xpmKvdtPraxis_2026_2_1",
             "xkm_1_44_0",
@@ -24,18 +24,16 @@ describe("executable KVDT oracle", () => {
         let shouldCleanup = !usesSharedCache;
 
         try {
-          const assets = await ensureKvdtAssets({ cacheDir });
+          const assets = yield* ensureKvdtAssets({ cacheDir });
           const officialConPath = path.join(
             assets.xpmDir,
             "XPM_KVDT.Praxis",
             "Daten",
             "Z30123456699_27.04.2026_12.00.con",
           );
-          const officialCon = await runEffect(
-            fileSystem.readFile(officialConPath),
-          );
+          const officialCon = yield* fileSystem.readFile(officialConPath);
 
-          const result = await runExecutableKvdtOracle({
+          const result = yield* runExecutableKvdtOracleEffect({
             cacheDir,
             payloadBytes: officialCon,
             payloadFileName: "Z30123456699_27.04.2026_12.00.con",
@@ -63,9 +61,10 @@ describe("executable KVDT oracle", () => {
           throw error;
         } finally {
           if (shouldCleanup) {
-            await runEffect(
-              fileSystem.remove(cacheDir, { force: true, recursive: true }),
-            );
+            yield* fileSystem.remove(cacheDir, {
+              force: true,
+              recursive: true,
+            });
           }
         }
       }),

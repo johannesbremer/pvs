@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { createHash } from "node:crypto";
 
 import { fileSystem, path, runCommand, runEffect } from "./platform";
@@ -26,7 +27,22 @@ const fhirRuntimeHomePruneCache = new Map<string, Promise<void>>();
 const legacyFhirRuntimeHomePattern =
   /^(?:exec|exec-batch)-[^-]+-\d+-(?:eAU|eRezept|eVDGA)$/;
 
-const fileExists = (filePath: string) => runEffect(fileSystem.exists(filePath));
+const fileExists = (filePath: string) => fileSystem.exists(filePath);
+
+const withPromiseCache = <A, E>(
+  cache: Map<string, Promise<A>>,
+  cacheKey: string,
+  effect: Effect.Effect<A, E, never>,
+): Effect.Effect<A, E, never> => {
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    return Effect.promise(() => cached);
+  }
+
+  const pending = runEffect(effect);
+  cache.set(cacheKey, pending);
+  return Effect.promise(() => pending);
+};
 
 export interface ExternalFhirPackage {
   readonly packageId: string;
@@ -263,250 +279,271 @@ export const getKbvOracleCacheManifestPath = (
   cacheDir = getKbvOracleCacheDir(),
 ) => path.join(path.resolve(cacheDir), "asset-cache.json");
 
-const pruneLegacyFhirRuntimeHomes = async (
-  cacheDir = getKbvOracleCacheDir(),
-) => {
+const pruneLegacyFhirRuntimeHomes = (cacheDir = getKbvOracleCacheDir()) => {
   const resolvedCacheDir = path.resolve(cacheDir);
-  const cached = fhirRuntimeHomePruneCache.get(resolvedCacheDir);
-  if (cached) {
-    return cached;
-  }
+  return withPromiseCache(
+    fhirRuntimeHomePruneCache,
+    resolvedCacheDir,
+    Effect.gen(function* () {
+      const runtimeHomesRoot = path.join(
+        resolvedCacheDir,
+        "fhir-home-runtimes",
+      );
+      if (!(yield* fileExists(runtimeHomesRoot))) {
+        return;
+      }
 
-  const pending = (async () => {
-    const runtimeHomesRoot = path.join(resolvedCacheDir, "fhir-home-runtimes");
-    if (!(await fileExists(runtimeHomesRoot))) {
-      return;
-    }
-
-    const entries = await runEffect(fileSystem.readDirectory(runtimeHomesRoot));
-    await Promise.all(
-      entries
-        .filter((entry) => legacyFhirRuntimeHomePattern.test(entry))
-        .map((entry) =>
-          runEffect(
-            fileSystem.remove(path.join(runtimeHomesRoot, entry), {
-              force: true,
-              recursive: true,
-            }),
-          ),
-        ),
-    );
-  })();
-
-  fhirRuntimeHomePruneCache.set(resolvedCacheDir, pending);
-  return pending;
+      const entries = yield* fileSystem.readDirectory(runtimeHomesRoot);
+      yield* Effect.forEach(
+        entries.filter((entry) => legacyFhirRuntimeHomePattern.test(entry)),
+        (entry) =>
+          fileSystem.remove(path.join(runtimeHomesRoot, entry), {
+            force: true,
+            recursive: true,
+          }),
+      );
+    }),
+  );
 };
 
 export const computeBufferSha256 = (buffer: Uint8Array) =>
   createHash("sha256").update(buffer).digest("hex");
 
-export const computeFileSha256 = async (filePath: string) => {
-  const content = await runEffect(fileSystem.readFile(filePath));
-  return computeBufferSha256(content);
-};
+export const computeFileSha256 = Effect.fn("oracles.computeFileSha256")(
+  function* (filePath: string) {
+    const content = yield* fileSystem.readFile(filePath);
+    return computeBufferSha256(content);
+  },
+);
 
-const verifyFileHash = async (filePath: string, expectedSha256?: string) => {
+const verifyFileHash = Effect.fn("oracles.verifyFileHash")(function* ({
+  expectedSha256,
+  filePath,
+}: {
+  expectedSha256?: string;
+  filePath: string;
+}) {
   if (!expectedSha256) {
     return;
   }
-  const actualSha256 = await computeFileSha256(filePath);
+
+  const actualSha256 = yield* computeFileSha256(filePath);
   if (actualSha256 !== expectedSha256) {
     throw new Error(
       `SHA-256 mismatch for ${filePath}: expected ${expectedSha256}, got ${actualSha256}`,
     );
   }
-};
+});
 
-const readAssetCacheManifest = async (
-  cacheDir = getKbvOracleCacheDir(),
-): Promise<Record<string, KbvOracleAssetCacheEntry>> => {
-  const manifestPath = getKbvOracleCacheManifestPath(cacheDir);
-  if (!(await fileExists(manifestPath))) {
-    return {};
-  }
+const readAssetCacheManifest = Effect.fn("oracles.readAssetCacheManifest")(
+  function* (cacheDir = getKbvOracleCacheDir()) {
+    const manifestPath = getKbvOracleCacheManifestPath(cacheDir);
+    if (!(yield* fileExists(manifestPath))) {
+      return {} satisfies Record<string, KbvOracleAssetCacheEntry>;
+    }
 
-  const content = await runEffect(fileSystem.readFileString(manifestPath));
-  try {
-    return JSON.parse(content) as Record<string, KbvOracleAssetCacheEntry>;
-  } catch {
-    return {};
-  }
-};
+    const content = yield* fileSystem.readFileString(manifestPath);
+    try {
+      return JSON.parse(content) as Record<string, KbvOracleAssetCacheEntry>;
+    } catch {
+      return {} satisfies Record<string, KbvOracleAssetCacheEntry>;
+    }
+  },
+);
 
-const writeAssetCacheManifest = async ({
-  cacheDir,
-  manifest,
-}: {
-  cacheDir: string;
-  manifest: Record<string, KbvOracleAssetCacheEntry>;
-}) => {
-  await runEffect(fileSystem.makeDirectory(cacheDir, { recursive: true }));
-  const manifestPath = getKbvOracleCacheManifestPath(cacheDir);
-  const tempPath = `${manifestPath}.${process.pid}.${Date.now()}.tmp`;
-  await runEffect(
-    fileSystem.writeFileString(tempPath, JSON.stringify(manifest, null, 2)),
-  );
-  await runEffect(fileSystem.rename(tempPath, manifestPath));
-};
-
-const updateAssetCacheManifest = async ({
-  asset,
-  cacheDir,
-  downloadPath,
-  extractedPath,
-}: {
-  asset: KbvOracleAsset;
-  cacheDir: string;
-  downloadPath: string;
-  extractedPath?: string;
-}) => {
-  const manifest = await readAssetCacheManifest(cacheDir);
-  manifest[asset.assetId] = {
-    assetId: asset.assetId,
-    downloadPath,
-    fileName: asset.fileName,
-    url: asset.url,
-    ...(asset.sha256 ? { sha256: asset.sha256 } : {}),
-    downloadedAt: new Date().toISOString(),
-    ...(extractedPath ? { extractedPath } : {}),
-  };
-  await writeAssetCacheManifest({
+const writeAssetCacheManifest = Effect.fn("oracles.writeAssetCacheManifest")(
+  function* ({
     cacheDir,
     manifest,
-  });
-};
+  }: {
+    cacheDir: string;
+    manifest: Record<string, KbvOracleAssetCacheEntry>;
+  }) {
+    yield* fileSystem.makeDirectory(cacheDir, { recursive: true });
+    const manifestPath = getKbvOracleCacheManifestPath(cacheDir);
+    const tempPath = `${manifestPath}.${process.pid}.${Date.now()}.tmp`;
+    yield* fileSystem.writeFileString(
+      tempPath,
+      JSON.stringify(manifest, null, 2),
+    );
+    yield* fileSystem.rename(tempPath, manifestPath);
+  },
+);
 
-export const getAssetCacheEntry = async ({
-  assetId,
-  cacheDir = getKbvOracleCacheDir(),
-}: {
-  assetId: string;
-  cacheDir?: string;
-}) => {
-  const manifest = await readAssetCacheManifest(cacheDir);
-  return manifest[assetId];
-};
-
-export const downloadManagedAsset = async (
-  asset: KbvOracleAsset,
-  cacheDir = getKbvOracleCacheDir(),
-) => {
-  const resolvedCacheDir = path.resolve(cacheDir);
-  const downloadDir = path.join(resolvedCacheDir, "downloads");
-  const downloadPath = path.join(downloadDir, asset.fileName);
-
-  await runEffect(fileSystem.makeDirectory(downloadDir, { recursive: true }));
-
-  if (await fileExists(downloadPath)) {
-    try {
-      await verifyFileHash(downloadPath, asset.sha256);
-      await updateAssetCacheManifest({
-        asset,
-        cacheDir: resolvedCacheDir,
-        downloadPath,
-      });
-      return downloadPath;
-    } catch {
-      await runEffect(fileSystem.remove(downloadPath, { force: true }));
-    }
-  }
-
-  const response = await fetch(asset.url);
-  if (!response.ok) {
-    throw new Error(`Failed to download ${asset.url}: ${response.status}`);
-  }
-
-  const content = Buffer.from(await response.arrayBuffer());
-  if (asset.sha256) {
-    const actualSha256 = computeBufferSha256(content);
-    if (actualSha256 !== asset.sha256) {
-      throw new Error(
-        `SHA-256 mismatch for ${asset.url}: expected ${asset.sha256}, got ${actualSha256}`,
-      );
-    }
-  }
-
-  const tempPath = path.join(
-    downloadDir,
-    `${asset.fileName}.${process.pid}.${Date.now()}.tmp`,
-  );
-  await runEffect(fileSystem.writeFile(tempPath, content));
-  await runEffect(
-    fileSystem.makeDirectory(path.dirname(downloadPath), { recursive: true }),
-  );
-  await runEffect(fileSystem.remove(downloadPath, { force: true }));
-  await runEffect(fileSystem.writeFile(downloadPath, content));
-  await runEffect(fileSystem.remove(tempPath, { force: true }));
-  await updateAssetCacheManifest({
+const updateAssetCacheManifest = Effect.fn("oracles.updateAssetCacheManifest")(
+  function* ({
     asset,
-    cacheDir: resolvedCacheDir,
+    cacheDir,
     downloadPath,
-  });
-  return downloadPath;
-};
+    extractedPath,
+  }: {
+    asset: KbvOracleAsset;
+    cacheDir: string;
+    downloadPath: string;
+    extractedPath?: string;
+  }) {
+    const manifest = yield* readAssetCacheManifest(cacheDir);
+    manifest[asset.assetId] = {
+      assetId: asset.assetId,
+      downloadPath,
+      fileName: asset.fileName,
+      url: asset.url,
+      ...(asset.sha256 ? { sha256: asset.sha256 } : {}),
+      downloadedAt: new Date().toISOString(),
+      ...(extractedPath ? { extractedPath } : {}),
+    };
+    yield* writeAssetCacheManifest({
+      cacheDir,
+      manifest,
+    });
+  },
+);
 
-export const ensureExtractedAsset = async (
-  asset: KbvOracleAsset,
-  cacheDir = getKbvOracleCacheDir(),
-) => {
-  const resolvedCacheDir = path.resolve(cacheDir);
-  if (asset.extract !== true) {
-    const archivePath = await downloadManagedAsset(asset, resolvedCacheDir);
-    return archivePath;
-  }
+export const getAssetCacheEntry = Effect.fn("oracles.getAssetCacheEntry")(
+  function* ({
+    assetId,
+    cacheDir = getKbvOracleCacheDir(),
+  }: {
+    assetId: string;
+    cacheDir?: string;
+  }) {
+    const manifest = yield* readAssetCacheManifest(cacheDir);
+    return manifest[assetId];
+  },
+);
 
-  const extractDir = path.join(resolvedCacheDir, "extracted", asset.assetId);
-  const markerPath = path.join(extractDir, ".ok");
-  if (await fileExists(markerPath)) {
-    return extractDir;
-  }
+export const downloadManagedAsset = Effect.fn("oracles.downloadManagedAsset")(
+  function* (asset: KbvOracleAsset, cacheDir = getKbvOracleCacheDir()) {
+    const resolvedCacheDir = path.resolve(cacheDir);
+    const downloadDir = path.join(resolvedCacheDir, "downloads");
+    const downloadPath = path.join(downloadDir, asset.fileName);
 
-  if (await fileExists(extractDir)) {
-    const entries = await runEffect(fileSystem.readDirectory(extractDir));
-    const hasExtractedContent = entries.some((entry) => entry !== ".ok");
-    if (hasExtractedContent) {
-      await runEffect(fileSystem.writeFileString(markerPath, "ok"));
+    yield* fileSystem.makeDirectory(downloadDir, { recursive: true });
+
+    if (yield* fileExists(downloadPath)) {
+      const verifiedDownload = yield* verifyFileHash({
+        expectedSha256: asset.sha256,
+        filePath: downloadPath,
+      }).pipe(
+        Effect.zipRight(
+          updateAssetCacheManifest({
+            asset,
+            cacheDir: resolvedCacheDir,
+            downloadPath,
+          }),
+        ),
+        Effect.as(downloadPath),
+        Effect.catchAllCause(() =>
+          fileSystem
+            .remove(downloadPath, { force: true })
+            .pipe(Effect.as(undefined)),
+        ),
+      );
+
+      if (verifiedDownload) {
+        return verifiedDownload;
+      }
+    }
+
+    const response = yield* Effect.tryPromise(() => fetch(asset.url));
+    if (!response.ok) {
+      throw new Error(`Failed to download ${asset.url}: ${response.status}`);
+    }
+
+    const content = Buffer.from(
+      yield* Effect.tryPromise(() => response.arrayBuffer()),
+    );
+    if (asset.sha256) {
+      const actualSha256 = computeBufferSha256(content);
+      if (actualSha256 !== asset.sha256) {
+        throw new Error(
+          `SHA-256 mismatch for ${asset.url}: expected ${asset.sha256}, got ${actualSha256}`,
+        );
+      }
+    }
+
+    const tempPath = path.join(
+      downloadDir,
+      `${asset.fileName}.${process.pid}.${Date.now()}.tmp`,
+    );
+    yield* fileSystem.writeFile(tempPath, content);
+    yield* fileSystem.makeDirectory(path.dirname(downloadPath), {
+      recursive: true,
+    });
+    yield* fileSystem.remove(downloadPath, { force: true });
+    yield* fileSystem.writeFile(downloadPath, content);
+    yield* fileSystem.remove(tempPath, { force: true });
+    yield* updateAssetCacheManifest({
+      asset,
+      cacheDir: resolvedCacheDir,
+      downloadPath,
+    });
+    return downloadPath;
+  },
+);
+
+export const ensureExtractedAsset = Effect.fn("oracles.ensureExtractedAsset")(
+  function* (asset: KbvOracleAsset, cacheDir = getKbvOracleCacheDir()) {
+    const resolvedCacheDir = path.resolve(cacheDir);
+    if (asset.extract !== true) {
+      return yield* downloadManagedAsset(asset, resolvedCacheDir);
+    }
+
+    const extractDir = path.join(resolvedCacheDir, "extracted", asset.assetId);
+    const markerPath = path.join(extractDir, ".ok");
+    if (yield* fileExists(markerPath)) {
       return extractDir;
     }
-  }
 
-  const archivePath = await downloadManagedAsset(asset, resolvedCacheDir);
+    if (yield* fileExists(extractDir)) {
+      const entries = yield* fileSystem.readDirectory(extractDir);
+      const hasExtractedContent = entries.some((entry) => entry !== ".ok");
+      if (hasExtractedContent) {
+        yield* fileSystem.writeFileString(markerPath, "ok");
+        return extractDir;
+      }
+    }
 
-  await runEffect(
-    fileSystem.remove(extractDir, { force: true, recursive: true }),
-  );
-  await runEffect(fileSystem.makeDirectory(extractDir, { recursive: true }));
+    const archivePath = yield* downloadManagedAsset(asset, resolvedCacheDir);
 
-  const unzipResult = await runCommand({
-    args: ["-oq", archivePath, "-d", extractDir],
-    command: "unzip",
-  });
-  if (unzipResult.exitCode !== 0) {
-    throw new Error(
-      `Failed to extract ${archivePath}: ${(unzipResult.stderr || unzipResult.stdout).trim()}`,
+    yield* fileSystem.remove(extractDir, { force: true, recursive: true });
+    yield* fileSystem.makeDirectory(extractDir, { recursive: true });
+
+    const unzipResult = yield* Effect.tryPromise(() =>
+      runCommand({
+        args: ["-oq", archivePath, "-d", extractDir],
+        command: "unzip",
+      }),
     );
-  }
+    if (unzipResult.exitCode !== 0) {
+      throw new Error(
+        `Failed to extract ${archivePath}: ${(unzipResult.stderr || unzipResult.stdout).trim()}`,
+      );
+    }
 
-  await runEffect(fileSystem.writeFileString(markerPath, "ok"));
-  await updateAssetCacheManifest({
-    asset,
-    cacheDir: resolvedCacheDir,
-    downloadPath: archivePath,
-    extractedPath: extractDir,
-  });
-  return extractDir;
-};
+    yield* fileSystem.writeFileString(markerPath, "ok");
+    yield* updateAssetCacheManifest({
+      asset,
+      cacheDir: resolvedCacheDir,
+      downloadPath: archivePath,
+      extractedPath: extractDir,
+    });
+    return extractDir;
+  },
+);
 
-export const findFileRecursive = async (
+export const findFileRecursive: (
   rootDir: string,
   matcher: (entryPath: string) => boolean,
-): Promise<string | undefined> => {
-  const entries = await runEffect(fileSystem.readDirectory(rootDir));
+) => Effect.Effect<string | undefined, unknown, never> = Effect.fn(
+  "oracles.findFileRecursive",
+)(function* (rootDir: string, matcher: (entryPath: string) => boolean) {
+  const entries = yield* fileSystem.readDirectory(rootDir);
   for (const entry of entries) {
     const entryPath = path.join(rootDir, entry);
-    const entryStat = await runEffect(fileSystem.stat(entryPath));
+    const entryStat = yield* fileSystem.stat(entryPath);
     if (entryStat.type === "Directory") {
-      const nested = await findFileRecursive(entryPath, matcher);
+      const nested = yield* findFileRecursive(entryPath, matcher);
       if (nested) {
         return nested;
       }
@@ -519,39 +556,46 @@ export const findFileRecursive = async (
   }
 
   return undefined;
-};
+});
 
-const collectIgDirectories = async (rootDir: string): Promise<string[]> => {
+const collectIgDirectories: (
+  rootDir: string,
+) => Effect.Effect<string[], unknown, never> = Effect.fn(
+  "oracles.collectIgDirectories",
+)(function* (rootDir: string) {
   const directories = new Set<string>();
 
-  const visit = async (currentDir: string) => {
-    const entries = await runEffect(fileSystem.readDirectory(currentDir));
-    let hasResourceLikeFiles = false;
+  const visit: (currentDir: string) => Effect.Effect<void, unknown, never> =
+    Effect.fn("oracles.collectIgDirectories.visit")(function* (
+      currentDir: string,
+    ) {
+      const entries = yield* fileSystem.readDirectory(currentDir);
+      let hasResourceLikeFiles = false;
 
-    for (const entry of entries) {
-      const entryPath = path.join(currentDir, entry);
-      const entryStat = await runEffect(fileSystem.stat(entryPath));
+      for (const entry of entries) {
+        const entryPath = path.join(currentDir, entry);
+        const entryStat = yield* fileSystem.stat(entryPath);
 
-      if (entryStat.type === "Directory") {
-        await visit(entryPath);
-        continue;
+        if (entryStat.type === "Directory") {
+          yield* visit(entryPath);
+          continue;
+        }
+
+        if (
+          entry.endsWith(".xml") ||
+          entry.endsWith(".json") ||
+          entry.endsWith(".map")
+        ) {
+          hasResourceLikeFiles = true;
+        }
       }
 
-      if (
-        entry.endsWith(".xml") ||
-        entry.endsWith(".json") ||
-        entry.endsWith(".map")
-      ) {
-        hasResourceLikeFiles = true;
+      if (hasResourceLikeFiles) {
+        directories.add(currentDir);
       }
-    }
+    });
 
-    if (hasResourceLikeFiles) {
-      directories.add(currentDir);
-    }
-  };
-
-  await visit(rootDir);
+  yield* visit(rootDir);
   return [...directories].sort((left, right) => {
     const leftBase = left.split("/").at(-1) ?? left;
     const rightBase = right.split("/").at(-1) ?? right;
@@ -569,144 +613,142 @@ const collectIgDirectories = async (rootDir: string): Promise<string[]> => {
 
     return left.localeCompare(right);
   });
-};
+});
 
-export const ensureFhirValidatorAssets = async ({
+export const ensureFhirValidatorAssets = Effect.fn(
+  "oracles.ensureFhirValidatorAssets",
+)(function* ({
   cacheDir = getKbvOracleCacheDir(),
   family,
 }: {
   cacheDir?: string;
   family: "eAU" | "eRezept" | "eVDGA";
-}) => {
+}) {
   const resolvedCacheDir = path.resolve(cacheDir);
   const cacheKey = `${family}:${resolvedCacheDir}`;
-  const cached = fhirValidatorAssetsCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const pending = (async () => {
-    const serviceDir = await ensureExtractedAsset(
-      kbvOracleAssets.fhirValidatorService_2_2_0,
-      resolvedCacheDir,
-    );
-    const validatorJar = await findFileRecursive(
-      serviceDir,
-      (entryPath) =>
-        entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
-    );
-    if (!validatorJar) {
-      throw new Error(
-        "validator_cli jar not found in extracted KBV validator service",
+  return yield* withPromiseCache(
+    fhirValidatorAssetsCache,
+    cacheKey,
+    Effect.gen(function* () {
+      const serviceDir = yield* ensureExtractedAsset(
+        kbvOracleAssets.fhirValidatorService_2_2_0,
+        resolvedCacheDir,
       );
-    }
+      const validatorJar = yield* findFileRecursive(
+        serviceDir,
+        (entryPath: string) =>
+          entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
+      );
+      if (!validatorJar) {
+        throw new Error(
+          "validator_cli jar not found in extracted KBV validator service",
+        );
+      }
 
-    const packageRoot =
-      family === "eAU"
-        ? await ensureExtractedAsset(
-            kbvOracleAssets.kbvFhirEau_1_2_1,
-            resolvedCacheDir,
-          )
-        : family === "eRezept"
-          ? await ensureExtractedAsset(
-              kbvOracleAssets.kbvFhirErp_1_4_1,
+      const packageRoot =
+        family === "eAU"
+          ? yield* ensureExtractedAsset(
+              kbvOracleAssets.kbvFhirEau_1_2_1,
               resolvedCacheDir,
             )
-          : path.resolve(
-              KBV_MIRROR_ROOT,
-              "DigitaleMuster/eVDGA/KBV_FHIR_eVDGA_V1.2.2_zur_Validierung.zip.extracted",
-            );
+          : family === "eRezept"
+            ? yield* ensureExtractedAsset(
+                kbvOracleAssets.kbvFhirErp_1_4_1,
+                resolvedCacheDir,
+              )
+            : path.resolve(
+                KBV_MIRROR_ROOT,
+                "DigitaleMuster/eVDGA/KBV_FHIR_eVDGA_V1.2.2_zur_Validierung.zip.extracted",
+              );
 
-    if (!(await fileExists(packageRoot))) {
-      throw new Error(
-        family === "eVDGA"
-          ? "eVDGA validator package was not found in /Users/johannes/Code/kbv-mirror"
-          : `FHIR validator package root for ${family} was not found`,
+      if (!(yield* fileExists(packageRoot))) {
+        throw new Error(
+          family === "eVDGA"
+            ? "eVDGA validator package was not found in /Users/johannes/Code/kbv-mirror"
+            : `FHIR validator package root for ${family} was not found`,
+        );
+      }
+
+      const nestedIgPaths = (yield* collectIgDirectories(packageRoot)).filter(
+        (entryPath) => entryPath !== packageRoot,
       );
-    }
 
-    const nestedIgPaths = (await collectIgDirectories(packageRoot)).filter(
-      (entryPath) => entryPath !== packageRoot,
+      return {
+        igPaths: [...nestedIgPaths, packageRoot],
+        packageRoot,
+        validatorJar,
+      };
+    }),
+  );
+});
+
+export const ensureKvdtAssets = Effect.fn("oracles.ensureKvdtAssets")(
+  function* ({ cacheDir = getKbvOracleCacheDir() }: { cacheDir?: string }) {
+    const resolvedCacheDir = path.resolve(cacheDir);
+    const xpmDir = yield* ensureExtractedAsset(
+      kbvOracleAssets.xpmKvdtPraxis_2026_2_1,
+      resolvedCacheDir,
+    );
+    const xkmDir = yield* ensureExtractedAsset(
+      kbvOracleAssets.xkm_1_44_0,
+      resolvedCacheDir,
+    );
+    const xkmPublicKeysDir = yield* ensureExtractedAsset(
+      kbvOracleAssets.xkmPublicKeys_2026_02,
+      resolvedCacheDir,
+    );
+    const xkmTestKeysDir = yield* ensureExtractedAsset(
+      kbvOracleAssets.xkmTestKeys_2026_02,
+      resolvedCacheDir,
+    );
+    const pruefassistentJar = yield* downloadManagedAsset(
+      kbvOracleAssets.kbvPruefassistent_2026_2_1,
+      resolvedCacheDir,
     );
 
+    const xpmStartScript = yield* findFileRecursive(
+      xpmDir,
+      (entryPath: string) => entryPath.endsWith("StartPruefung.sh"),
+    );
+    const xkmStartScript = yield* findFileRecursive(
+      xkmDir,
+      (entryPath: string) => entryPath.endsWith("StartKryptomodul.sh"),
+    );
+
+    if (!xpmStartScript) {
+      throw new Error("KVDT XPM start script not found in downloaded package");
+    }
+    if (!xkmStartScript) {
+      throw new Error("XKM start script not found in downloaded package");
+    }
+
     return {
-      igPaths: [...nestedIgPaths, packageRoot],
-      packageRoot,
-      validatorJar,
+      pruefassistentJar,
+      xkmDir,
+      xkmPublicKeysDir,
+      xkmStartScript,
+      xkmTestKeysDir,
+      xpmDir,
+      xpmStartScript,
     };
-  })();
+  },
+);
 
-  fhirValidatorAssetsCache.set(cacheKey, pending);
-  return pending;
-};
-
-export const ensureKvdtAssets = async ({
+export const ensureBmpAssets = Effect.fn("oracles.ensureBmpAssets")(function* ({
   cacheDir = getKbvOracleCacheDir(),
 }: {
   cacheDir?: string;
-}) => {
+}) {
   const resolvedCacheDir = path.resolve(cacheDir);
-  const xpmDir = await ensureExtractedAsset(
-    kbvOracleAssets.xpmKvdtPraxis_2026_2_1,
-    resolvedCacheDir,
-  );
-  const xkmDir = await ensureExtractedAsset(
-    kbvOracleAssets.xkm_1_44_0,
-    resolvedCacheDir,
-  );
-  const xkmPublicKeysDir = await ensureExtractedAsset(
-    kbvOracleAssets.xkmPublicKeys_2026_02,
-    resolvedCacheDir,
-  );
-  const xkmTestKeysDir = await ensureExtractedAsset(
-    kbvOracleAssets.xkmTestKeys_2026_02,
-    resolvedCacheDir,
-  );
-  const pruefassistentJar = await downloadManagedAsset(
-    kbvOracleAssets.kbvPruefassistent_2026_2_1,
-    resolvedCacheDir,
-  );
-
-  const xpmStartScript = await findFileRecursive(xpmDir, (entryPath) =>
-    entryPath.endsWith("StartPruefung.sh"),
-  );
-  const xkmStartScript = await findFileRecursive(xkmDir, (entryPath) =>
-    entryPath.endsWith("StartKryptomodul.sh"),
-  );
-
-  if (!xpmStartScript) {
-    throw new Error("KVDT XPM start script not found in downloaded package");
-  }
-  if (!xkmStartScript) {
-    throw new Error("XKM start script not found in downloaded package");
-  }
-
-  return {
-    pruefassistentJar,
-    xkmDir,
-    xkmPublicKeysDir,
-    xkmStartScript,
-    xkmTestKeysDir,
-    xpmDir,
-    xpmStartScript,
-  };
-};
-
-export const ensureBmpAssets = async ({
-  cacheDir = getKbvOracleCacheDir(),
-}: {
-  cacheDir?: string;
-}) => {
-  const resolvedCacheDir = path.resolve(cacheDir);
-  const bmpDir = await ensureExtractedAsset(
+  const bmpDir = yield* ensureExtractedAsset(
     kbvOracleAssets.bmp_2_8_q3_2026,
     resolvedCacheDir,
   );
-  const bmpExamplesDir = await ensureExtractedAsset(
+  const bmpExamplesDir = yield* ensureExtractedAsset(
     kbvOracleAssets.bmpExamples_2_8_q3_2026,
     resolvedCacheDir,
   );
-  const bmpXsd = await findFileRecursive(bmpDir, (entryPath) =>
+  const bmpXsd = yield* findFileRecursive(bmpDir, (entryPath: string) =>
     entryPath.endsWith(".xsd"),
   );
 
@@ -719,23 +761,23 @@ export const ensureBmpAssets = async ({
     bmpExamplesDir,
     bmpXsd,
   };
-};
+});
 
-export const ensureTssAssets = async ({
+export const ensureTssAssets = Effect.fn("oracles.ensureTssAssets")(function* ({
   cacheDir = getKbvOracleCacheDir(),
 }: {
   cacheDir?: string;
-}) => {
+}) {
   const resolvedCacheDir = path.resolve(cacheDir);
-  const responseExamplesDir = await ensureExtractedAsset(
+  const responseExamplesDir = yield* ensureExtractedAsset(
     kbvOracleAssets.tssResponseExamples_7_2,
     resolvedCacheDir,
   );
-  const vsdTestfaelleDir = await ensureExtractedAsset(
+  const vsdTestfaelleDir = yield* ensureExtractedAsset(
     kbvOracleAssets.tssVsdTestfaelle_2_0,
     resolvedCacheDir,
   );
-  const testpatientXmlDir = await ensureExtractedAsset(
+  const testpatientXmlDir = yield* ensureExtractedAsset(
     kbvOracleAssets.tssTestpatientXml_2025_07_14,
     resolvedCacheDir,
   );
@@ -745,7 +787,7 @@ export const ensureTssAssets = async ({
     testpatientXmlDir,
     vsdTestfaelleDir,
   };
-};
+});
 
 const sanitizePackageId = (packageId: string) => packageId.replaceAll("/", "_");
 
@@ -774,25 +816,29 @@ const getExternalFhirPackageInstallDir = ({
   version: string;
 }) => path.join(getFhirPackageCacheRoot(cacheDir), `${packageId}#${version}`);
 
-const ensureFhirPackageCacheMetadata = async (cacheDir: string) => {
+const ensureFhirPackageCacheMetadata = Effect.fn(
+  "oracles.ensureFhirPackageCacheMetadata",
+)(function* (cacheDir: string) {
   const packageCacheRoot = getFhirPackageCacheRoot(cacheDir);
-  await runEffect(
-    fileSystem.makeDirectory(packageCacheRoot, { recursive: true }),
-  );
+  yield* fileSystem.makeDirectory(packageCacheRoot, { recursive: true });
   const packagesIniPath = path.join(packageCacheRoot, "packages.ini");
 
-  if (!(await fileExists(packagesIniPath))) {
-    await runEffect(
-      fileSystem.writeFileString(packagesIniPath, "[cache]\nversion = 3\n"),
+  if (!(yield* fileExists(packagesIniPath))) {
+    yield* fileSystem.writeFileString(
+      packagesIniPath,
+      "[cache]\nversion = 3\n",
     );
   }
 
   return packageCacheRoot;
-};
+});
 
-const areFhirPrerequisitesInstalled = async (cacheDir: string) => {
-  const packageChecks = await Promise.all(
-    fhirValidatorPrerequisitePackages.map(async (externalPackage) => {
+const areFhirPrerequisitesInstalled = Effect.fn(
+  "oracles.areFhirPrerequisitesInstalled",
+)(function* (cacheDir: string) {
+  const packageChecks = yield* Effect.forEach(
+    fhirValidatorPrerequisitePackages,
+    (externalPackage) => {
       const installDir = getExternalFhirPackageInstallDir({
         cacheDir,
         packageId: externalPackage.packageId,
@@ -800,35 +846,37 @@ const areFhirPrerequisitesInstalled = async (cacheDir: string) => {
       });
       const packageJsonPath = path.join(installDir, "package", "package.json");
       return fileExists(packageJsonPath);
-    }),
+    },
   );
 
   return packageChecks.every(Boolean);
-};
+});
 
-const writeFhirDependencyMarker = async (cacheDir: string) => {
+const writeFhirDependencyMarker = Effect.fn(
+  "oracles.writeFhirDependencyMarker",
+)(function* (cacheDir: string) {
   const markerPath = getFhirDependencyMarkerPath(cacheDir);
-  await runEffect(
-    fileSystem.writeFileString(
-      markerPath,
-      JSON.stringify(
-        {
-          prerequisites: fhirValidatorPrerequisitePackages.map(
-            ({ packageId, version }) => ({
-              packageId,
-              version,
-            }),
-          ),
-          writtenAt: new Date().toISOString(),
-        },
-        null,
-        2,
-      ),
+  yield* fileSystem.writeFileString(
+    markerPath,
+    JSON.stringify(
+      {
+        prerequisites: fhirValidatorPrerequisitePackages.map(
+          ({ packageId, version }) => ({
+            packageId,
+            version,
+          }),
+        ),
+        writtenAt: new Date().toISOString(),
+      },
+      null,
+      2,
     ),
   );
-};
+});
 
-const downloadExternalFhirPackage = async ({
+const downloadExternalFhirPackage = Effect.fn(
+  "oracles.downloadExternalFhirPackage",
+)(function* ({
   cacheDir,
   packageId,
   sha256,
@@ -836,34 +884,45 @@ const downloadExternalFhirPackage = async ({
   version,
 }: ExternalFhirPackage & {
   cacheDir: string;
-}) => {
+}) {
   const archivePath = getExternalFhirPackageArchivePath({
     cacheDir,
     packageId,
     version,
   });
 
-  await runEffect(
-    fileSystem.makeDirectory(path.dirname(archivePath), { recursive: true }),
-  );
+  yield* fileSystem.makeDirectory(path.dirname(archivePath), {
+    recursive: true,
+  });
 
-  if (await fileExists(archivePath)) {
-    try {
-      await verifyFileHash(archivePath, sha256);
-      return archivePath;
-    } catch {
-      await runEffect(fileSystem.remove(archivePath, { force: true }));
+  if (yield* fileExists(archivePath)) {
+    const verifiedArchivePath = yield* verifyFileHash({
+      expectedSha256: sha256,
+      filePath: archivePath,
+    }).pipe(
+      Effect.as(archivePath),
+      Effect.catchAllCause(() =>
+        fileSystem
+          .remove(archivePath, { force: true })
+          .pipe(Effect.as(undefined)),
+      ),
+    );
+
+    if (verifiedArchivePath) {
+      return verifiedArchivePath;
     }
   }
 
   const packageUrl =
     url ?? `https://packages2.fhir.org/web/${packageId}-${version}.tgz`;
-  const response = await fetch(packageUrl);
+  const response = yield* Effect.tryPromise(() => fetch(packageUrl));
   if (!response.ok) {
     throw new Error(`Failed to download ${packageUrl}: ${response.status}`);
   }
 
-  const content = Buffer.from(await response.arrayBuffer());
+  const content = Buffer.from(
+    yield* Effect.tryPromise(() => response.arrayBuffer()),
+  );
   if (sha256) {
     const actualSha256 = computeBufferSha256(content);
     if (actualSha256 !== sha256) {
@@ -873,11 +932,17 @@ const downloadExternalFhirPackage = async ({
     }
   }
 
-  await runEffect(fileSystem.writeFile(archivePath, content));
+  yield* fileSystem.writeFile(archivePath, content);
   return archivePath;
-};
+});
 
-export const ensureExternalFhirPackageInstalled = async ({
+export const ensureExternalFhirPackageInstalled: (
+  args: ExternalFhirPackage & {
+    cacheDir?: string;
+  },
+) => Effect.Effect<string, unknown, never> = Effect.fn(
+  "oracles.ensureExternalFhirPackageInstalled",
+)(function* ({
   cacheDir = getKbvOracleCacheDir(),
   packageId,
   sha256,
@@ -885,7 +950,7 @@ export const ensureExternalFhirPackageInstalled = async ({
   version,
 }: ExternalFhirPackage & {
   cacheDir?: string;
-}) => {
+}) {
   const resolvedCacheDir = path.resolve(cacheDir);
   const installDir = getExternalFhirPackageInstallDir({
     cacheDir: resolvedCacheDir,
@@ -894,10 +959,10 @@ export const ensureExternalFhirPackageInstalled = async ({
   });
   const packageJsonPath = path.join(installDir, "package", "package.json");
 
-  await ensureFhirPackageCacheMetadata(resolvedCacheDir);
+  yield* ensureFhirPackageCacheMetadata(resolvedCacheDir);
 
-  if (!(await fileExists(packageJsonPath))) {
-    const archivePath = await downloadExternalFhirPackage({
+  if (!(yield* fileExists(packageJsonPath))) {
+    const archivePath = yield* downloadExternalFhirPackage({
       cacheDir: resolvedCacheDir,
       packageId,
       sha256,
@@ -910,36 +975,32 @@ export const ensureExternalFhirPackageInstalled = async ({
       "extract",
       `${sanitizePackageId(packageId)}-${version}`,
     );
-    await runEffect(
-      fileSystem.remove(extractDir, { force: true, recursive: true }),
+    yield* fileSystem.remove(extractDir, { force: true, recursive: true });
+    yield* fileSystem.makeDirectory(extractDir, { recursive: true });
+    const tarResult = yield* Effect.tryPromise(() =>
+      runCommand({
+        args: ["-xzf", archivePath, "-C", extractDir],
+        command: "tar",
+      }),
     );
-    await runEffect(fileSystem.makeDirectory(extractDir, { recursive: true }));
-    const tarResult = await runCommand({
-      args: ["-xzf", archivePath, "-C", extractDir],
-      command: "tar",
-    });
     if (tarResult.exitCode !== 0) {
       throw new Error(
         `Failed to extract ${archivePath}: ${(tarResult.stderr || tarResult.stdout).trim()}`,
       );
     }
-    await runEffect(
-      fileSystem.remove(installDir, { force: true, recursive: true }),
-    );
-    await runEffect(
-      fileSystem.makeDirectory(path.dirname(installDir), { recursive: true }),
-    );
-    await runEffect(
-      fileSystem.copy(
-        path.join(extractDir, "package"),
-        path.join(installDir, "package"),
-        { overwrite: true },
-      ),
+    yield* fileSystem.remove(installDir, { force: true, recursive: true });
+    yield* fileSystem.makeDirectory(path.dirname(installDir), {
+      recursive: true,
+    });
+    yield* fileSystem.copy(
+      path.join(extractDir, "package"),
+      path.join(installDir, "package"),
+      { overwrite: true },
     );
   }
 
   const packageJson = JSON.parse(
-    await runEffect(fileSystem.readFileString(packageJsonPath)),
+    yield* fileSystem.readFileString(packageJsonPath),
   ) as {
     dependencies?: Record<string, string>;
   };
@@ -947,7 +1008,7 @@ export const ensureExternalFhirPackageInstalled = async ({
   for (const [dependencyId, dependencyVersion] of Object.entries(
     packageJson.dependencies ?? {},
   )) {
-    await ensureExternalFhirPackageInstalled({
+    yield* ensureExternalFhirPackageInstalled({
       cacheDir: resolvedCacheDir,
       packageId: dependencyId,
       version: dependencyVersion,
@@ -955,107 +1016,97 @@ export const ensureExternalFhirPackageInstalled = async ({
   }
 
   return installDir;
-};
+});
 
-export const ensureFhirValidatorDependencyCache = async ({
-  cacheDir = getKbvOracleCacheDir(),
-}: {
-  cacheDir?: string;
-}) => {
+export const ensureFhirValidatorDependencyCache = Effect.fn(
+  "oracles.ensureFhirValidatorDependencyCache",
+)(function* ({ cacheDir = getKbvOracleCacheDir() }: { cacheDir?: string }) {
   const resolvedCacheDir = path.resolve(cacheDir);
-  const cached = fhirValidatorDependencyCache.get(resolvedCacheDir);
-  if (cached) {
-    return cached;
-  }
-
-  const pending = (async () => {
-    await ensureFhirPackageCacheMetadata(resolvedCacheDir);
-    if (await areFhirPrerequisitesInstalled(resolvedCacheDir)) {
-      await writeFhirDependencyMarker(resolvedCacheDir);
-      return fhirValidatorPrerequisitePackages.map((externalPackage) => ({
-        installDir: getExternalFhirPackageInstallDir({
-          cacheDir: resolvedCacheDir,
+  return yield* withPromiseCache(
+    fhirValidatorDependencyCache,
+    resolvedCacheDir,
+    Effect.gen(function* () {
+      yield* ensureFhirPackageCacheMetadata(resolvedCacheDir);
+      if (yield* areFhirPrerequisitesInstalled(resolvedCacheDir)) {
+        yield* writeFhirDependencyMarker(resolvedCacheDir);
+        return fhirValidatorPrerequisitePackages.map((externalPackage) => ({
+          installDir: getExternalFhirPackageInstallDir({
+            cacheDir: resolvedCacheDir,
+            packageId: externalPackage.packageId,
+            version: externalPackage.version,
+          }),
           packageId: externalPackage.packageId,
           version: externalPackage.version,
-        }),
-        packageId: externalPackage.packageId,
-        version: externalPackage.version,
-      }));
-    }
+        }));
+      }
 
-    const installedPackages = [];
+      const installedPackages = [];
 
-    for (const externalPackage of fhirValidatorPrerequisitePackages) {
-      const installDir = await ensureExternalFhirPackageInstalled({
-        ...externalPackage,
-        cacheDir: resolvedCacheDir,
-      });
-      installedPackages.push({
-        installDir,
-        packageId: externalPackage.packageId,
-        version: externalPackage.version,
-      });
-    }
+      for (const externalPackage of fhirValidatorPrerequisitePackages) {
+        const installDir = yield* ensureExternalFhirPackageInstalled({
+          ...externalPackage,
+          cacheDir: resolvedCacheDir,
+        });
+        installedPackages.push({
+          installDir,
+          packageId: externalPackage.packageId,
+          version: externalPackage.version,
+        });
+      }
 
-    await writeFhirDependencyMarker(resolvedCacheDir);
-    return installedPackages;
-  })();
+      yield* writeFhirDependencyMarker(resolvedCacheDir);
+      return installedPackages;
+    }),
+  );
+});
 
-  fhirValidatorDependencyCache.set(resolvedCacheDir, pending);
-  return pending;
-};
-
-export const ensureFhirValidatorRuntimeHome = async ({
+export const ensureFhirValidatorRuntimeHome = Effect.fn(
+  "oracles.ensureFhirValidatorRuntimeHome",
+)(function* ({
   cacheDir = getKbvOracleCacheDir(),
   runtimeKey,
 }: {
   cacheDir?: string;
   runtimeKey: string;
-}) => {
+}) {
   const resolvedCacheDir = path.resolve(cacheDir);
   const cacheKey = `${resolvedCacheDir}:${runtimeKey}`;
-  const cached = fhirValidatorRuntimeHomeCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
+  return yield* withPromiseCache(
+    fhirValidatorRuntimeHomeCache,
+    cacheKey,
+    Effect.gen(function* () {
+      yield* pruneLegacyFhirRuntimeHomes(resolvedCacheDir);
+      yield* ensureFhirValidatorDependencyCache({
+        cacheDir: resolvedCacheDir,
+      });
 
-  const pending = (async () => {
-    await pruneLegacyFhirRuntimeHomes(resolvedCacheDir);
-    await ensureFhirValidatorDependencyCache({
-      cacheDir: resolvedCacheDir,
-    });
+      const sharedPackageCacheRoot = getFhirPackageCacheRoot(resolvedCacheDir);
+      const runtimeHomeRoot = getFhirRuntimeHomeRoot({
+        cacheDir: resolvedCacheDir,
+        runtimeKey,
+      });
+      const runtimePackageCacheRoot = path.join(
+        runtimeHomeRoot,
+        ".fhir",
+        "packages",
+      );
+      const markerPath = path.join(runtimeHomeRoot, ".kbv-runtime-ready");
 
-    const sharedPackageCacheRoot = getFhirPackageCacheRoot(resolvedCacheDir);
-    const runtimeHomeRoot = getFhirRuntimeHomeRoot({
-      cacheDir: resolvedCacheDir,
-      runtimeKey,
-    });
-    const runtimePackageCacheRoot = path.join(
-      runtimeHomeRoot,
-      ".fhir",
-      "packages",
-    );
-    const markerPath = path.join(runtimeHomeRoot, ".kbv-runtime-ready");
+      if (yield* fileExists(markerPath)) {
+        return runtimeHomeRoot;
+      }
 
-    if (await fileExists(markerPath)) {
-      return runtimeHomeRoot;
-    }
-
-    await runEffect(
-      fileSystem.remove(runtimeHomeRoot, { force: true, recursive: true }),
-    );
-    await runEffect(
-      fileSystem.makeDirectory(path.join(runtimeHomeRoot, ".fhir"), {
+      yield* fileSystem.remove(runtimeHomeRoot, {
+        force: true,
         recursive: true,
-      }),
-    );
-    await runEffect(
-      fileSystem.copy(sharedPackageCacheRoot, runtimePackageCacheRoot, {
+      });
+      yield* fileSystem.makeDirectory(path.join(runtimeHomeRoot, ".fhir"), {
+        recursive: true,
+      });
+      yield* fileSystem.copy(sharedPackageCacheRoot, runtimePackageCacheRoot, {
         overwrite: true,
-      }),
-    );
-    await runEffect(
-      fileSystem.writeFileString(
+      });
+      yield* fileSystem.writeFileString(
         markerPath,
         JSON.stringify(
           {
@@ -1066,23 +1117,22 @@ export const ensureFhirValidatorRuntimeHome = async ({
           null,
           2,
         ),
-      ),
-    );
+      );
 
-    return runtimeHomeRoot;
-  })();
+      return runtimeHomeRoot;
+    }),
+  );
+});
 
-  fhirValidatorRuntimeHomeCache.set(cacheKey, pending);
-  return pending;
-};
-
-export const prefetchKbvOracleAssets = async ({
+export const prefetchKbvOracleAssets = Effect.fn(
+  "oracles.prefetchKbvOracleAssets",
+)(function* ({
   assetIds,
   cacheDir = getKbvOracleCacheDir(),
 }: {
   assetIds?: readonly (keyof typeof kbvOracleAssets)[];
   cacheDir?: string;
-}) => {
+}) {
   const resolvedCacheDir = path.resolve(cacheDir);
   const selectedAssetIds =
     assetIds ??
@@ -1091,32 +1141,32 @@ export const prefetchKbvOracleAssets = async ({
 
   for (const assetId of selectedAssetIds) {
     const asset = kbvOracleAssets[assetId];
-    const path =
+    const assetPath =
       "extract" in asset && asset.extract
-        ? await ensureExtractedAsset(asset, resolvedCacheDir)
-        : await downloadManagedAsset(asset, resolvedCacheDir);
+        ? yield* ensureExtractedAsset(asset, resolvedCacheDir)
+        : yield* downloadManagedAsset(asset, resolvedCacheDir);
     results.push({
       assetId,
-      path,
+      path: assetPath,
     });
   }
 
   return results;
-};
+});
 
-export const cloneAssetWorkspace = async ({
-  sourceDir,
-  targetDir,
-}: {
-  sourceDir: string;
-  targetDir: string;
-}) => {
-  await runEffect(
-    fileSystem.remove(targetDir, { force: true, recursive: true }),
-  );
-  await runEffect(
-    fileSystem.makeDirectory(path.dirname(targetDir), { recursive: true }),
-  );
-  await runEffect(fileSystem.copy(sourceDir, targetDir, { overwrite: true }));
-  return targetDir;
-};
+export const cloneAssetWorkspace = Effect.fn("oracles.cloneAssetWorkspace")(
+  function* ({
+    sourceDir,
+    targetDir,
+  }: {
+    sourceDir: string;
+    targetDir: string;
+  }) {
+    yield* fileSystem.remove(targetDir, { force: true, recursive: true });
+    yield* fileSystem.makeDirectory(path.dirname(targetDir), {
+      recursive: true,
+    });
+    yield* fileSystem.copy(sourceDir, targetDir, { overwrite: true });
+    return targetDir;
+  },
+);

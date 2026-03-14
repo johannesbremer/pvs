@@ -1,14 +1,21 @@
-const { kbvOracleAssets, prefetchKbvOracleAssets } =
-  await import("./assets.ts");
+import { Effect } from "effect";
 
-const requestedAssetIds = process.argv.slice(2);
-const assetIds =
-  requestedAssetIds.length > 0
-    ? requestedAssetIds
-    : Object.keys(kbvOracleAssets);
+void Effect.runPromise(
+  Effect.gen(function* () {
+    const { kbvOracleAssets, prefetchKbvOracleAssets } = yield* Effect.promise(
+      () => import("./assets.ts"),
+    );
 
-const results = await prefetchKbvOracleAssets({
-  assetIds,
-});
+    const requestedAssetIds = process.argv.slice(2);
+    const assetIds =
+      requestedAssetIds.length > 0
+        ? requestedAssetIds
+        : Object.keys(kbvOracleAssets);
 
-process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
+    const results = yield* prefetchKbvOracleAssets({
+      assetIds,
+    });
+
+    process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
+  }),
+);

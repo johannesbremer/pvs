@@ -146,26 +146,20 @@ export const runExecutableKvdtOracleEffect = Effect.fn(
       const tempRoot = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "kbv-kvdt-oracle-",
       });
-      const assets = yield* Effect.tryPromise(() =>
-        ensureKvdtAssets({
-          ...(cacheDir ? { cacheDir } : {}),
-        }),
-      );
-      const javaCommand = yield* Effect.tryPromise(() => resolveJavaCommand());
+      const assets = yield* ensureKvdtAssets({
+        ...(cacheDir ? { cacheDir } : {}),
+      });
+      const javaCommand = yield* resolveJavaCommand();
       const javaDir = path.dirname(javaCommand);
 
-      const xpmWorkspace = yield* Effect.tryPromise(() =>
-        cloneAssetWorkspace({
-          sourceDir: path.join(assets.xpmDir, "XPM_KVDT.Praxis"),
-          targetDir: path.join(tempRoot, "XPM_KVDT.Praxis"),
-        }),
-      );
-      const xkmWorkspace = yield* Effect.tryPromise(() =>
-        cloneAssetWorkspace({
-          sourceDir: path.join(assets.xkmDir, "XKM"),
-          targetDir: path.join(tempRoot, "XKM"),
-        }),
-      );
+      const xpmWorkspace = yield* cloneAssetWorkspace({
+        sourceDir: path.join(assets.xpmDir, "XPM_KVDT.Praxis"),
+        targetDir: path.join(tempRoot, "XPM_KVDT.Praxis"),
+      });
+      const xkmWorkspace = yield* cloneAssetWorkspace({
+        sourceDir: path.join(assets.xkmDir, "XKM"),
+        targetDir: path.join(tempRoot, "XKM"),
+      });
 
       yield* resetWorkspaceDirectoryEffect(path.join(xpmWorkspace, "Listen"));
       yield* resetWorkspaceDirectoryEffect(path.join(xpmWorkspace, "Temp"));
@@ -243,10 +237,9 @@ export const runExecutableKvdtOracleEffect = Effect.fn(
         } satisfies OracleExecutionResult;
       }
 
-      const publicKeyPath = yield* Effect.tryPromise(() =>
-        findFileRecursive(assets.xkmPublicKeysDir, (entryPath) =>
-          entryPath.endsWith("Oeffentlich_KV_V10.pub"),
-        ),
+      const publicKeyPath = yield* findFileRecursive(
+        assets.xkmPublicKeysDir,
+        (entryPath) => entryPath.endsWith("Oeffentlich_KV_V10.pub"),
       );
       if (!publicKeyPath) {
         return {

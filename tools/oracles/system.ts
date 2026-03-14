@@ -1,24 +1,23 @@
-import { fileSystem, runEffect } from "./platform";
+import { Effect } from "effect";
 
-const resolveCommand = async (
+import { fileSystem } from "./platform";
+
+const resolveCommand = Effect.fn("oracles.resolveCommand")(function* (
   candidates: readonly (string | undefined)[],
   fallback: string,
-) => {
+) {
   for (const candidate of candidates) {
     if (!candidate) {
       continue;
     }
 
-    if (
-      candidate === fallback ||
-      (await runEffect(fileSystem.exists(candidate)))
-    ) {
+    if (candidate === fallback || (yield* fileSystem.exists(candidate))) {
       return candidate;
     }
   }
 
   return fallback;
-};
+});
 
 export const resolveJavaCommand = () =>
   resolveCommand(

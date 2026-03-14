@@ -6,7 +6,7 @@ import { Effect, Schema } from "effect";
 
 import { DatabaseReader, DatabaseWriter } from "../confect/_generated/services";
 import { refs } from "../confect/refs";
-import { runWithTestConfect, TestConfect } from "./TestConfect";
+import { provideTestConfect, TestConfect } from "./TestConfect";
 
 const seedStorageId = "seed;_storage" as Id<"_storage">;
 const officialTssSearchsetXml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -120,8 +120,8 @@ describe("appointments, referrals, and TSS workflows", () => {
   it.effect(
     "creates referrals, filters TSS appointments, and books a matching slot",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
             const { organizationId, requesterRoleId } = yield* test.run(
@@ -242,8 +242,8 @@ describe("appointments, referrals, and TSS workflows", () => {
   it.effect(
     "rejects TSS booking when vermittlungscode does not match the selected slot",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
             const { organizationId } = yield* test.run(
@@ -301,8 +301,8 @@ describe("appointments, referrals, and TSS workflows", () => {
   it.effect(
     "imports TSS slots through an integration job and maps a booking into billing and encounter state",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
             const { organizationId, requesterRoleId } = yield* test.run(
@@ -543,8 +543,8 @@ describe("appointments, referrals, and TSS workflows", () => {
   it.effect(
     "imports official-style TSS searchset XML into canonical appointments",
     () =>
-      Effect.promise(async () => {
-        const result = await runWithTestConfect(
+      Effect.gen(function* () {
+        const result = yield* provideTestConfect(
           Effect.gen(function* () {
             const test = yield* TestConfect;
             const { organizationId } = yield* test.run(

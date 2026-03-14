@@ -3,21 +3,21 @@ import { Effect } from "effect";
 
 import { parseOfficialTssSearchsetXml } from "../src/codecs/xml/tss";
 import { ensureTssAssets, findFileRecursive } from "../tools/oracles/assets";
-import { fileSystem, runEffect } from "../tools/oracles/platform";
+import { fileSystem } from "../tools/oracles/platform";
 import { runTssOracle } from "../tools/oracles/tss/run";
 
 describe("official TSS fixture sweeps", () => {
   it.effect(
     "parses all official KBV TSS response XML examples",
     () =>
-      Effect.promise(async () => {
-        const assets = await ensureTssAssets({});
+      Effect.gen(function* () {
+        const assets = yield* ensureTssAssets({});
         const files: string[] = [];
 
         for (let index = 1; index <= 10; index += 1) {
-          const filePath = await findFileRecursive(
+          const filePath = yield* findFileRecursive(
             assets.responseExamplesDir,
-            (entryPath) => entryPath.endsWith(`Response${index}.xml`),
+            (entryPath: string) => entryPath.endsWith(`Response${index}.xml`),
           );
           if (filePath) {
             files.push(filePath);
@@ -27,7 +27,7 @@ describe("official TSS fixture sweeps", () => {
         expect(files.length).toBeGreaterThanOrEqual(10);
 
         for (const filePath of files) {
-          const xml = await runEffect(fileSystem.readFileString(filePath));
+          const xml = yield* fileSystem.readFileString(filePath);
           const parsed = parseOfficialTssSearchsetXml(xml);
           const result = runTssOracle({
             payloadPreviewXml: xml,
@@ -55,24 +55,25 @@ describe("official TSS fixture sweeps", () => {
   it.effect(
     "keeps the official TSS VSD and patient XML fixtures reachable",
     () =>
-      Effect.promise(async () => {
-        const assets = await ensureTssAssets({});
-        const vsdXml = await findFileRecursive(
+      Effect.gen(function* () {
+        const assets = yield* ensureTssAssets({});
+        const vsdXml = yield* findFileRecursive(
           assets.vsdTestfaelleDir,
-          (entryPath) => entryPath.endsWith("_vd.xml"),
+          (entryPath: string) => entryPath.endsWith("_vd.xml"),
         );
-        const patientXml = await findFileRecursive(
+        const patientXml = yield* findFileRecursive(
           assets.testpatientXmlDir,
-          (entryPath) => entryPath.endsWith("_pd.xml"),
+          (entryPath: string) => entryPath.endsWith("_pd.xml"),
         );
 
         expect(vsdXml).toBeDefined();
         expect(patientXml).toBeDefined();
+        if (!vsdXml || !patientXml) {
+          throw new Error("expected TSS fixture XML files");
+        }
 
-        const vsdContent = await runEffect(fileSystem.readFileString(vsdXml!));
-        const patientContent = await runEffect(
-          fileSystem.readFileString(patientXml!),
-        );
+        const vsdContent = yield* fileSystem.readFileString(vsdXml);
+        const patientContent = yield* fileSystem.readFileString(patientXml);
 
         expect(vsdContent.includes("Versicherter")).toBe(true);
         expect(

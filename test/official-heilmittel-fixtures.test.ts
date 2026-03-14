@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
 import { runHeilmittelOracle } from "../tools/oracles/heilmittel/run";
-import { fileSystem, path, runEffect } from "../tools/oracles/platform";
+import { fileSystem, path } from "../tools/oracles/platform";
 
 interface HeilmittelFixture {
   readonly caseId: string;
@@ -12,7 +12,7 @@ interface HeilmittelFixture {
 
 describe("official Heilmittel fixture sweeps", () => {
   it.effect("validates official KBV Heilmittel prueffall fixtures", () =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       const fixturePath = path.join(
         process.cwd(),
         "test",
@@ -21,7 +21,7 @@ describe("official Heilmittel fixture sweeps", () => {
         "pruefpaket-v2.4.json",
       );
       const fixtures = JSON.parse(
-        await runEffect(fileSystem.readFileString(fixturePath)),
+        yield* fileSystem.readFileString(fixturePath),
       ) as readonly HeilmittelFixture[];
 
       expect(fixtures.length).toBeGreaterThanOrEqual(6);

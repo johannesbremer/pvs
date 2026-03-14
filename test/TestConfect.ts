@@ -26,3 +26,7 @@ export const makeTestLayer = TestConfectModule.layer(schema, {
 export const runWithTestConfect = <A, E>(
   effect: Effect.Effect<A, E, typeof TestConfect.Identifier>,
 ) => Effect.runPromise(Effect.provide(effect, makeTestLayer()));
+
+export const provideTestConfect = <A, E>(
+  effect: Effect.Effect<A, E, typeof TestConfect.Identifier>,
+) => Effect.provide(effect, makeTestLayer());

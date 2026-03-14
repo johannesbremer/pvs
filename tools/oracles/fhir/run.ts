@@ -428,12 +428,10 @@ export const runExecutableFhirOracleEffect = Effect.fn(
   const runtimeKey = getFhirRuntimeKey("exec", family);
   const program = Effect.scoped(
     Effect.gen(function* () {
-      const userHomeOverride = yield* Effect.tryPromise(() =>
-        ensureFhirValidatorRuntimeHome({
-          cacheDir: resolvedCacheDir,
-          runtimeKey,
-        }),
-      );
+      const userHomeOverride = yield* ensureFhirValidatorRuntimeHome({
+        cacheDir: resolvedCacheDir,
+        runtimeKey,
+      });
       const tempDir = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "kbv-fhir-oracle-",
       });
@@ -442,21 +440,17 @@ export const runExecutableFhirOracleEffect = Effect.fn(
 
       const assetsStart = Date.now();
       logDebug(`starting ensureFhirValidatorAssets(${family})`);
-      const assets = yield* Effect.tryPromise(() =>
-        ensureFhirValidatorAssets({
-          family,
-          ...(cacheDir ? { cacheDir } : {}),
-        }),
-      );
+      const assets = yield* ensureFhirValidatorAssets({
+        family,
+        ...(cacheDir ? { cacheDir } : {}),
+      });
       logTiming(`ensureFhirValidatorAssets(${family})`, assetsStart);
 
       const dependencyStart = Date.now();
       logDebug(`starting ensureFhirValidatorDependencyCache(${family})`);
-      yield* Effect.tryPromise(() =>
-        ensureFhirValidatorDependencyCache({
-          ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
-        }),
-      );
+      yield* ensureFhirValidatorDependencyCache({
+        ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
+      });
       logTiming(
         `ensureFhirValidatorDependencyCache(${family})`,
         dependencyStart,
@@ -480,7 +474,7 @@ export const runExecutableFhirOracleEffect = Effect.fn(
       const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
       const execStart = Date.now();
       logDebug(`starting validatorCli(${family})`);
-      const javaCommand = yield* Effect.tryPromise(() => resolveJavaCommand());
+      const javaCommand = yield* resolveJavaCommand();
       const { exitCode, stderr, stdout } = yield* Effect.tryPromise(() =>
         runCommand({
           args: [
@@ -580,28 +574,22 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
   const runtimeKey = getFhirRuntimeKey("exec-batch", family);
   const program = Effect.scoped(
     Effect.gen(function* () {
-      const userHomeOverride = yield* Effect.tryPromise(() =>
-        ensureFhirValidatorRuntimeHome({
-          cacheDir: resolvedCacheDir,
-          runtimeKey,
-        }),
-      );
+      const userHomeOverride = yield* ensureFhirValidatorRuntimeHome({
+        cacheDir: resolvedCacheDir,
+        runtimeKey,
+      });
       const tempDir = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "kbv-fhir-batch-oracle-",
       });
       const supportDir = path.join(tempDir, "support");
 
-      const assets = yield* Effect.tryPromise(() =>
-        ensureFhirValidatorAssets({
-          family,
-          ...(cacheDir ? { cacheDir } : {}),
-        }),
-      );
-      yield* Effect.tryPromise(() =>
-        ensureFhirValidatorDependencyCache({
-          ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
-        }),
-      );
+      const assets = yield* ensureFhirValidatorAssets({
+        family,
+        ...(cacheDir ? { cacheDir } : {}),
+      });
+      yield* ensureFhirValidatorDependencyCache({
+        ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
+      });
 
       const xmlDocuments = yield* Effect.forEach(xmlPaths, (xmlPath) =>
         fileSystem.readFileString(xmlPath),
@@ -624,7 +612,7 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
           : assets.igPaths;
       const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
 
-      const javaCommand = yield* Effect.tryPromise(() => resolveJavaCommand());
+      const javaCommand = yield* resolveJavaCommand();
       const { exitCode, stderr, stdout } = yield* Effect.tryPromise(() =>
         runCommand({
           args: [
