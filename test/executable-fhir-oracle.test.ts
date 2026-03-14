@@ -187,6 +187,64 @@ describe("executable FHIR oracle", () => {
   );
 
   it.effect(
+    "rejects common structural and profile corruptions of an official eRezept example",
+    () =>
+      Effect.gen(function* () {
+        const { cacheDir, usesSharedCache } = yield* resolveOracleTestCache({
+          assetIds: [
+            "fhirValidatorService_2_2_0",
+            "kbvErpExamples_1_4",
+            "kbvFhirErp_1_4_1",
+          ],
+          needsFhirDependencies: true,
+          tempPrefix: "kbv-fhir-erp-java-prop-test-",
+        });
+        if (!usesSharedCache) {
+          tempDirs.push(cacheDir);
+        }
+
+        const examplesDir = yield* ensureExtractedAsset(
+          kbvOracleAssets.kbvErpExamples_1_4,
+          cacheDir,
+        );
+        const exampleXml = yield* fileSystem.readFileString(
+          path.join(examplesDir, "Beispiel_19.xml"),
+        );
+
+        yield* Effect.tryPromise(() =>
+          fc.assert(
+            fc.asyncProperty(
+              fc.constantFrom<ExecutableErpMutation>(...erpExecutableMutations),
+              (mutation) =>
+                Effect.runPromise(
+                  Effect.gen(function* () {
+                    // Arrange
+                    const mutatedXml = mutation.mutate(exampleXml);
+
+                    // Act
+                    const executableResult =
+                      yield* runExecutableFhirOracleEffect({
+                        cacheDir,
+                        family: "eRezept",
+                        xml: mutatedXml,
+                      });
+
+                    // Assert
+                    expect(
+                      executableResult.passed,
+                      `Executable oracle unexpectedly accepted ${mutation.id}.\n${JSON.stringify(executableResult, null, 2)}`,
+                    ).toBe(false);
+                  }),
+                ),
+            ),
+            { numRuns: ORACLE_PROPERTY_NUM_RUNS },
+          ),
+        );
+      }),
+    ORACLE_TEST_TIMEOUT,
+  );
+
+  it.effect(
     "validates an official KBV eRezept rendered-dosage example with reusable validator assets",
     () =>
       Effect.gen(function* () {
@@ -228,7 +286,67 @@ describe("executable FHIR oracle", () => {
 
 // Helpers
 
+type ExecutableErpMutation = {
+  readonly id: string;
+  readonly mutate: (xml: string) => string;
+};
 type RequiredErpTag = "Bundle" | "Composition";
+
+const erpExecutableMutations: readonly ExecutableErpMutation[] = [
+  {
+    id: "missing-bundle-tag",
+    mutate: (xml) => removeRequiredTag(xml, "Bundle", "Missing"),
+  },
+  {
+    id: "missing-composition-tag",
+    mutate: (xml) => removeRequiredTag(xml, "Composition", "Missing"),
+  },
+  {
+    id: "invalid-bundle-profile",
+    mutate: (xml) =>
+      replaceRequiredSubstring(
+        xml,
+        "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Bundle|1.4",
+        "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Bundle_Broken|1.4",
+      ),
+  },
+  {
+    id: "invalid-composition-profile",
+    mutate: (xml) =>
+      replaceRequiredSubstring(
+        xml,
+        "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Composition|1.4",
+        "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Composition_Broken|1.4",
+      ),
+  },
+  {
+    id: "invalid-prescription-profile",
+    mutate: (xml) =>
+      replaceRequiredSubstring(
+        xml,
+        "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Prescription|1.4",
+        "https://fhir.kbv.de/StructureDefinition/KBV_PR_ERP_Prescription_Broken|1.4",
+      ),
+  },
+  {
+    id: "broken-medication-reference",
+    mutate: (xml) =>
+      replaceRequiredSubstring(
+        xml,
+        "http://pvs.praxis.local/fhir/Medication/a3ccc266-b033-47cc-9361-98ec450f7db9",
+        "http://pvs.praxis.local/fhir/Medication/does-not-exist",
+      ),
+  },
+  {
+    id: "broken-coverage-reference",
+    mutate: (xml) =>
+      replaceRequiredSubstring(
+        xml,
+        "http://pvs.praxis.local/fhir/Coverage/da80211e-61ee-458e-a651-87370b6ec30c",
+        "http://pvs.praxis.local/fhir/Coverage/does-not-exist",
+      ),
+  },
+];
 
 const removeRequiredTag = (
   xml: string,
@@ -242,4 +360,16 @@ const removeRequiredTag = (
   }
 
   return xml.replace(tagPattern, `<${replacementPrefix}${tagName}`);
+};
+
+const replaceRequiredSubstring = (
+  xml: string,
+  expected: string,
+  replacement: string,
+) => {
+  if (!xml.includes(expected)) {
+    throw new Error(`expected official eRezept XML to contain ${expected}`);
+  }
+
+  return xml.replace(expected, replacement);
 };
