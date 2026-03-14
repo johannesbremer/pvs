@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
+import { Effect } from "effect";
 
 import { kbvOracleAssets } from "../tools/oracles/assets";
 import {
@@ -12,126 +13,150 @@ import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 const KBV_MIRROR_ROOT = "/Users/johannes/Code/kbv-mirror";
 
 describe("official KBV corpus inventory", () => {
-  it("should inventory every pinned update.kbv.de asset exactly once and keep the safety contract intact", () => {
-    // Arrange
-    const findings = collectOfficialKbvInventoryFindings();
+  it.effect(
+    "should inventory every pinned update.kbv.de asset exactly once and keep the safety contract intact",
+    () =>
+      Effect.sync(() => {
+        // Arrange
+        const findings = collectOfficialKbvInventoryFindings();
 
-    // Act
-    const assetCount = Object.keys(kbvOracleAssets).length;
+        // Act
+        const assetCount = Object.keys(kbvOracleAssets).length;
 
-    // Assert
-    expect(officialKbvCorpusInventory).toHaveLength(assetCount);
-    expect(findings.duplicateAssetIds).toHaveLength(0);
-    expect(findings.missingAssetIds).toHaveLength(0);
-    expect(findings.unknownAssetIds).toHaveLength(0);
-    expect(findings.unsafeSourceAssetIds).toHaveLength(0);
-    expect(findings.unpinnedAssetIds).toHaveLength(0);
-    expect(findings.invalidRequiredAssetReferences).toHaveLength(0);
-    expect(findings.invalidReferenceProgramAssetReferences).toHaveLength(0);
-  });
+        // Assert
+        expect(officialKbvCorpusInventory).toHaveLength(assetCount);
+        expect(findings.duplicateAssetIds).toHaveLength(0);
+        expect(findings.missingAssetIds).toHaveLength(0);
+        expect(findings.unknownAssetIds).toHaveLength(0);
+        expect(findings.unsafeSourceAssetIds).toHaveLength(0);
+        expect(findings.unpinnedAssetIds).toHaveLength(0);
+        expect(findings.invalidRequiredAssetReferences).toHaveLength(0);
+        expect(findings.invalidReferenceProgramAssetReferences).toHaveLength(0);
+      }),
+  );
 
-  it("should require every official XML corpus to declare a non-manual validation path", () => {
-    // Arrange
-    const findings = collectOfficialKbvInventoryFindings();
+  it.effect(
+    "should require every official XML corpus to declare a non-manual validation path",
+    () =>
+      Effect.sync(() => {
+        // Arrange
+        const findings = collectOfficialKbvInventoryFindings();
 
-    // Act
-    const xmlCorpusAssetIds = officialKbvXmlCorpusEntries.map(
-      (entry) => entry.assetId,
-    );
+        // Act
+        const xmlCorpusAssetIds = officialKbvXmlCorpusEntries.map(
+          (entry) => entry.assetId,
+        );
 
-    // Assert
-    expect(xmlCorpusAssetIds).toEqual([
-      "bmpExamples_2_8_q3_2026",
-      "kbvEauExamples_1_2",
-      "kbvErpExamples_1_4",
-      "tssResponseExamples_7_2",
-      "tssTestpatientXml_2025_07_14",
-      "tssVsdTestfaelle_2_0",
-    ]);
-    expect(findings.xmlCorpusWithoutValidation).toHaveLength(0);
-    expect(findings.executableCorpusWithoutReferencePrograms).toHaveLength(0);
-  });
+        // Assert
+        expect(xmlCorpusAssetIds).toEqual([
+          "bmpExamples_2_8_q3_2026",
+          "kbvEauExamples_1_2",
+          "kbvErpExamples_1_4",
+          "tssResponseExamples_7_2",
+          "tssTestpatientXml_2025_07_14",
+          "tssVsdTestfaelle_2_0",
+        ]);
+        expect(findings.xmlCorpusWithoutValidation).toHaveLength(0);
+        expect(findings.executableCorpusWithoutReferencePrograms).toHaveLength(
+          0,
+        );
+      }),
+  );
 
-  it("should keep the key corpus-to-validator bindings aligned with the current oracle setup", () => {
-    // Arrange
-    const eauExamples = officialKbvCorpusInventoryByAssetId.kbvEauExamples_1_2;
-    const erpExamples = officialKbvCorpusInventoryByAssetId.kbvErpExamples_1_4;
-    const bmpExamples =
-      officialKbvCorpusInventoryByAssetId.bmpExamples_2_8_q3_2026;
-    const kvdtPackage =
-      officialKbvCorpusInventoryByAssetId.xpmKvdtPraxis_2026_2_1;
-    const tssResponses =
-      officialKbvCorpusInventoryByAssetId.tssResponseExamples_7_2;
+  it.effect(
+    "should keep the key corpus-to-validator bindings aligned with the current oracle setup",
+    () =>
+      Effect.sync(() => {
+        // Arrange
+        const eauExamples =
+          officialKbvCorpusInventoryByAssetId.kbvEauExamples_1_2;
+        const erpExamples =
+          officialKbvCorpusInventoryByAssetId.kbvErpExamples_1_4;
+        const bmpExamples =
+          officialKbvCorpusInventoryByAssetId.bmpExamples_2_8_q3_2026;
+        const kvdtPackage =
+          officialKbvCorpusInventoryByAssetId.xpmKvdtPraxis_2026_2_1;
+        const tssResponses =
+          officialKbvCorpusInventoryByAssetId.tssResponseExamples_7_2;
 
-    // Act
-    const keyBindings = {
-      bmp: bmpExamples.validationMode,
-      eau: eauExamples.validationMode,
-      erp: erpExamples.validationMode,
-      kvdt: kvdtPackage.validationMode,
-      tss: tssResponses.validationMode,
-    };
+        // Act
+        const keyBindings = {
+          bmp: bmpExamples.validationMode,
+          eau: eauExamples.validationMode,
+          erp: erpExamples.validationMode,
+          kvdt: kvdtPackage.validationMode,
+          tss: tssResponses.validationMode,
+        };
 
-    // Assert
-    expect(keyBindings).toEqual({
-      bmp: "executable-xsd",
-      eau: "executable-fhir",
-      erp: "executable-fhir",
-      kvdt: "executable-xpm-xkm",
-      tss: "fixture-backed-local",
-    });
-    expect(eauExamples.referenceProgramAssetIds).toEqual([
-      "fhirValidatorService_2_2_0",
-    ]);
-    expect(erpExamples.referenceProgramAssetIds).toEqual([
-      "fhirValidatorService_2_2_0",
-    ]);
-    expect(bmpExamples.requiredAssetIds).toEqual(["bmp_2_8_q3_2026"]);
-    expect(kvdtPackage.referenceProgramAssetIds).toEqual([
-      "kbvPruefassistent_2026_2_1",
-      "xkm_1_44_0",
-    ]);
-    expect(tssResponses.requiredAssetIds).toEqual([
-      "tssTestpatientXml_2025_07_14",
-      "tssVsdTestfaelle_2_0",
-    ]);
-  });
+        // Assert
+        expect(keyBindings).toEqual({
+          bmp: "executable-xsd",
+          eau: "executable-fhir",
+          erp: "executable-fhir",
+          kvdt: "executable-xpm-xkm",
+          tss: "fixture-backed-local",
+        });
+        expect(eauExamples.referenceProgramAssetIds).toEqual([
+          "fhirValidatorService_2_2_0",
+        ]);
+        expect(erpExamples.referenceProgramAssetIds).toEqual([
+          "fhirValidatorService_2_2_0",
+        ]);
+        expect(bmpExamples.requiredAssetIds).toEqual(["bmp_2_8_q3_2026"]);
+        expect(kvdtPackage.referenceProgramAssetIds).toEqual([
+          "kbvPruefassistent_2026_2_1",
+          "xkm_1_44_0",
+        ]);
+        expect(tssResponses.requiredAssetIds).toEqual([
+          "tssTestpatientXml_2025_07_14",
+          "tssVsdTestfaelle_2_0",
+        ]);
+      }),
+  );
 
-  it("should keep the current high-value executable backlog from the local KBV mirror explicit", async () => {
-    // Arrange
-    if (!(await runEffect(fileSystem.exists(KBV_MIRROR_ROOT)))) {
-      return;
-    }
+  it.effect(
+    "should keep the current high-value executable backlog from the local KBV mirror explicit",
+    () =>
+      Effect.promise(async () => {
+        // Arrange
+        if (!(await runEffect(fileSystem.exists(KBV_MIRROR_ROOT)))) {
+          return;
+        }
 
-    const trackedExecutableFamilyKeys = new Set(
-      Object.values(kbvOracleAssets)
-        .map((asset) => toExecutableFamilyKey(asset.fileName))
-        .filter(
-          (familyKey): familyKey is ExecutableFamilyKey => familyKey !== null,
-        ),
-    );
-    const mirrorCandidateExists = await Promise.all(
-      highValueMirrorExecutableCandidates.map((candidate) =>
-        runEffect(
-          fileSystem.exists(path.join(KBV_MIRROR_ROOT, candidate.relativePath)),
-        ),
-      ),
-    );
+        const trackedExecutableFamilyKeys = new Set(
+          Object.values(kbvOracleAssets)
+            .map((asset) => toExecutableFamilyKey(asset.fileName))
+            .filter(
+              (familyKey): familyKey is ExecutableFamilyKey =>
+                familyKey !== null,
+            ),
+        );
+        const mirrorCandidateExists = await Promise.all(
+          highValueMirrorExecutableCandidates.map((candidate) =>
+            runEffect(
+              fileSystem.exists(
+                path.join(KBV_MIRROR_ROOT, candidate.relativePath),
+              ),
+            ),
+          ),
+        );
 
-    // Act
-    const missingExecutableCandidates =
-      highValueMirrorExecutableCandidates.filter(
-        (candidate) => !trackedExecutableFamilyKeys.has(candidate.familyKey),
-      );
+        // Act
+        const missingExecutableCandidates =
+          highValueMirrorExecutableCandidates.filter(
+            (candidate) =>
+              !trackedExecutableFamilyKeys.has(candidate.familyKey),
+          );
 
-    // Assert
-    expect(mirrorCandidateExists).toEqual(
-      highValueMirrorExecutableCandidates.map(() => true),
-    );
-    expect(missingExecutableCandidates).toEqual(
-      highValueMirrorExecutableCandidates,
-    );
-  });
+        // Assert
+        expect(mirrorCandidateExists).toEqual(
+          highValueMirrorExecutableCandidates.map(() => true),
+        );
+        expect(missingExecutableCandidates).toEqual(
+          highValueMirrorExecutableCandidates,
+        );
+      }),
+  );
 });
 
 // Helpers

@@ -22,6 +22,9 @@ const fhirValidatorDependencyCache = new Map<
   >
 >();
 const fhirValidatorRuntimeHomeCache = new Map<string, Promise<string>>();
+const fhirRuntimeHomePruneCache = new Map<string, Promise<void>>();
+const legacyFhirRuntimeHomePattern =
+  /^(?:exec|exec-batch)-[^-]+-\d+-(?:eAU|eRezept|eVDGA)$/;
 
 const fileExists = (filePath: string) => runEffect(fileSystem.exists(filePath));
 
@@ -260,6 +263,40 @@ export const getKbvOracleCacheManifestPath = (
   cacheDir = getKbvOracleCacheDir(),
 ) => path.join(path.resolve(cacheDir), "asset-cache.json");
 
+const pruneLegacyFhirRuntimeHomes = async (
+  cacheDir = getKbvOracleCacheDir(),
+) => {
+  const resolvedCacheDir = path.resolve(cacheDir);
+  const cached = fhirRuntimeHomePruneCache.get(resolvedCacheDir);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = (async () => {
+    const runtimeHomesRoot = path.join(resolvedCacheDir, "fhir-home-runtimes");
+    if (!(await fileExists(runtimeHomesRoot))) {
+      return;
+    }
+
+    const entries = await runEffect(fileSystem.readDirectory(runtimeHomesRoot));
+    await Promise.all(
+      entries
+        .filter((entry) => legacyFhirRuntimeHomePattern.test(entry))
+        .map((entry) =>
+          runEffect(
+            fileSystem.remove(path.join(runtimeHomesRoot, entry), {
+              force: true,
+              recursive: true,
+            }),
+          ),
+        ),
+    );
+  })();
+
+  fhirRuntimeHomePruneCache.set(resolvedCacheDir, pending);
+  return pending;
+};
+
 export const computeBufferSha256 = (buffer: Uint8Array) =>
   createHash("sha256").update(buffer).digest("hex");
 
@@ -418,16 +455,9 @@ export const ensureExtractedAsset = async (
     return archivePath;
   }
 
-  const archivePath = await downloadManagedAsset(asset, resolvedCacheDir);
   const extractDir = path.join(resolvedCacheDir, "extracted", asset.assetId);
   const markerPath = path.join(extractDir, ".ok");
   if (await fileExists(markerPath)) {
-    await updateAssetCacheManifest({
-      asset,
-      cacheDir: resolvedCacheDir,
-      downloadPath: archivePath,
-      extractedPath: extractDir,
-    });
     return extractDir;
   }
 
@@ -436,15 +466,11 @@ export const ensureExtractedAsset = async (
     const hasExtractedContent = entries.some((entry) => entry !== ".ok");
     if (hasExtractedContent) {
       await runEffect(fileSystem.writeFileString(markerPath, "ok"));
-      await updateAssetCacheManifest({
-        asset,
-        cacheDir: resolvedCacheDir,
-        downloadPath: archivePath,
-        extractedPath: extractDir,
-      });
       return extractDir;
     }
   }
+
+  const archivePath = await downloadManagedAsset(asset, resolvedCacheDir);
 
   await runEffect(
     fileSystem.remove(extractDir, { force: true, recursive: true }),
@@ -994,6 +1020,7 @@ export const ensureFhirValidatorRuntimeHome = async ({
   }
 
   const pending = (async () => {
+    await pruneLegacyFhirRuntimeHomes(resolvedCacheDir);
     await ensureFhirValidatorDependencyCache({
       cacheDir: resolvedCacheDir,
     });

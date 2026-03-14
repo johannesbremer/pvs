@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
+import { Effect } from "effect";
 
 import { parseOfficialTssSearchsetXml } from "../src/codecs/xml/tss";
 import { ensureTssAssets, findFileRecursive } from "../tools/oracles/assets";
@@ -6,68 +7,78 @@ import { fileSystem, runEffect } from "../tools/oracles/platform";
 import { runTssOracle } from "../tools/oracles/tss/run";
 
 describe("official TSS fixture sweeps", () => {
-  it("parses all official KBV TSS response XML examples", async () => {
-    const assets = await ensureTssAssets({});
-    const files: string[] = [];
+  it.effect(
+    "parses all official KBV TSS response XML examples",
+    () =>
+      Effect.promise(async () => {
+        const assets = await ensureTssAssets({});
+        const files: string[] = [];
 
-    for (let index = 1; index <= 10; index += 1) {
-      const filePath = await findFileRecursive(
-        assets.responseExamplesDir,
-        (entryPath) => entryPath.endsWith(`Response${index}.xml`),
-      );
-      if (filePath) {
-        files.push(filePath);
-      }
-    }
+        for (let index = 1; index <= 10; index += 1) {
+          const filePath = await findFileRecursive(
+            assets.responseExamplesDir,
+            (entryPath) => entryPath.endsWith(`Response${index}.xml`),
+          );
+          if (filePath) {
+            files.push(filePath);
+          }
+        }
 
-    expect(files.length).toBeGreaterThanOrEqual(10);
+        expect(files.length).toBeGreaterThanOrEqual(10);
 
-    for (const filePath of files) {
-      const xml = await runEffect(fileSystem.readFileString(filePath));
-      const parsed = parseOfficialTssSearchsetXml(xml);
-      const result = runTssOracle({
-        payloadPreviewXml: xml,
-      });
+        for (const filePath of files) {
+          const xml = await runEffect(fileSystem.readFileString(filePath));
+          const parsed = parseOfficialTssSearchsetXml(xml);
+          const result = runTssOracle({
+            payloadPreviewXml: xml,
+          });
 
-      expect(
-        result.passed,
-        `Official TSS XML ${filePath} failed parser checks.\n${JSON.stringify(result, null, 2)}`,
-      ).toBe(true);
-      expect(parsed.appointments.length).toBeGreaterThanOrEqual(1);
+          expect(
+            result.passed,
+            `Official TSS XML ${filePath} failed parser checks.\n${JSON.stringify(result, null, 2)}`,
+          ).toBe(true);
+          expect(parsed.appointments.length).toBeGreaterThanOrEqual(1);
 
-      for (const appointment of parsed.appointments) {
-        expect(appointment.externalAppointmentId.length).toBeGreaterThan(0);
-        expect(appointment.start.length).toBeGreaterThan(0);
-        expect(appointment.status).toBe("booked");
-        expect(appointment.vermittlungscode).toBeDefined();
-        expect(appointment.organizationBsnr).toBe("241234601");
-        expect(appointment.patient?.insuranceIdentifier).toBeDefined();
-      }
-    }
-  }, 420_000);
+          for (const appointment of parsed.appointments) {
+            expect(appointment.externalAppointmentId.length).toBeGreaterThan(0);
+            expect(appointment.start.length).toBeGreaterThan(0);
+            expect(appointment.status).toBe("booked");
+            expect(appointment.vermittlungscode).toBeDefined();
+            expect(appointment.organizationBsnr).toBe("241234601");
+            expect(appointment.patient?.insuranceIdentifier).toBeDefined();
+          }
+        }
+      }),
+    420_000,
+  );
 
-  it("keeps the official TSS VSD and patient XML fixtures reachable", async () => {
-    const assets = await ensureTssAssets({});
-    const vsdXml = await findFileRecursive(
-      assets.vsdTestfaelleDir,
-      (entryPath) => entryPath.endsWith("_vd.xml"),
-    );
-    const patientXml = await findFileRecursive(
-      assets.testpatientXmlDir,
-      (entryPath) => entryPath.endsWith("_pd.xml"),
-    );
+  it.effect(
+    "keeps the official TSS VSD and patient XML fixtures reachable",
+    () =>
+      Effect.promise(async () => {
+        const assets = await ensureTssAssets({});
+        const vsdXml = await findFileRecursive(
+          assets.vsdTestfaelleDir,
+          (entryPath) => entryPath.endsWith("_vd.xml"),
+        );
+        const patientXml = await findFileRecursive(
+          assets.testpatientXmlDir,
+          (entryPath) => entryPath.endsWith("_pd.xml"),
+        );
 
-    expect(vsdXml).toBeDefined();
-    expect(patientXml).toBeDefined();
+        expect(vsdXml).toBeDefined();
+        expect(patientXml).toBeDefined();
 
-    const vsdContent = await runEffect(fileSystem.readFileString(vsdXml!));
-    const patientContent = await runEffect(
-      fileSystem.readFileString(patientXml!),
-    );
+        const vsdContent = await runEffect(fileSystem.readFileString(vsdXml!));
+        const patientContent = await runEffect(
+          fileSystem.readFileString(patientXml!),
+        );
 
-    expect(vsdContent.includes("Versicherter")).toBe(true);
-    expect(patientContent.includes("UC_PersoenlicheVersichertendatenXML")).toBe(
-      true,
-    );
-  }, 420_000);
+        expect(vsdContent.includes("Versicherter")).toBe(true);
+        expect(
+          patientContent.includes("UC_PersoenlicheVersichertendatenXML"),
+        ).toBe(true);
+      }),
+    420_000,
+  );
 });

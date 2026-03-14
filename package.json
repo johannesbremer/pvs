@@ -32,6 +32,7 @@
     "@confect/test": "latest",
     "@convex-dev/eslint-plugin": "^1.1.1",
     "@effect/language-service": "^0.80.0",
+    "@effect/vitest": "^0.27.0",
     "@eslint-community/eslint-plugin-eslint-comments": "^4.7.1",
     "@eslint/js": "^9.39.4",
     "@eslint/markdown": "^7.5.1",
@@ -51,7 +52,7 @@
     "prettier": "^3.8.1",
     "typescript": "latest",
     "typescript-eslint": "^8.57.0",
-    "vitest": "latest"
+    "vitest": "^3.2.4"
   },
   "packageManager": "pnpm@10.18.1"
 }

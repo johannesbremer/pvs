@@ -259,6 +259,16 @@ const alignBatchValidationSummarySourcePaths = ({
   }));
 };
 
+const getFhirRuntimeKey = (
+  mode: "exec" | "exec-batch",
+  family: "eAU" | "eRezept" | "eVDGA",
+) =>
+  [
+    mode,
+    process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? "main",
+    family,
+  ].join("-");
+
 export interface ExecutableFhirBatchValidationResult {
   readonly passed: boolean;
   readonly stderr: string;
@@ -358,12 +368,7 @@ export const runExecutableFhirOracleEffect = Effect.fn(
   const effectiveCacheDir = cacheDir ?? process.env.KBV_UPDATE_CACHE_DIR;
   const resolvedCacheDir =
     effectiveCacheDir ?? path.join(process.cwd(), ".cache", "kbv-oracles");
-  const runtimeKey = [
-    "exec",
-    process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? "main",
-    String(process.pid),
-    family,
-  ].join("-");
+  const runtimeKey = getFhirRuntimeKey("exec", family);
   const program = Effect.scoped(
     Effect.gen(function* () {
       const userHomeOverride = yield* Effect.tryPromise(() =>
@@ -515,12 +520,7 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
   const effectiveCacheDir = cacheDir ?? process.env.KBV_UPDATE_CACHE_DIR;
   const resolvedCacheDir =
     effectiveCacheDir ?? path.join(process.cwd(), ".cache", "kbv-oracles");
-  const runtimeKey = [
-    "exec-batch",
-    process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? "main",
-    String(process.pid),
-    family,
-  ].join("-");
+  const runtimeKey = getFhirRuntimeKey("exec-batch", family);
   const program = Effect.scoped(
     Effect.gen(function* () {
       const userHomeOverride = yield* Effect.tryPromise(() =>
