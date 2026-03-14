@@ -111,140 +111,6 @@ describe("executable FHIR oracle", () => {
   );
 
   it.effect(
-    "stays compatible with the executable eRezept oracle when required resources are removed",
-    () =>
-      Effect.gen(function* () {
-        const { cacheDir, usesSharedCache } = yield* resolveOracleTestCache({
-          assetIds: [
-            "fhirValidatorService_2_2_0",
-            "kbvErpExamples_1_4",
-            "kbvFhirErp_1_4_1",
-          ],
-          needsFhirDependencies: true,
-          tempPrefix: "kbv-fhir-erp-prop-test-",
-        });
-        if (!usesSharedCache) {
-          tempDirs.push(cacheDir);
-        }
-
-        const examplesDir = yield* ensureExtractedAsset(
-          kbvOracleAssets.kbvErpExamples_1_4,
-          cacheDir,
-        );
-        const exampleXml = yield* fileSystem.readFileString(
-          path.join(examplesDir, "Beispiel_19.xml"),
-        );
-
-        yield* Effect.tryPromise(() =>
-          fc.assert(
-            fc.asyncProperty(
-              fc.constantFrom<RequiredErpTag>("Bundle", "Composition"),
-              fc.constantFrom("Missing", "Broken", "Removed"),
-              (tagName, replacementPrefix) => {
-                // Arrange
-                const mutatedXml = removeRequiredTag(
-                  exampleXml,
-                  tagName,
-                  replacementPrefix,
-                );
-
-                return Effect.runPromise(
-                  Effect.gen(function* () {
-                    // Act
-                    const localResult = runFhirOracle({
-                      family: "eRezept",
-                      xml: mutatedXml,
-                    });
-                    const executableResult =
-                      yield* runExecutableFhirOracleEffect({
-                        cacheDir,
-                        family: "eRezept",
-                        xml: mutatedXml,
-                      });
-
-                    // Assert
-                    expect(localResult.passed).toBe(false);
-                    expect(
-                      localResult.findings.some(
-                        (finding) =>
-                          finding.code ===
-                          `FHIR_TAG_${tagName.toUpperCase()}_MISSING`,
-                      ),
-                    ).toBe(true);
-                    expect(
-                      executableResult.passed,
-                      `Executable oracle unexpectedly accepted an eRezept document missing ${tagName}.\n${JSON.stringify(executableResult, null, 2)}`,
-                    ).toBe(false);
-                  }),
-                );
-              },
-            ),
-            { numRuns: ORACLE_PROPERTY_NUM_RUNS },
-          ),
-        );
-      }),
-    ORACLE_TEST_TIMEOUT,
-  );
-
-  it.effect(
-    "rejects common structural and profile corruptions of an official eRezept example",
-    () =>
-      Effect.gen(function* () {
-        const { cacheDir, usesSharedCache } = yield* resolveOracleTestCache({
-          assetIds: [
-            "fhirValidatorService_2_2_0",
-            "kbvErpExamples_1_4",
-            "kbvFhirErp_1_4_1",
-          ],
-          needsFhirDependencies: true,
-          tempPrefix: "kbv-fhir-erp-java-prop-test-",
-        });
-        if (!usesSharedCache) {
-          tempDirs.push(cacheDir);
-        }
-
-        const examplesDir = yield* ensureExtractedAsset(
-          kbvOracleAssets.kbvErpExamples_1_4,
-          cacheDir,
-        );
-        const exampleXml = yield* fileSystem.readFileString(
-          path.join(examplesDir, "Beispiel_19.xml"),
-        );
-
-        yield* Effect.tryPromise(() =>
-          fc.assert(
-            fc.asyncProperty(
-              fc.constantFrom<ExecutableErpMutation>(...erpExecutableMutations),
-              (mutation) =>
-                Effect.runPromise(
-                  Effect.gen(function* () {
-                    // Arrange
-                    const mutatedXml = mutation.mutate(exampleXml);
-
-                    // Act
-                    const executableResult =
-                      yield* runExecutableFhirOracleEffect({
-                        cacheDir,
-                        family: "eRezept",
-                        xml: mutatedXml,
-                      });
-
-                    // Assert
-                    expect(
-                      executableResult.passed,
-                      `Executable oracle unexpectedly accepted ${mutation.id}.\n${JSON.stringify(executableResult, null, 2)}`,
-                    ).toBe(false);
-                  }),
-                ),
-            ),
-            { numRuns: ORACLE_PROPERTY_NUM_RUNS },
-          ),
-        );
-      }),
-    ORACLE_TEST_TIMEOUT,
-  );
-
-  it.effect(
     "validates an official KBV eRezept rendered-dosage example with reusable validator assets",
     () =>
       Effect.gen(function* () {
@@ -282,6 +148,120 @@ describe("executable FHIR oracle", () => {
       }),
     ORACLE_TEST_TIMEOUT,
   );
+
+  for (const mutation of erpRequiredResourceMutations) {
+    it.effect(
+      `rejects eRezept required resource corruption ${mutation.id}`,
+      () =>
+        Effect.gen(function* () {
+          const { cacheDir, usesSharedCache } = yield* resolveOracleTestCache({
+            assetIds: [
+              "fhirValidatorService_2_2_0",
+              "kbvErpExamples_1_4",
+              "kbvFhirErp_1_4_1",
+            ],
+            needsFhirDependencies: true,
+            tempPrefix: "kbv-fhir-erp-prop-test-",
+          });
+          if (!usesSharedCache) {
+            tempDirs.push(cacheDir);
+          }
+
+          const exampleXml = yield* loadErpExampleXmlEffect(cacheDir);
+
+          yield* Effect.tryPromise(() =>
+            fc.assert(
+              fc.asyncProperty(fc.constant(null), () =>
+                Effect.runPromise(
+                  Effect.gen(function* () {
+                    // Arrange
+                    const mutatedXml = mutation.mutate(exampleXml);
+
+                    // Act
+                    const localResult = runFhirOracle({
+                      family: "eRezept",
+                      xml: mutatedXml,
+                    });
+                    const executableResult =
+                      yield* runExecutableFhirOracleEffect({
+                        cacheDir,
+                        family: "eRezept",
+                        xml: mutatedXml,
+                      });
+
+                    // Assert
+                    expect(localResult.passed).toBe(false);
+                    expect(
+                      localResult.findings.some(
+                        (finding) => finding.code === mutation.expectedLocalCode,
+                      ),
+                    ).toBe(true);
+                    expect(
+                      executableResult.passed,
+                      `Executable oracle unexpectedly accepted ${mutation.id}.\n${JSON.stringify(executableResult, null, 2)}`,
+                    ).toBe(false);
+                  }),
+                ),
+              ),
+              { numRuns: ORACLE_PROPERTY_NUM_RUNS },
+            ),
+          );
+        }),
+      ORACLE_TEST_TIMEOUT,
+    );
+  }
+
+  for (const mutation of erpExecutableMutations) {
+    it.effect(
+      `rejects executable eRezept corruption ${mutation.id}`,
+      () =>
+        Effect.gen(function* () {
+          const { cacheDir, usesSharedCache } = yield* resolveOracleTestCache({
+            assetIds: [
+              "fhirValidatorService_2_2_0",
+              "kbvErpExamples_1_4",
+              "kbvFhirErp_1_4_1",
+            ],
+            needsFhirDependencies: true,
+            tempPrefix: "kbv-fhir-erp-java-prop-test-",
+          });
+          if (!usesSharedCache) {
+            tempDirs.push(cacheDir);
+          }
+
+          const exampleXml = yield* loadErpExampleXmlEffect(cacheDir);
+
+          yield* Effect.tryPromise(() =>
+            fc.assert(
+              fc.asyncProperty(fc.constant(null), () =>
+                Effect.runPromise(
+                  Effect.gen(function* () {
+                    // Arrange
+                    const mutatedXml = mutation.mutate(exampleXml);
+
+                    // Act
+                    const executableResult =
+                      yield* runExecutableFhirOracleEffect({
+                        cacheDir,
+                        family: "eRezept",
+                        xml: mutatedXml,
+                      });
+
+                    // Assert
+                    expect(
+                      executableResult.passed,
+                      `Executable oracle unexpectedly accepted ${mutation.id}.\n${JSON.stringify(executableResult, null, 2)}`,
+                    ).toBe(false);
+                  }),
+                ),
+              ),
+              { numRuns: ORACLE_PROPERTY_NUM_RUNS },
+            ),
+          );
+        }),
+      ORACLE_TEST_TIMEOUT,
+    );
+  }
 });
 
 // Helpers
@@ -290,7 +270,11 @@ type ExecutableErpMutation = {
   readonly id: string;
   readonly mutate: (xml: string) => string;
 };
-type RequiredErpTag = "Bundle" | "Composition";
+type RequiredErpMutation = {
+  readonly expectedLocalCode: string;
+  readonly id: string;
+  readonly mutate: (xml: string) => string;
+};
 
 const erpExecutableMutations: readonly ExecutableErpMutation[] = [
   {
@@ -348,9 +332,51 @@ const erpExecutableMutations: readonly ExecutableErpMutation[] = [
   },
 ];
 
+const erpRequiredResourceMutations: readonly RequiredErpMutation[] = [
+  {
+    expectedLocalCode: "FHIR_TAG_BUNDLE_MISSING",
+    id: "missing-bundle-tag",
+    mutate: (xml) => removeRequiredTag(xml, "Bundle", "Missing"),
+  },
+  {
+    expectedLocalCode: "FHIR_TAG_BUNDLE_MISSING",
+    id: "broken-bundle-tag",
+    mutate: (xml) => removeRequiredTag(xml, "Bundle", "Broken"),
+  },
+  {
+    expectedLocalCode: "FHIR_TAG_BUNDLE_MISSING",
+    id: "removed-bundle-tag",
+    mutate: (xml) => removeRequiredTag(xml, "Bundle", "Removed"),
+  },
+  {
+    expectedLocalCode: "FHIR_TAG_COMPOSITION_MISSING",
+    id: "missing-composition-tag",
+    mutate: (xml) => removeRequiredTag(xml, "Composition", "Missing"),
+  },
+  {
+    expectedLocalCode: "FHIR_TAG_COMPOSITION_MISSING",
+    id: "broken-composition-tag",
+    mutate: (xml) => removeRequiredTag(xml, "Composition", "Broken"),
+  },
+  {
+    expectedLocalCode: "FHIR_TAG_COMPOSITION_MISSING",
+    id: "removed-composition-tag",
+    mutate: (xml) => removeRequiredTag(xml, "Composition", "Removed"),
+  },
+];
+
+const loadErpExampleXmlEffect = (cacheDir: string) =>
+  Effect.gen(function* () {
+    const examplesDir = yield* ensureExtractedAsset(
+      kbvOracleAssets.kbvErpExamples_1_4,
+      cacheDir,
+    );
+    return yield* fileSystem.readFileString(path.join(examplesDir, "Beispiel_19.xml"));
+  });
+
 const removeRequiredTag = (
   xml: string,
-  tagName: RequiredErpTag,
+  tagName: "Bundle" | "Composition",
   replacementPrefix: string,
 ) => {
   const tagPattern = new RegExp(`<${tagName}(?=[\\s>])`, "g");
