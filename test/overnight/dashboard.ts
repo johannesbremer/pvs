@@ -67,7 +67,6 @@ const dashboardStatePath = path.join(dashboardDirectory, "state.json");
 
 const MAX_EVENTS = 20;
 const MAX_EXAMPLES = 8;
-const MAX_HISTORY_POINTS = 180;
 const MAX_TAGS = 12;
 
 const createEmptyState = (): OvernightDashboardState => {
@@ -128,8 +127,7 @@ const saveState = (state: OvernightDashboardState) => {
 const appendHistory = (
   history: readonly OvernightProgressPoint[],
   point: OvernightProgressPoint,
-): readonly OvernightProgressPoint[] =>
-  [...history, point].slice(-MAX_HISTORY_POINTS);
+): readonly OvernightProgressPoint[] => [...history, point];
 
 const pushEvent = (
   events: readonly OvernightDashboardEvent[],
