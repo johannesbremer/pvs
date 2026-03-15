@@ -33,6 +33,9 @@ const logTiming = (label: string, startTime: number) => {
   console.error(`[kbv-oracle] ${label}: ${elapsedMs}ms`);
 };
 
+const hasResourceTag = (xml: string, tagName: string) =>
+  new RegExp(`<${tagName}(?=[\\s>])`, "u").test(xml);
+
 const missingTagFinding = (tagName: string) => ({
   code: `FHIR_TAG_${tagName.toUpperCase()}_MISSING`,
   message: `Expected <${tagName}> in rendered FHIR XML.`,
@@ -361,33 +364,33 @@ export const runFhirOracle = ({
       severity: "error" as const,
     });
   } else {
-    if (!xml.includes("<Bundle")) {
+    if (!hasResourceTag(xml, "Bundle")) {
       findings.push(missingTagFinding("Bundle"));
     }
-    if (!xml.includes("<Composition")) {
+    if (!hasResourceTag(xml, "Composition")) {
       findings.push(missingTagFinding("Composition"));
     }
 
     if (family === "eRezept") {
-      if (!xml.includes("<MedicationRequest")) {
+      if (!hasResourceTag(xml, "MedicationRequest")) {
         findings.push(missingTagFinding("MedicationRequest"));
       }
-      if (!xml.includes("<Medication")) {
+      if (!hasResourceTag(xml, "Medication")) {
         findings.push(missingTagFinding("Medication"));
       }
     }
 
     if (family === "eAU") {
-      if (!xml.includes("<Encounter")) {
+      if (!hasResourceTag(xml, "Encounter")) {
         findings.push(missingTagFinding("Encounter"));
       }
-      if (!xml.includes("<Condition")) {
+      if (!hasResourceTag(xml, "Condition")) {
         findings.push(missingTagFinding("Condition"));
       }
     }
 
     if (family === "eVDGA") {
-      if (!xml.includes("<DeviceRequest")) {
+      if (!hasResourceTag(xml, "DeviceRequest")) {
         findings.push(missingTagFinding("DeviceRequest"));
       }
       if (!xml.includes("<Coverage")) {

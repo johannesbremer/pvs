@@ -371,8 +371,8 @@ export const emittedMismatchMutations: readonly ErpDifferentialMutation[] = [
     mutate: (xml) =>
       replaceRequiredSubstring(
         xml,
-        '<reference value="Medication/medication-',
-        '<reference value="Medication/missing-',
+        '<reference value="http://pvs.praxis.local/fhir/Medication/',
+        '<reference value="http://pvs.praxis.local/fhir/Medication/missing-',
       ),
   },
   {
@@ -381,8 +381,8 @@ export const emittedMismatchMutations: readonly ErpDifferentialMutation[] = [
     mutate: (xml) =>
       replaceRequiredSubstring(
         xml,
-        '<reference value="Coverage/',
-        '<reference value="Coverage/missing-',
+        '<reference value="http://pvs.praxis.local/fhir/Coverage/',
+        '<reference value="http://pvs.praxis.local/fhir/Coverage/missing-',
       ),
   },
 ];
