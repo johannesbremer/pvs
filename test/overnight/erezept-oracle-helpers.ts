@@ -301,6 +301,26 @@ export const officialParityMutations: readonly ErpDifferentialMutation[] = [
 export const officialMismatchMutations: readonly ErpDifferentialMutation[] = [
   {
     expectedComparison: "exec-reject-local-pass",
+    id: "official-missing-coverage",
+    mutate: (xml) => renameRequiredTag(xml, "Coverage", "Missing"),
+  },
+  {
+    expectedComparison: "exec-reject-local-pass",
+    id: "official-missing-patient",
+    mutate: (xml) => renameRequiredTag(xml, "Patient", "Missing"),
+  },
+  {
+    expectedComparison: "exec-reject-local-pass",
+    id: "official-missing-practitioner",
+    mutate: (xml) => renameRequiredTag(xml, "Practitioner", "Missing"),
+  },
+  {
+    expectedComparison: "exec-reject-local-pass",
+    id: "official-missing-organization",
+    mutate: (xml) => renameRequiredTag(xml, "Organization", "Missing"),
+  },
+  {
+    expectedComparison: "exec-reject-local-pass",
     id: "official-invalid-composition-profile",
     mutate: (xml) =>
       replaceRequiredSubstring(
@@ -365,6 +385,26 @@ export const emittedParityMutations: readonly ErpDifferentialMutation[] = [
 ];
 
 export const emittedMismatchMutations: readonly ErpDifferentialMutation[] = [
+  {
+    expectedComparison: "exec-reject-local-pass",
+    id: "emitted-missing-coverage",
+    mutate: (xml) => renameRequiredTag(xml, "Coverage", "Missing"),
+  },
+  {
+    expectedComparison: "exec-reject-local-pass",
+    id: "emitted-missing-patient",
+    mutate: (xml) => renameRequiredTag(xml, "Patient", "Missing"),
+  },
+  {
+    expectedComparison: "exec-reject-local-pass",
+    id: "emitted-missing-practitioner",
+    mutate: (xml) => renameRequiredTag(xml, "Practitioner", "Missing"),
+  },
+  {
+    expectedComparison: "exec-reject-local-pass",
+    id: "emitted-missing-organization",
+    mutate: (xml) => renameRequiredTag(xml, "Organization", "Missing"),
+  },
   {
     expectedComparison: "exec-reject-local-pass",
     id: "emitted-broken-medication-reference",
@@ -439,7 +479,15 @@ const seedErpContextEffect = (
 
 const renameRequiredTag = (
   xml: string,
-  tagName: "Bundle" | "Composition" | "Medication" | "MedicationRequest",
+  tagName:
+    | "Bundle"
+    | "Composition"
+    | "Coverage"
+    | "Medication"
+    | "MedicationRequest"
+    | "Organization"
+    | "Patient"
+    | "Practitioner",
   replacementPrefix: string,
 ) => {
   const pattern = new RegExp(`<${tagName}(?=[\\s>])`, "g");
