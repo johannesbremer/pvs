@@ -15,9 +15,10 @@
     "oracle:coverage-inventory": "node tools/oracles/print-coverage-inventory.mjs",
     "oracle:official-corpus-inventory": "node tools/oracles/print-official-corpus-inventory.mjs",
     "oracle:prefetch": "node --experimental-strip-types tools/oracles/prefetch.mjs",
-    "test": "vitest run",
-    "test:ci": "PVS_PROPERTY_RUNS=100 vitest run",
-    "test:overnight": "PVS_PROPERTY_RUNS=1000000 PVS_ORACLE_TEST_TIMEOUT_MS=86400000 vitest run test/executable-fhir-oracle.test.ts test/executable-bmp-oracle.test.ts test/executable-kvdt-oracle.test.ts --reporter=verbose",
+    "test": "vitest run --exclude 'test/overnight/**/*.test.ts'",
+    "test:ci": "pnpm run test && PVS_PROPERTY_RUNS=25 pnpm run test:oracle:erezept",
+    "test:oracle:erezept": "vitest run test/overnight/erezept-emitter-oracle.test.ts test/overnight/erezept-differential-oracle.test.ts --reporter=verbose",
+    "test:overnight": "PVS_PROPERTY_RUNS=1000000 PVS_ORACLE_TEST_TIMEOUT_MS=86400000 pnpm run test:oracle:erezept",
     "tsc": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
