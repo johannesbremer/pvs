@@ -87,7 +87,7 @@ const metaXml = (profiles: readonly string[]) =>
 
 const sanitizeFhirId = (value: string) =>
   value
-    .replaceAll(/[^A-Za-z0-9.-]/g, "-")
+    .replaceAll(/[^A-Z0-9.-]/gi, "-")
     .replaceAll(/-+/g, "-")
     .replaceAll(/^-|-$/g, "")
     .slice(0, 64);
@@ -232,7 +232,9 @@ export const renderErpBundleXml = (payload: typeof ErpPayload.Type) =>
     const medicationId = sanitizeFhirId(payload.medication.id);
     const medicationRequestId = sanitizeFhirId(payload.medicationRequest.id);
     const compositionId = sanitizeFhirId(payload.composition.id);
-    const bundleId = sanitizeFhirId(payload.bundle.identifier?.value ?? compositionId);
+    const bundleId = sanitizeFhirId(
+      payload.bundle.identifier?.value ?? compositionId,
+    );
 
     const patientName = payload.patient.name[0];
     const patientFamily = patientName?.family ?? "Meyer";
@@ -242,9 +244,13 @@ export const renderErpBundleXml = (payload: typeof ErpPayload.Type) =>
     const practitionerGiven = practitionerName?.given[0] ?? "Eva";
     const practitionerPrefix = practitionerName?.prefixes[0] ?? "Dr. med.";
     const medicationCoding = payload.medication.code?.coding[0];
-    const medicationText = payload.medication.code?.text ?? medicationCoding?.display ?? "Medikation";
+    const medicationText =
+      payload.medication.code?.text ??
+      medicationCoding?.display ??
+      "Medikation";
     const isPznMedication =
-      medicationCoding?.system === "urn:pzn" || /^[0-9]{8}$/u.test(medicationCoding?.code ?? "");
+      medicationCoding?.system === "urn:pzn" ||
+      /^\d{8}$/u.test(medicationCoding?.code ?? "");
     const medicationProfile = isPznMedication
       ? "KBV_PR_ERP_Medication_PZN"
       : "KBV_PR_ERP_Medication_FreeText";
@@ -357,10 +363,7 @@ export const renderErpBundleXml = (payload: typeof ErpPayload.Type) =>
         "value",
         "1",
       )}${textNode("unit", "Packung")}</quantity></dispenseRequest>` +
-      `<substitution>${textNode(
-        "allowedBoolean",
-        "true",
-      )}</substitution>` +
+      `<substitution>${textNode("allowedBoolean", "true")}</substitution>` +
       `</MedicationRequest>`;
 
     const medicationResourceXml =
