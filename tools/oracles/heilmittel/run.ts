@@ -1,44 +1,59 @@
+import { Schema } from "effect";
+
 import type { OracleExecutionResult } from "../types";
 
-interface HeilmittelApprovalPreview {
-  readonly diagnosegruppen?: readonly string[];
-  readonly heilmittelCodes?: readonly string[];
-  readonly validUntil?: string;
-}
+import { decodeJsonStringSync, encodeJsonStringSync } from "../json-schema";
 
-interface HeilmittelCatalogEntry {
-  readonly blankoEligible?: boolean;
-  readonly code: string;
-  readonly diagnosegruppe: string;
-  readonly heilmittelbereich: string;
-  readonly kind: "ergaenzend" | "standardkombination" | "vorrangig";
-}
+const HeilmittelKind = Schema.Literal(
+  "ergaenzend",
+  "standardkombination",
+  "vorrangig",
+);
 
-interface HeilmittelOraclePreview {
-  readonly approval?: HeilmittelApprovalPreview;
-  readonly blankoFlag?: boolean;
-  readonly caseId?: string;
-  readonly catalogEntries: readonly HeilmittelCatalogEntry[];
-  readonly diagnosegruppe: string;
-  readonly diagnosisCodes: readonly string[];
-  readonly heilmittelbereich: string;
-  readonly issueDate?: string;
-  readonly items: readonly HeilmittelOrderItem[];
-  readonly maxTotalUnits?: number;
-  readonly requiresLongTermApproval?: boolean;
-  readonly sourceReference?: string;
-}
+export const HeilmittelApprovalPreviewFields = Schema.Struct({
+  diagnosegruppen: Schema.optional(Schema.Array(Schema.String)),
+  heilmittelCodes: Schema.optional(Schema.Array(Schema.String)),
+  validUntil: Schema.optional(Schema.String),
+});
 
-interface HeilmittelOrderItem {
-  readonly code: string;
-  readonly kind: "ergaenzend" | "standardkombination" | "vorrangig";
-  readonly units: number;
-}
+export const HeilmittelCatalogEntryFields = Schema.Struct({
+  blankoEligible: Schema.optional(Schema.Boolean),
+  code: Schema.String,
+  diagnosegruppe: Schema.String,
+  heilmittelbereich: Schema.String,
+  kind: HeilmittelKind,
+});
 
-const parsePreview = (payloadPreview: string) => {
-  const parsed = JSON.parse(payloadPreview) as HeilmittelOraclePreview;
-  return parsed;
-};
+export const HeilmittelOrderItemFields = Schema.Struct({
+  code: Schema.String,
+  kind: HeilmittelKind,
+  units: Schema.Number,
+});
+
+export const HeilmittelOraclePreviewFields = Schema.Struct({
+  approval: Schema.optional(HeilmittelApprovalPreviewFields),
+  blankoFlag: Schema.optional(Schema.Boolean),
+  caseId: Schema.optional(Schema.String),
+  catalogEntries: Schema.Array(HeilmittelCatalogEntryFields),
+  diagnosegruppe: Schema.String,
+  diagnosisCodes: Schema.Array(Schema.String),
+  heilmittelbereich: Schema.String,
+  issueDate: Schema.optional(Schema.String),
+  items: Schema.Array(HeilmittelOrderItemFields),
+  maxTotalUnits: Schema.optional(Schema.Number),
+  requiresLongTermApproval: Schema.optional(Schema.Boolean),
+  sourceReference: Schema.optional(Schema.String),
+});
+
+type HeilmittelOraclePreview = typeof HeilmittelOraclePreviewFields.Type;
+
+export const decodeHeilmittelOraclePreviewSync = decodeJsonStringSync(
+  HeilmittelOraclePreviewFields,
+);
+
+export const encodeHeilmittelOraclePreviewSync = encodeJsonStringSync(
+  HeilmittelOraclePreviewFields,
+);
 
 const makeFinding = (
   code: string,
@@ -72,7 +87,7 @@ export const runHeilmittelOracle = ({
 
   let preview: HeilmittelOraclePreview;
   try {
-    preview = parsePreview(payloadPreview);
+    preview = decodeHeilmittelOraclePreviewSync(payloadPreview);
   } catch (error) {
     return {
       family: "Heilmittel",

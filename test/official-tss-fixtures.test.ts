@@ -5,6 +5,7 @@ import { parseOfficialTssSearchsetXml } from "../src/codecs/xml/tss";
 import { ensureTssAssets, findFileRecursive } from "../tools/oracles/assets";
 import { fileSystem } from "../tools/oracles/platform";
 import { runTssOracle } from "../tools/oracles/tss/run";
+import { formatOracleExecutionResult } from "./schema-json";
 import { ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 describe("official TSS fixture sweeps", () => {
@@ -36,7 +37,7 @@ describe("official TSS fixture sweeps", () => {
 
           expect(
             result.passed,
-            `Official TSS XML ${filePath} failed parser checks.\n${JSON.stringify(result, null, 2)}`,
+            `Official TSS XML ${filePath} failed parser checks.\n${formatOracleExecutionResult(result)}`,
           ).toBe(true);
           expect(parsed.appointments.length).toBeGreaterThanOrEqual(1);
 

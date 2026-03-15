@@ -1,13 +1,16 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import fc from "fast-check";
 
 import { runExecutableFhirOracleEffect } from "../../tools/oracles/fhir/run";
+import { encodeJsonStringSync } from "../../tools/oracles/json-schema";
+import { OracleFindingFields } from "../../tools/oracles/types";
 import { resolveOracleTestCache } from "../oracle-test-cache";
 import { ORACLE_PROPERTY_NUM_RUNS, ORACLE_TEST_TIMEOUT } from "../timeouts";
 import { trackedAsyncProperty } from "./dashboard";
 import {
   type ErpEmitterCase,
+  ErpEmitterCaseFields,
   erpFreetextCaseArbitrary,
   erpPznCaseArbitrary,
   persistErpOracleReplayCaseEffect,
@@ -18,19 +21,35 @@ const overnightEmitterSuite = "overnight eRezept emitter oracle";
 const overnightSearchStopCondition =
   "Run until canceled, timeout, or the first emitted bundle that the executable validator rejects.";
 
+const EmitterExampleFields = Schema.Struct({
+  authoredOn: Schema.String,
+  dosageText: Schema.optional(Schema.String),
+  medicationDisplay: Schema.String,
+  orderKind: Schema.Literal("freetext", "pzn"),
+  patient: Schema.String,
+  pzn: Schema.optional(Schema.String),
+});
+
+const EmitterReplayPayloadFields = Schema.Struct({
+  branch: Schema.Literal("freetext", "pzn"),
+  input: ErpEmitterCaseFields,
+});
+
+const EmitterFailureSummaryFields = Schema.Struct({
+  errorCount: Schema.Number,
+  firstFindings: Schema.Array(OracleFindingFields),
+  passed: Schema.Boolean,
+});
+
 const describeEmitterExample = (input: ErpEmitterCase) =>
-  JSON.stringify(
-    {
-      authoredOn: input.authoredOn,
-      dosageText: input.dosageText,
-      medicationDisplay: input.medicationDisplay,
-      orderKind: input.orderKind,
-      patient: `${input.patientGiven} ${input.patientFamily}`,
-      pzn: input.pzn,
-    },
-    null,
-    2,
-  );
+  encodeJsonStringSync(EmitterExampleFields)({
+    authoredOn: input.authoredOn,
+    dosageText: input.dosageText,
+    medicationDisplay: input.medicationDisplay,
+    orderKind: input.orderKind,
+    patient: `${input.patientGiven} ${input.patientFamily}`,
+    pzn: input.pzn,
+  });
 
 const summarizeEmitterTags = (input: ErpEmitterCase): readonly string[] =>
   [
@@ -71,15 +90,18 @@ describe("overnight eRezept emitter oracle", () => {
               if (!executableResult.passed) {
                 const replayPath = yield* persistErpOracleReplayCaseEffect({
                   lane: "emitter",
-                  payload: { branch: "pzn", input },
+                  payload: { branch: "pzn" as const, input },
+                  payloadSchema: EmitterReplayPayloadFields,
                   scenario: "last-pzn-case",
                 });
                 throw new Error(
                   [
                     "Executable validator rejected emitted PZN ERP XML.",
                     `replay=${replayPath}`,
-                    `input=${JSON.stringify(input)}`,
-                    `summary=${JSON.stringify({
+                    `input=${encodeJsonStringSync(ErpEmitterCaseFields)(input)}`,
+                    `summary=${encodeJsonStringSync(
+                      EmitterFailureSummaryFields,
+                    )({
                       errorCount: executableResult.findings.filter(
                         (finding) => finding.severity === "error",
                       ).length,
@@ -96,15 +118,16 @@ describe("overnight eRezept emitter oracle", () => {
               if (errorFindings.length > 0) {
                 const replayPath = yield* persistErpOracleReplayCaseEffect({
                   lane: "emitter",
-                  payload: { branch: "pzn", input },
+                  payload: { branch: "pzn" as const, input },
+                  payloadSchema: EmitterReplayPayloadFields,
                   scenario: "last-pzn-case",
                 });
                 throw new Error(
                   [
                     "Executable validator returned error findings for emitted PZN ERP XML.",
                     `replay=${replayPath}`,
-                    `input=${JSON.stringify(input)}`,
-                    `errors=${JSON.stringify(errorFindings.slice(0, 5))}`,
+                    `input=${encodeJsonStringSync(ErpEmitterCaseFields)(input)}`,
+                    `errors=${encodeJsonStringSync(Schema.Array(OracleFindingFields))(errorFindings.slice(0, 5))}`,
                   ].join("\n"),
                 );
               }
@@ -166,15 +189,18 @@ describe("overnight eRezept emitter oracle", () => {
               if (!executableResult.passed) {
                 const replayPath = yield* persistErpOracleReplayCaseEffect({
                   lane: "emitter",
-                  payload: { branch: "freetext", input },
+                  payload: { branch: "freetext" as const, input },
+                  payloadSchema: EmitterReplayPayloadFields,
                   scenario: "last-freetext-case",
                 });
                 throw new Error(
                   [
                     "Executable validator rejected emitted freetext ERP XML.",
                     `replay=${replayPath}`,
-                    `input=${JSON.stringify(input)}`,
-                    `summary=${JSON.stringify({
+                    `input=${encodeJsonStringSync(ErpEmitterCaseFields)(input)}`,
+                    `summary=${encodeJsonStringSync(
+                      EmitterFailureSummaryFields,
+                    )({
                       errorCount: executableResult.findings.filter(
                         (finding) => finding.severity === "error",
                       ).length,
@@ -191,15 +217,16 @@ describe("overnight eRezept emitter oracle", () => {
               if (errorFindings.length > 0) {
                 const replayPath = yield* persistErpOracleReplayCaseEffect({
                   lane: "emitter",
-                  payload: { branch: "freetext", input },
+                  payload: { branch: "freetext" as const, input },
+                  payloadSchema: EmitterReplayPayloadFields,
                   scenario: "last-freetext-case",
                 });
                 throw new Error(
                   [
                     "Executable validator returned error findings for emitted freetext ERP XML.",
                     `replay=${replayPath}`,
-                    `input=${JSON.stringify(input)}`,
-                    `errors=${JSON.stringify(errorFindings.slice(0, 5))}`,
+                    `input=${encodeJsonStringSync(ErpEmitterCaseFields)(input)}`,
+                    `errors=${encodeJsonStringSync(Schema.Array(OracleFindingFields))(errorFindings.slice(0, 5))}`,
                   ].join("\n"),
                 );
               }

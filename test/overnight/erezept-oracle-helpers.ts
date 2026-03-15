@@ -10,6 +10,7 @@ import {
   ensureExtractedAsset,
   kbvOracleAssets,
 } from "../../tools/oracles/assets";
+import { encodeJsonStringSync } from "../../tools/oracles/json-schema";
 import { fileSystem, path } from "../../tools/oracles/platform";
 import { provideTestConfect, TestConfect } from "../TestConfect";
 
@@ -36,6 +37,16 @@ export type ErpEmitterCase = {
   readonly patientGiven: string;
   readonly pzn?: string;
 };
+
+export const ErpEmitterCaseFields = Schema.Struct({
+  authoredOn: Schema.String,
+  dosageText: Schema.optional(Schema.String),
+  medicationDisplay: Schema.String,
+  orderKind: Schema.Literal("freetext", "pzn"),
+  patientFamily: Schema.String,
+  patientGiven: Schema.String,
+  pzn: Schema.optional(Schema.String),
+});
 
 type ErpSeedContext = typeof erpSeedContextSchema.Type;
 
@@ -245,23 +256,23 @@ export const renderGeneratedErpXmlEffect = (input: ErpEmitterCase) =>
 export const loadEmittedErpExampleXmlEffect = (input: ErpEmitterCase) =>
   Effect.map(renderGeneratedErpXmlEffect(input), (rendered) => rendered.xml);
 
-export const persistErpOracleReplayCaseEffect = ({
+export const persistErpOracleReplayCaseEffect = <A, I>({
   lane,
   payload,
+  payloadSchema,
   scenario,
 }: {
   lane: string;
-  payload: unknown;
+  payload: A;
+  payloadSchema: Schema.Schema<A, I, never>;
   scenario: string;
 }) =>
   Effect.gen(function* () {
     const directory = erpOracleReplayDirectory(lane);
     const replayPath = path.join(directory, `${scenario}.json`);
     yield* fileSystem.makeDirectory(directory, { recursive: true });
-    yield* fileSystem.writeFileString(
-      replayPath,
-      JSON.stringify(payload, null, 2),
-    );
+    const replayJson = encodeJsonStringSync(payloadSchema)(payload);
+    yield* fileSystem.writeFileString(replayPath, replayJson);
     return replayPath;
   });
 

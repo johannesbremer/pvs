@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import fc from "fast-check";
 
 import type { OracleExecutionResult } from "../../tools/oracles/types";
@@ -8,6 +8,8 @@ import {
   runExecutableFhirOracleEffect,
   runFhirOracle,
 } from "../../tools/oracles/fhir/run";
+import { encodeJsonStringSync } from "../../tools/oracles/json-schema";
+import { OracleFindingFields } from "../../tools/oracles/types";
 import { resolveOracleTestCache } from "../oracle-test-cache";
 import { ORACLE_PROPERTY_NUM_RUNS, ORACLE_TEST_TIMEOUT } from "../timeouts";
 import { runTrackedCatalogEffect, trackedAsyncProperty } from "./dashboard";
@@ -16,6 +18,7 @@ import {
   emittedParityMutations,
   type ErpDifferentialMutation,
   type ErpEmitterCase,
+  ErpEmitterCaseFields,
   erpFreetextCaseArbitrary,
   erpPznCaseArbitrary,
   loadOfficialErpExampleXmlEffect,
@@ -48,6 +51,38 @@ const overnightDifferentialSuite = "overnight eRezept differential oracle";
 const differentialSearchStopCondition =
   "Run until canceled, timeout, or the first mismatch between the local and executable oracle classifications.";
 
+const DifferentialSourceKind = Schema.Literal("emitted", "official");
+const DifferentialExpectedComparison = Schema.Literal(
+  "exec-reject-local-pass",
+  "same-reject",
+);
+
+const DifferentialExampleFields = Schema.Struct({
+  expectedComparison: DifferentialExpectedComparison,
+  input: Schema.optional(
+    Schema.Struct({
+      medicationDisplay: Schema.String,
+      orderKind: Schema.Literal("freetext", "pzn"),
+      patient: Schema.String,
+      pzn: Schema.optional(Schema.String),
+    }),
+  ),
+  mutationId: Schema.String,
+  sourceKind: DifferentialSourceKind,
+});
+
+const DifferentialReplayPayloadFields = Schema.Struct({
+  expectedComparison: DifferentialExpectedComparison,
+  input: Schema.optional(ErpEmitterCaseFields),
+  mutationId: Schema.String,
+  sourceKind: DifferentialSourceKind,
+});
+
+const DifferentialExecSummaryFields = Schema.Struct({
+  firstFindings: Schema.Array(OracleFindingFields),
+  passed: Schema.Boolean,
+});
+
 const describeDifferentialExample = (
   testCase:
     | {
@@ -60,24 +95,20 @@ const describeDifferentialExample = (
         sourceKind: "official";
       },
 ) =>
-  JSON.stringify(
-    {
-      expectedComparison: testCase.mutation.expectedComparison,
-      input:
-        "input" in testCase
-          ? {
-              medicationDisplay: testCase.input.medicationDisplay,
-              orderKind: testCase.input.orderKind,
-              patient: `${testCase.input.patientGiven} ${testCase.input.patientFamily}`,
-              pzn: testCase.input.pzn,
-            }
-          : undefined,
-      mutationId: testCase.mutation.id,
-      sourceKind: testCase.sourceKind,
-    },
-    null,
-    2,
-  );
+  encodeJsonStringSync(DifferentialExampleFields)({
+    expectedComparison: testCase.mutation.expectedComparison,
+    input:
+      "input" in testCase
+        ? {
+            medicationDisplay: testCase.input.medicationDisplay,
+            orderKind: testCase.input.orderKind,
+            patient: `${testCase.input.patientGiven} ${testCase.input.patientFamily}`,
+            pzn: testCase.input.pzn,
+          }
+        : undefined,
+    mutationId: testCase.mutation.id,
+    sourceKind: testCase.sourceKind,
+  });
 
 const summarizeDifferentialTags = (
   testCase:
@@ -409,7 +440,13 @@ const assertExpectedComparisonEffect = ({
 
     const replayPath = yield* persistErpOracleReplayCaseEffect({
       lane: "differential",
-      payload: lanePayload,
+      payload: {
+        expectedComparison: mutation.expectedComparison,
+        input: "input" in lanePayload ? lanePayload.input : undefined,
+        mutationId: mutation.id,
+        sourceKind: lanePayload.sourceKind,
+      },
+      payloadSchema: DifferentialReplayPayloadFields,
       scenario,
     });
 
@@ -417,13 +454,14 @@ const assertExpectedComparisonEffect = ({
       [
         `ERP differential mutation changed classification from ${mutation.expectedComparison}.`,
         `replay=${replayPath}`,
-        `testCase=${JSON.stringify({
+        `testCase=${encodeJsonStringSync(DifferentialReplayPayloadFields)({
+          expectedComparison: mutation.expectedComparison,
           input: "input" in lanePayload ? lanePayload.input : undefined,
           mutationId: mutation.id,
           sourceKind: lanePayload.sourceKind,
         })}`,
-        `localPassed=${JSON.stringify(localResult.passed)}`,
-        `execSummary=${JSON.stringify({
+        `localPassed=${String(localResult.passed)}`,
+        `execSummary=${encodeJsonStringSync(DifferentialExecSummaryFields)({
           firstFindings: executableResult.findings.slice(0, 5),
           passed: executableResult.passed,
         })}`,

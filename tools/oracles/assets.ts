@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { createHash } from "node:crypto";
 
 import { fileSystem, path, runCommand, runEffect } from "./platform";
@@ -68,6 +68,49 @@ export interface KbvOracleAssetCacheEntry {
   readonly sha256?: string;
   readonly url: string;
 }
+
+const KbvOracleAssetCacheEntryFields = Schema.Struct({
+  assetId: Schema.String,
+  downloadedAt: Schema.String,
+  downloadPath: Schema.String,
+  extractedPath: Schema.optional(Schema.String),
+  fileName: Schema.String,
+  sha256: Schema.optional(Schema.String),
+  url: Schema.String,
+});
+
+const AssetCacheManifestFields = Schema.Record({
+  key: Schema.String,
+  value: KbvOracleAssetCacheEntryFields,
+});
+
+const FhirDependencyMarkerFields = Schema.Struct({
+  prerequisites: Schema.Array(
+    Schema.Struct({
+      packageId: Schema.String,
+      version: Schema.String,
+    }),
+  ),
+  writtenAt: Schema.String,
+});
+
+const FhirRuntimeHomeMarkerFields = Schema.Struct({
+  createdAt: Schema.String,
+  runtimeKey: Schema.String,
+  sharedPackageCacheRoot: Schema.String,
+});
+
+const PackageJsonFields = Schema.Struct({
+  dependencies: Schema.optional(
+    Schema.Record({
+      key: Schema.String,
+      value: Schema.String,
+    }),
+  ),
+});
+
+const encodeJsonString = <A, I, R>(schema: Schema.Schema<A, I, R>, value: A) =>
+  Schema.encode(Schema.parseJson(schema))(value);
 
 export const kbvOracleAssets = {
   bfbDirectory_2026_03_10: {
@@ -343,11 +386,13 @@ const readAssetCacheManifest = Effect.fn("oracles.readAssetCacheManifest")(
     }
 
     const content = yield* fileSystem.readFileString(manifestPath);
-    try {
-      return JSON.parse(content) as Record<string, KbvOracleAssetCacheEntry>;
-    } catch {
-      return {} satisfies Record<string, KbvOracleAssetCacheEntry>;
-    }
+    return yield* Schema.decodeUnknown(
+      Schema.parseJson(AssetCacheManifestFields),
+    )(content).pipe(
+      Effect.catchAll(() =>
+        Effect.succeed({} satisfies Record<string, KbvOracleAssetCacheEntry>),
+      ),
+    );
   },
 );
 
@@ -362,10 +407,11 @@ const writeAssetCacheManifest = Effect.fn("oracles.writeAssetCacheManifest")(
     yield* fileSystem.makeDirectory(cacheDir, { recursive: true });
     const manifestPath = getKbvOracleCacheManifestPath(cacheDir);
     const tempPath = `${manifestPath}.${process.pid}.${Date.now()}.tmp`;
-    yield* fileSystem.writeFileString(
-      tempPath,
-      JSON.stringify(manifest, null, 2),
+    const manifestJson = yield* encodeJsonString(
+      AssetCacheManifestFields,
+      manifest,
     );
+    yield* fileSystem.writeFileString(tempPath, manifestJson);
     yield* fileSystem.rename(tempPath, manifestPath);
   },
 );
@@ -382,7 +428,7 @@ const updateAssetCacheManifest = Effect.fn("oracles.updateAssetCacheManifest")(
     downloadPath: string;
     extractedPath?: string;
   }) {
-    const manifest = yield* readAssetCacheManifest(cacheDir);
+    const manifest = { ...(yield* readAssetCacheManifest(cacheDir)) };
     manifest[asset.assetId] = {
       assetId: asset.assetId,
       downloadPath,
@@ -856,22 +902,16 @@ const writeFhirDependencyMarker = Effect.fn(
   "oracles.writeFhirDependencyMarker",
 )(function* (cacheDir: string) {
   const markerPath = getFhirDependencyMarkerPath(cacheDir);
-  yield* fileSystem.writeFileString(
-    markerPath,
-    JSON.stringify(
-      {
-        prerequisites: fhirValidatorPrerequisitePackages.map(
-          ({ packageId, version }) => ({
-            packageId,
-            version,
-          }),
-        ),
-        writtenAt: new Date().toISOString(),
-      },
-      null,
-      2,
+  const markerJson = yield* encodeJsonString(FhirDependencyMarkerFields, {
+    prerequisites: fhirValidatorPrerequisitePackages.map(
+      ({ packageId, version }) => ({
+        packageId,
+        version,
+      }),
     ),
-  );
+    writtenAt: new Date().toISOString(),
+  });
+  yield* fileSystem.writeFileString(markerPath, markerJson);
 });
 
 const downloadExternalFhirPackage = Effect.fn(
@@ -999,11 +1039,10 @@ export const ensureExternalFhirPackageInstalled: (
     );
   }
 
-  const packageJson = JSON.parse(
-    yield* fileSystem.readFileString(packageJsonPath),
-  ) as {
-    dependencies?: Record<string, string>;
-  };
+  const packageJson = yield* Effect.flatMap(
+    fileSystem.readFileString(packageJsonPath),
+    Schema.decodeUnknown(Schema.parseJson(PackageJsonFields)),
+  );
 
   for (const [dependencyId, dependencyVersion] of Object.entries(
     packageJson.dependencies ?? {},
@@ -1106,18 +1145,12 @@ export const ensureFhirValidatorRuntimeHome = Effect.fn(
       yield* fileSystem.copy(sharedPackageCacheRoot, runtimePackageCacheRoot, {
         overwrite: true,
       });
-      yield* fileSystem.writeFileString(
-        markerPath,
-        JSON.stringify(
-          {
-            createdAt: new Date().toISOString(),
-            runtimeKey,
-            sharedPackageCacheRoot,
-          },
-          null,
-          2,
-        ),
-      );
+      const markerJson = yield* encodeJsonString(FhirRuntimeHomeMarkerFields, {
+        createdAt: new Date().toISOString(),
+        runtimeKey,
+        sharedPackageCacheRoot,
+      });
+      yield* fileSystem.writeFileString(markerPath, markerJson);
 
       return runtimeHomeRoot;
     }),

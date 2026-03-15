@@ -12,7 +12,7 @@ const parsePositiveInteger = (value: string | undefined, fallback: number) => {
 
 export const ORACLE_TEST_TIMEOUT = parsePositiveInteger(
   process.env.PVS_ORACLE_TEST_TIMEOUT_MS,
-  60 * MINUTE,
+  5 * MINUTE,
 );
 
 export const ORACLE_PROPERTY_NUM_RUNS = parsePositiveInteger(

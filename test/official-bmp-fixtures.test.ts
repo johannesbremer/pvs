@@ -4,6 +4,7 @@ import { Effect } from "effect";
 import { ensureBmpAssets } from "../tools/oracles/assets";
 import { runExecutableBmpOracleEffect } from "../tools/oracles/bmp/run";
 import { fileSystem, path } from "../tools/oracles/platform";
+import { formatOracleExecutionResult } from "./schema-json";
 import { ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 const cacheDir = path.join(process.cwd(), ".cache", "kbv-oracles");
@@ -32,7 +33,7 @@ describe("official BMP fixture sweeps", () => {
 
           expect(
             result.passed,
-            `BMP fixture ${fixtureName} should validate successfully.\n${JSON.stringify(result, null, 2)}`,
+            `BMP fixture ${fixtureName} should validate successfully.\n${formatOracleExecutionResult(result)}`,
           ).toBe(true);
         }
       }),

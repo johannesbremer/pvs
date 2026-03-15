@@ -1,94 +1,142 @@
+import { Schema } from "effect";
 import { Buffer } from "node:buffer";
 
 import type { OracleExecutionResult } from "../types";
 
 import { evaluateCodingRules } from "../../../src/domain/coding-rules";
 import { computeBufferSha256 } from "../assets";
+import { decodeJsonStringSync, encodeJsonStringSync } from "../json-schema";
 
-interface CodingOraclePreview {
-  readonly billingCaseId?: string;
-  readonly caseDiagnoses?: readonly {
-    readonly billingCaseId?: string;
-    readonly isPrimary?: boolean;
-    readonly recordStatus: "active" | "cancelled" | "superseded";
-  }[];
-  readonly caseId?: string;
-  readonly catalogEntry?: {
-    readonly ageErrorType?: string;
-    readonly ageLower?: number;
-    readonly ageUpper?: number;
-    readonly code: string;
-    readonly genderConstraint?: string;
-    readonly genderErrorType?: string;
-    readonly isBillable: boolean;
-    readonly notationFlag?: string;
-    readonly rareDiseaseFlag?: boolean;
-    readonly text: string;
-  };
-  readonly createdAt: string;
-  readonly diagnosis: {
-    readonly category: "acute" | "anamnestisch" | "dauerdiagnose";
-    readonly diagnosensicherheit?: string;
-    readonly icdCode: string;
-    readonly isPrimary?: boolean;
-    readonly patientId?: string;
-  };
-  readonly patient: {
-    readonly administrativeGender?: {
-      readonly code: string;
-    };
-    readonly birthDate?: string;
-  };
-  readonly patientId?: string;
-  readonly sourceReference?: string;
-}
+const CodingRecordStatus = Schema.Literal("active", "cancelled", "superseded");
+const CodingDiagnosisCategory = Schema.Literal(
+  "acute",
+  "anamnestisch",
+  "dauerdiagnose",
+);
+const CodingPackageSignatureStatus = Schema.Literal(
+  "failed",
+  "missing",
+  "unverified",
+  "verified",
+);
 
-interface CodingPackagePreview {
-  readonly caseId?: string;
-  readonly entries: readonly {
-    readonly ageErrorType?: string;
-    readonly ageLower?: number;
-    readonly ageUpper?: number;
-    readonly code?: string;
-    readonly genderConstraint?: string;
-    readonly genderErrorType?: string;
-    readonly isBillable?: boolean;
-    readonly notationFlag?: string;
-    readonly rareDiseaseFlag?: boolean;
-    readonly text?: string;
-  }[];
-  readonly package: {
-    readonly artifact?: {
-      readonly bytesBase64?: string;
-      readonly byteSize?: number;
-      readonly contentType?: string;
-      readonly sha256?: string;
-      readonly storageId?: string;
-      readonly title?: string;
-    };
-    readonly authenticity?: {
-      readonly certificateSha256?: string;
-      readonly detachedSignaturePath?: string;
-      readonly signatureAlgorithm?: string;
-      readonly signatureStatus:
-        | "failed"
-        | "missing"
-        | "unverified"
-        | "verified";
-      readonly signerOrganization?: string;
-      readonly trustAnchor?: string;
-      readonly verifiedAt?: string;
-    };
-    readonly effectiveFrom?: string;
-    readonly effectiveTo?: string;
-    readonly family: string;
-    readonly importedAt: string;
-    readonly sourcePath: string;
-    readonly status: string;
-    readonly version: string;
-  };
-  readonly sourceReference?: string;
-}
+const CodingCaseDiagnosisFields = Schema.Struct({
+  billingCaseId: Schema.optional(Schema.String),
+  isPrimary: Schema.optional(Schema.Boolean),
+  recordStatus: CodingRecordStatus,
+});
+
+const CodingCatalogEntryFields = Schema.Struct({
+  ageErrorType: Schema.optional(Schema.String),
+  ageLower: Schema.optional(Schema.Number),
+  ageUpper: Schema.optional(Schema.Number),
+  code: Schema.String,
+  genderConstraint: Schema.optional(Schema.String),
+  genderErrorType: Schema.optional(Schema.String),
+  isBillable: Schema.Boolean,
+  notationFlag: Schema.optional(Schema.String),
+  rareDiseaseFlag: Schema.optional(Schema.Boolean),
+  text: Schema.String,
+});
+
+const CodingDiagnosisFields = Schema.Struct({
+  category: CodingDiagnosisCategory,
+  diagnosensicherheit: Schema.optional(Schema.String),
+  icdCode: Schema.String,
+  isPrimary: Schema.optional(Schema.Boolean),
+  patientId: Schema.optional(Schema.String),
+});
+
+const CodingPatientFields = Schema.Struct({
+  administrativeGender: Schema.optional(
+    Schema.Struct({
+      code: Schema.String,
+    }),
+  ),
+  birthDate: Schema.optional(Schema.String),
+});
+
+export const CodingOraclePreviewFields = Schema.Struct({
+  billingCaseId: Schema.optional(Schema.String),
+  caseDiagnoses: Schema.optional(Schema.Array(CodingCaseDiagnosisFields)),
+  caseId: Schema.optional(Schema.String),
+  catalogEntry: Schema.optional(CodingCatalogEntryFields),
+  createdAt: Schema.String,
+  diagnosis: CodingDiagnosisFields,
+  patient: CodingPatientFields,
+  patientId: Schema.optional(Schema.String),
+  sourceReference: Schema.optional(Schema.String),
+});
+
+const CodingPackageEntryFields = Schema.Struct({
+  ageErrorType: Schema.optional(Schema.String),
+  ageLower: Schema.optional(Schema.Number),
+  ageUpper: Schema.optional(Schema.Number),
+  code: Schema.optional(Schema.String),
+  genderConstraint: Schema.optional(Schema.String),
+  genderErrorType: Schema.optional(Schema.String),
+  isBillable: Schema.optional(Schema.Boolean),
+  notationFlag: Schema.optional(Schema.String),
+  rareDiseaseFlag: Schema.optional(Schema.Boolean),
+  text: Schema.optional(Schema.String),
+});
+
+const CodingPackageArtifactFields = Schema.Struct({
+  bytesBase64: Schema.optional(Schema.String),
+  byteSize: Schema.optional(Schema.Number),
+  contentType: Schema.optional(Schema.String),
+  sha256: Schema.optional(Schema.String),
+  storageId: Schema.optional(Schema.String),
+  title: Schema.optional(Schema.String),
+});
+
+const CodingPackageAuthenticityFields = Schema.Struct({
+  certificateSha256: Schema.optional(Schema.String),
+  detachedSignaturePath: Schema.optional(Schema.String),
+  signatureAlgorithm: Schema.optional(Schema.String),
+  signatureStatus: CodingPackageSignatureStatus,
+  signerOrganization: Schema.optional(Schema.String),
+  trustAnchor: Schema.optional(Schema.String),
+  verifiedAt: Schema.optional(Schema.String),
+});
+
+const CodingPackageMetadataFields = Schema.Struct({
+  artifact: Schema.optional(CodingPackageArtifactFields),
+  authenticity: Schema.optional(CodingPackageAuthenticityFields),
+  effectiveFrom: Schema.optional(Schema.String),
+  effectiveTo: Schema.optional(Schema.String),
+  family: Schema.String,
+  importedAt: Schema.String,
+  sourcePath: Schema.String,
+  status: Schema.String,
+  version: Schema.String,
+});
+
+export const CodingPackagePreviewFields = Schema.Struct({
+  caseId: Schema.optional(Schema.String),
+  entries: Schema.Array(CodingPackageEntryFields),
+  package: CodingPackageMetadataFields,
+  sourceReference: Schema.optional(Schema.String),
+});
+
+type CodingOraclePreview = typeof CodingOraclePreviewFields.Type;
+type CodingPackagePreview = typeof CodingPackagePreviewFields.Type;
+
+export const decodeCodingOraclePreviewSync = decodeJsonStringSync(
+  CodingOraclePreviewFields,
+);
+
+export const encodeCodingOraclePreviewSync = encodeJsonStringSync(
+  CodingOraclePreviewFields,
+);
+
+export const decodeCodingPackagePreviewSync = decodeJsonStringSync(
+  CodingPackagePreviewFields,
+);
+
+export const encodeCodingPackagePreviewSync = encodeJsonStringSync(
+  CodingPackagePreviewFields,
+);
 
 const makeFinding = (
   code: string,
@@ -751,76 +799,81 @@ export const runCodingOracle = ({
     };
   }
 
-  let preview: CodingOraclePreview;
   try {
-    preview = JSON.parse(payloadPreview) as CodingOraclePreview;
-  } catch (error) {
-    return {
-      family: "ICD",
-      findings: [
-        makeFinding(
-          "ICD_FIXTURE_INVALID_JSON",
-          "error",
-          error instanceof Error
-            ? `Coding oracle preview is not valid JSON: ${error.message}`
-            : "Coding oracle preview is not valid JSON.",
-        ),
-      ],
-      passed: false,
-      summary: "Coding preview failed the fixture-backed rule checks.",
-    };
-  }
-
-  if (
-    typeof preview === "object" &&
-    preview !== null &&
-    "package" in preview &&
-    "entries" in preview
-  ) {
-    return runCodingPackageOracle(preview as unknown as CodingPackagePreview);
-  }
-
-  const evaluations = evaluateCodingRules({
-    diagnosis: {
-      category: preview.diagnosis.category,
-      icdCode: preview.diagnosis.icdCode,
-      patientId:
-        preview.diagnosis.patientId ?? preview.patientId ?? "preview-patient",
-      ...(preview.diagnosis.diagnosensicherheit
-        ? { diagnosensicherheit: preview.diagnosis.diagnosensicherheit }
-        : {}),
-      ...(preview.diagnosis.isPrimary !== undefined
-        ? { isPrimary: preview.diagnosis.isPrimary }
-        : {}),
-    },
-    patient: preview.patient,
-    patientId: preview.patientId ?? "preview-patient",
-    ...(preview.billingCaseId ? { billingCaseId: preview.billingCaseId } : {}),
-    ...(preview.caseDiagnoses ? { caseDiagnoses: preview.caseDiagnoses } : {}),
-    ...(preview.catalogEntry ? { catalogEntry: preview.catalogEntry } : {}),
-    createdAt: preview.createdAt,
-  });
-
-  const findings = evaluations.map((evaluation) =>
-    makeFinding(evaluation.ruleCode, evaluation.severity, evaluation.message),
-  );
-
-  if (preview.caseId) {
-    findings.unshift(
-      makeFinding(
-        "ICD_OFFICIAL_FIXTURE",
-        "info",
-        `Validated coding fixture ${preview.caseId}${preview.sourceReference ? ` (${preview.sourceReference})` : ""}.`,
-      ),
+    return runCodingPackageOracle(
+      decodeCodingPackagePreviewSync(payloadPreview),
     );
-  }
+  } catch {
+    try {
+      const preview = decodeCodingOraclePreviewSync(payloadPreview);
+      const evaluations = evaluateCodingRules({
+        diagnosis: {
+          category: preview.diagnosis.category,
+          icdCode: preview.diagnosis.icdCode,
+          patientId:
+            preview.diagnosis.patientId ??
+            preview.patientId ??
+            "preview-patient",
+          ...(preview.diagnosis.diagnosensicherheit
+            ? { diagnosensicherheit: preview.diagnosis.diagnosensicherheit }
+            : {}),
+          ...(preview.diagnosis.isPrimary !== undefined
+            ? { isPrimary: preview.diagnosis.isPrimary }
+            : {}),
+        },
+        patient: preview.patient,
+        patientId: preview.patientId ?? "preview-patient",
+        ...(preview.billingCaseId
+          ? { billingCaseId: preview.billingCaseId }
+          : {}),
+        ...(preview.caseDiagnoses
+          ? { caseDiagnoses: preview.caseDiagnoses }
+          : {}),
+        ...(preview.catalogEntry ? { catalogEntry: preview.catalogEntry } : {}),
+        createdAt: preview.createdAt,
+      });
 
-  return {
-    family: "ICD",
-    findings,
-    passed: findings.every((finding) => finding.severity !== "error"),
-    summary: findings.every((finding) => finding.severity !== "error")
-      ? "Coding preview satisfied the fixture-backed rule checks."
-      : "Coding preview failed the fixture-backed rule checks.",
-  };
+      const findings = evaluations.map((evaluation) =>
+        makeFinding(
+          evaluation.ruleCode,
+          evaluation.severity,
+          evaluation.message,
+        ),
+      );
+
+      if (preview.caseId) {
+        findings.unshift(
+          makeFinding(
+            "ICD_OFFICIAL_FIXTURE",
+            "info",
+            `Validated coding fixture ${preview.caseId}${preview.sourceReference ? ` (${preview.sourceReference})` : ""}.`,
+          ),
+        );
+      }
+
+      return {
+        family: "ICD",
+        findings,
+        passed: findings.every((finding) => finding.severity !== "error"),
+        summary: findings.every((finding) => finding.severity !== "error")
+          ? "Coding preview satisfied the fixture-backed rule checks."
+          : "Coding preview failed the fixture-backed rule checks.",
+      };
+    } catch (error) {
+      return {
+        family: "ICD",
+        findings: [
+          makeFinding(
+            "ICD_FIXTURE_INVALID_JSON",
+            "error",
+            error instanceof Error
+              ? `Coding oracle preview is not valid JSON: ${error.message}`
+              : "Coding oracle preview is not valid JSON.",
+          ),
+        ],
+        passed: false,
+        summary: "Coding preview failed the fixture-backed rule checks.",
+      };
+    }
+  }
 };

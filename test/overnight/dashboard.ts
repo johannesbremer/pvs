@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Runtime } from "effect";
 import fc from "fast-check";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -524,9 +524,10 @@ export const trackedAsyncProperty = <A>({
     });
 
     let iteration = 0;
+    const runtime = yield* Effect.runtime<never>();
 
     const property = fc.asyncProperty(arbitrary, (value) =>
-      Effect.runPromise(
+      Runtime.runPromise(runtime)(
         Effect.gen(function* () {
           iteration += 1;
           const example = describeExample?.(value);

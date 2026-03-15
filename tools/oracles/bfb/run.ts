@@ -1,69 +1,83 @@
+import { Schema } from "effect";
+
 import type { OracleExecutionResult } from "../types";
 
-interface BfbBarcodePreview {
-  readonly barcodeType?: string;
-  readonly height?: number;
-  readonly page?: number;
-  readonly payload?: string;
-  readonly width?: number;
-  readonly x?: number;
-  readonly y?: number;
-}
+import { decodeJsonStringSync, encodeJsonStringSync } from "../json-schema";
 
-interface BfbFieldPreview {
-  readonly fieldCode?: string;
-  readonly height?: number;
-  readonly page?: number;
-  readonly required?: boolean;
-  readonly value?: string;
-  readonly width?: number;
-  readonly x?: number;
-  readonly y?: number;
-}
+export const BfbBarcodePreviewFields = Schema.Struct({
+  barcodeType: Schema.optional(Schema.String),
+  height: Schema.optional(Schema.Number),
+  page: Schema.optional(Schema.Number),
+  payload: Schema.optional(Schema.String),
+  width: Schema.optional(Schema.Number),
+  x: Schema.optional(Schema.Number),
+  y: Schema.optional(Schema.Number),
+});
 
-interface BfbGoldenBarcodePreview {
-  readonly barcodeType: string;
-  readonly exactPayload?: string;
-  readonly height: number;
-  readonly page: number;
-  readonly payloadPrefix?: string;
-  readonly width: number;
-  readonly x: number;
-  readonly y: number;
-}
+export const BfbFieldPreviewFields = Schema.Struct({
+  fieldCode: Schema.optional(Schema.String),
+  height: Schema.optional(Schema.Number),
+  page: Schema.optional(Schema.Number),
+  required: Schema.optional(Schema.Boolean),
+  value: Schema.optional(Schema.String),
+  width: Schema.optional(Schema.Number),
+  x: Schema.optional(Schema.Number),
+  y: Schema.optional(Schema.Number),
+});
 
-interface BfbGoldenFieldPreview {
-  readonly exactValue?: string;
-  readonly fieldCode: string;
-  readonly height?: number;
-  readonly page: number;
-  readonly required?: boolean;
-  readonly width?: number;
-  readonly x: number;
-  readonly y: number;
-}
+export const BfbGoldenBarcodePreviewFields = Schema.Struct({
+  barcodeType: Schema.String,
+  exactPayload: Schema.optional(Schema.String),
+  height: Schema.Number,
+  page: Schema.Number,
+  payloadPrefix: Schema.optional(Schema.String),
+  width: Schema.Number,
+  x: Schema.Number,
+  y: Schema.Number,
+});
 
-interface BfbGoldenTemplatePreview {
-  readonly barcodes: readonly BfbGoldenBarcodePreview[];
-  readonly fields: readonly BfbGoldenFieldPreview[];
-  readonly pageCount: number;
-  readonly snapshotId?: string;
-  readonly subjectKind?: string;
-  readonly templateId: string;
-  readonly templateVersion?: string;
-}
+export const BfbGoldenFieldPreviewFields = Schema.Struct({
+  exactValue: Schema.optional(Schema.String),
+  fieldCode: Schema.String,
+  height: Schema.optional(Schema.Number),
+  page: Schema.Number,
+  required: Schema.optional(Schema.Boolean),
+  width: Schema.optional(Schema.Number),
+  x: Schema.Number,
+  y: Schema.Number,
+});
 
-interface BfbRenderContextPreview {
-  readonly barcodes?: readonly BfbBarcodePreview[];
-  readonly caseId?: string;
-  readonly fields?: readonly BfbFieldPreview[];
-  readonly goldenTemplate?: BfbGoldenTemplatePreview;
-  readonly pageCount?: number;
-  readonly sourceReference?: string;
-  readonly subjectKind?: string;
-  readonly templateId?: string;
-  readonly templateVersion?: string;
-}
+export const BfbGoldenTemplatePreviewFields = Schema.Struct({
+  barcodes: Schema.Array(BfbGoldenBarcodePreviewFields),
+  fields: Schema.Array(BfbGoldenFieldPreviewFields),
+  pageCount: Schema.Number,
+  snapshotId: Schema.optional(Schema.String),
+  subjectKind: Schema.optional(Schema.String),
+  templateId: Schema.String,
+  templateVersion: Schema.optional(Schema.String),
+});
+
+export const BfbRenderContextPreviewFields = Schema.Struct({
+  barcodes: Schema.optional(Schema.Array(BfbBarcodePreviewFields)),
+  caseId: Schema.optional(Schema.String),
+  fields: Schema.optional(Schema.Array(BfbFieldPreviewFields)),
+  goldenTemplate: Schema.optional(BfbGoldenTemplatePreviewFields),
+  pageCount: Schema.optional(Schema.Number),
+  sourceReference: Schema.optional(Schema.String),
+  subjectKind: Schema.optional(Schema.String),
+  templateId: Schema.optional(Schema.String),
+  templateVersion: Schema.optional(Schema.String),
+});
+
+type BfbRenderContextPreview = typeof BfbRenderContextPreviewFields.Type;
+
+export const decodeBfbRenderContextPreviewSync = decodeJsonStringSync(
+  BfbRenderContextPreviewFields,
+);
+
+export const encodeBfbRenderContextPreviewSync = encodeJsonStringSync(
+  BfbRenderContextPreviewFields,
+);
 
 const allowedBarcodeTypes = new Set(["code128", "datamatrix", "ean13", "qr"]);
 
@@ -108,7 +122,7 @@ export const runBfbOracle = ({
 
   let preview: BfbRenderContextPreview;
   try {
-    preview = JSON.parse(payloadPreview) as BfbRenderContextPreview;
+    preview = decodeBfbRenderContextPreviewSync(payloadPreview);
   } catch (error) {
     return {
       family: "BFB",

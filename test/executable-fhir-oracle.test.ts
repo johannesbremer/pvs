@@ -9,6 +9,7 @@ import {
 } from "../tools/oracles/fhir/run";
 import { fileSystem, path, runEffect } from "../tools/oracles/platform";
 import { resolveOracleTestCache } from "./oracle-test-cache";
+import { formatOracleExecutionResult } from "./schema-json";
 import { ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 const tempDirs: string[] = [];
@@ -99,7 +100,7 @@ describe("executable FHIR oracle", () => {
 
         expect(
           result.passed,
-          `Executable eRezept validation should pass.\n${JSON.stringify(result, null, 2)}`,
+          `Executable eRezept validation should pass.\n${formatOracleExecutionResult(result)}`,
         ).toBe(true);
         expect(
           result.findings.filter((finding) => finding.severity === "error"),

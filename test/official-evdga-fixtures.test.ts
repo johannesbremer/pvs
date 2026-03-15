@@ -90,13 +90,13 @@ describe("official eVDGA fixture sweeps", () => {
               "EVDGA_Bundle_PKV_negativer_Testfall.xml",
             ),
           )
-          .pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+          .pipe(Effect.catchAll(() => Effect.void));
         if (!xml) {
           return;
         }
 
         // Act
-        const result = Schema.decodeUnknownSync(OracleExecutionResultFields)(
+        const result = yield* Schema.decodeUnknown(OracleExecutionResultFields)(
           yield* runExecutableFhirOracleEffect({
             cacheDir,
             family: "eVDGA",

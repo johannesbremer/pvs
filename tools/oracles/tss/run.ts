@@ -1,3 +1,5 @@
+import { Schema } from "effect";
+
 import type { OracleExecutionResult } from "../types";
 
 import { parseOfficialTssSearchsetXml } from "../../../src/codecs/xml/tss";
@@ -6,14 +8,54 @@ import {
   type TssAppointmentPreview,
   type TssSelectionCriteria,
 } from "../../../src/domain/appointments-referrals";
+import { decodeJsonStringSync, encodeJsonStringSync } from "../json-schema";
 
-interface TssOraclePreview {
-  readonly appointments: readonly TssAppointmentPreview[];
-  readonly caseId?: string;
-  readonly criteria: TssSelectionCriteria;
-  readonly expectedSelectableAppointmentIds: readonly string[];
-  readonly sourceReference?: string;
-}
+export const TssAppointmentPreviewFields = Schema.Struct({
+  appointmentId: Schema.optional(Schema.String),
+  displayBucket: Schema.optional(Schema.String),
+  end: Schema.optional(Schema.String),
+  externalAppointmentId: Schema.optional(Schema.String),
+  organizationId: Schema.String,
+  patientId: Schema.optional(Schema.String),
+  source: Schema.Literal("internal", "tss"),
+  start: Schema.String,
+  status: Schema.Literal(
+    "booked",
+    "cancelled",
+    "fulfilled",
+    "noshow",
+    "proposed",
+  ),
+  tssServiceType: Schema.optional(Schema.String),
+  vermittlungscode: Schema.optional(Schema.String),
+});
+
+export const TssSelectionCriteriaFields = Schema.Struct({
+  displayBucket: Schema.optional(Schema.String),
+  organizationId: Schema.String,
+  startFrom: Schema.optional(Schema.String),
+  startTo: Schema.optional(Schema.String),
+  tssServiceType: Schema.optional(Schema.String),
+  vermittlungscode: Schema.optional(Schema.String),
+});
+
+export const TssOraclePreviewFields = Schema.Struct({
+  appointments: Schema.Array(TssAppointmentPreviewFields),
+  caseId: Schema.optional(Schema.String),
+  criteria: TssSelectionCriteriaFields,
+  expectedSelectableAppointmentIds: Schema.Array(Schema.String),
+  sourceReference: Schema.optional(Schema.String),
+});
+
+type TssOraclePreview = typeof TssOraclePreviewFields.Type;
+
+export const decodeTssOraclePreviewSync = decodeJsonStringSync(
+  TssOraclePreviewFields,
+);
+
+export const encodeTssOraclePreviewSync = encodeJsonStringSync(
+  TssOraclePreviewFields,
+);
 
 const makeFinding = (
   code: string,
@@ -95,7 +137,7 @@ export const runTssOracle = ({
 
   let preview: TssOraclePreview;
   try {
-    preview = JSON.parse(payloadPreview) as TssOraclePreview;
+    preview = decodeTssOraclePreviewSync(payloadPreview);
   } catch (error) {
     return {
       family: "TSS",

@@ -3,10 +3,17 @@ import { Effect } from "effect";
 
 import type { OraclePlan } from "../tools/oracles/types";
 
+import { encodeBfbRenderContextPreviewSync } from "../tools/oracles/bfb/run";
+import {
+  encodeCodingOraclePreviewSync,
+  encodeCodingPackagePreviewSync,
+} from "../tools/oracles/coding/run";
+import { encodeHeilmittelOraclePreviewSync } from "../tools/oracles/heilmittel/run";
 import {
   buildAndExecuteOraclePlanEffect,
   executeOraclePlanEffect,
 } from "../tools/oracles/runtime";
+import { encodeTssOraclePreviewSync } from "../tools/oracles/tss/run";
 
 describe("oracle runtime", () => {
   it.effect(
@@ -65,7 +72,7 @@ describe("oracle runtime", () => {
           tssResult,
         ] = yield* Effect.all([
           executeOraclePlanEffect({
-            payloadPreview: JSON.stringify({
+            payloadPreview: encodeBfbRenderContextPreviewSync({
               barcodes: [
                 {
                   barcodeType: "datamatrix",
@@ -128,7 +135,7 @@ describe("oracle runtime", () => {
             plan: bfbPlan,
           }),
           executeOraclePlanEffect({
-            payloadPreview: JSON.stringify({
+            payloadPreview: encodeCodingOraclePreviewSync({
               caseId: "SDKH-CHRONIC-CERTAINTY",
               catalogEntry: {
                 code: "M54.5",
@@ -148,7 +155,7 @@ describe("oracle runtime", () => {
             plan: codingPlan,
           }),
           executeOraclePlanEffect({
-            payloadPreview: JSON.stringify({
+            payloadPreview: encodeCodingPackagePreviewSync({
               caseId: "ICD-PACKAGE-RUNTIME-PREVIEW",
               entries: [
                 {
@@ -186,7 +193,7 @@ describe("oracle runtime", () => {
             plan: codingPlan,
           }),
           executeOraclePlanEffect({
-            payloadPreview: JSON.stringify({
+            payloadPreview: encodeHeilmittelOraclePreviewSync({
               blankoFlag: true,
               caseId: "PF06-A1",
               catalogEntries: [
@@ -206,7 +213,7 @@ describe("oracle runtime", () => {
             plan: heilmittelPlan,
           }),
           executeOraclePlanEffect({
-            payloadPreview: JSON.stringify({
+            payloadPreview: encodeTssOraclePreviewSync({
               appointments: [
                 {
                   appointmentId: "apt-1",

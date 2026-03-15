@@ -5,6 +5,7 @@ import { ensureBmpAssets, findFileRecursive } from "../tools/oracles/assets";
 import { runExecutableBmpOracleEffect } from "../tools/oracles/bmp/run";
 import { fileSystem } from "../tools/oracles/platform";
 import { resolveOracleTestCache } from "./oracle-test-cache";
+import { formatOracleExecutionResult } from "./schema-json";
 import { ORACLE_TEST_TIMEOUT } from "./timeouts";
 
 describe("executable BMP oracle", () => {
@@ -37,7 +38,7 @@ describe("executable BMP oracle", () => {
 
           expect(
             result.passed,
-            `BMP validation should pass.\ncacheDir=${cacheDir}\nexample=${officialBmpExample}\n${JSON.stringify(result, null, 2)}`,
+            `BMP validation should pass.\ncacheDir=${cacheDir}\nexample=${officialBmpExample}\n${formatOracleExecutionResult(result)}`,
           ).toBe(true);
         } finally {
           if (!usesSharedCache) {

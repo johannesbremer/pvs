@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Runtime, Schema } from "effect";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 
@@ -16,14 +16,15 @@ const debugTimingsEnabled =
   process.env.KBV_ORACLE_DEBUG === "true";
 const validatorServerStartupTimeoutMs = 60_000;
 const validatorServerPollIntervalMs = 200;
+const validatorServerRequestTimeoutMs = 30_000;
 const validatorBatchConcurrency = Number.parseInt(
-  process.env.PVS_FHIR_VALIDATOR_BATCH_CONCURRENCY ?? "8",
+  process.env.PVS_FHIR_VALIDATOR_BATCH_CONCURRENCY ?? "1",
   10,
 );
 const effectiveValidatorBatchConcurrency =
   Number.isInteger(validatorBatchConcurrency) && validatorBatchConcurrency > 0
     ? validatorBatchConcurrency
-    : 8;
+    : 1;
 
 type OperationOutcomeIssue = {
   readonly code?: string;
@@ -44,6 +45,100 @@ type OperationOutcomePayload = {
   readonly resourceType?: string;
 };
 
+class FhirOracleRuntimeError extends Schema.TaggedError<FhirOracleRuntimeError>()(
+  "FhirOracleRuntimeError",
+  {
+    cause: Schema.optional(Schema.String),
+    message: Schema.String,
+  },
+) {}
+
+const OperationOutcomeIssueFields = Schema.Struct({
+  code: Schema.optional(Schema.String),
+  details: Schema.optional(
+    Schema.Struct({
+      coding: Schema.optional(
+        Schema.Array(
+          Schema.Struct({
+            code: Schema.optional(Schema.String),
+            display: Schema.optional(Schema.String),
+            system: Schema.optional(Schema.String),
+          }),
+        ),
+      ),
+      text: Schema.optional(Schema.String),
+    }),
+  ),
+  diagnostics: Schema.optional(Schema.String),
+  severity: Schema.optional(Schema.String),
+});
+
+const OperationOutcomePayloadFields = Schema.Struct({
+  issue: Schema.optional(Schema.Array(OperationOutcomeIssueFields)),
+  resourceType: Schema.optional(Schema.String),
+});
+
+const OfflineLanguageCodeSystemFields = Schema.Struct({
+  caseSensitive: Schema.Boolean,
+  concept: Schema.Array(
+    Schema.Struct({
+      code: Schema.String,
+      display: Schema.String,
+    }),
+  ),
+  content: Schema.String,
+  description: Schema.String,
+  experimental: Schema.Boolean,
+  id: Schema.String,
+  name: Schema.String,
+  resourceType: Schema.Literal("CodeSystem"),
+  status: Schema.String,
+  title: Schema.String,
+  url: Schema.String,
+  version: Schema.String,
+});
+
+const OfflineAllLanguagesValueSetFields = Schema.Struct({
+  compose: Schema.Struct({
+    include: Schema.Array(
+      Schema.Struct({
+        concept: Schema.Array(
+          Schema.Struct({
+            code: Schema.String,
+            display: Schema.String,
+          }),
+        ),
+        system: Schema.String,
+      }),
+    ),
+  }),
+  description: Schema.String,
+  expansion: Schema.Struct({
+    contains: Schema.Array(
+      Schema.Struct({
+        code: Schema.String,
+        display: Schema.String,
+        system: Schema.String,
+      }),
+    ),
+    identifier: Schema.String,
+    offset: Schema.Number,
+    timestamp: Schema.String,
+    total: Schema.Number,
+  }),
+  experimental: Schema.Boolean,
+  id: Schema.String,
+  name: Schema.String,
+  resourceType: Schema.Literal("ValueSet"),
+  status: Schema.String,
+  title: Schema.String,
+  url: Schema.String,
+  version: Schema.String,
+});
+
+const encodeJsonString = <A, I, R>(schema: Schema.Schema<A, I, R>, value: A) =>
+  Schema.encode(Schema.parseJson(schema))(value);
+
 type ValidatorServerHandle = {
   readonly baseUrl: string;
   readonly child: ReturnType<typeof spawn>;
@@ -58,8 +153,18 @@ type ValidatorServerHandle = {
 const validatorServerCache = new Map<string, Promise<ValidatorServerHandle>>();
 let validatorServerShutdownRegistered = false;
 
-const toError = (error: unknown) =>
-  error instanceof Error ? error : new Error(String(error));
+const toFhirOracleRuntimeError = (error: unknown, message?: string) =>
+  new FhirOracleRuntimeError({
+    ...(error instanceof Error ? { cause: error.message } : {}),
+    message:
+      message ?? (error instanceof Error ? error.message : String(error)),
+  });
+
+const withRequestTimeout = (url: string, init?: RequestInit) =>
+  fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(validatorServerRequestTimeoutMs),
+  });
 
 const logDebug = (message: string) => {
   if (!debugTimingsEnabled) {
@@ -245,7 +350,7 @@ const buildOfflineLanguageCodeSystem = (codes: readonly string[]) => ({
   experimental: true,
   id: "kbv-offline-ietf-bcp-47",
   name: "KbvOfflineIetfBcp47",
-  resourceType: "CodeSystem",
+  resourceType: "CodeSystem" as const,
   status: "active",
   title: "Offline BCP-47 Language Codes",
   url: "urn:ietf:bcp:47",
@@ -280,7 +385,7 @@ const buildOfflineAllLanguagesValueSet = (codes: readonly string[]) => ({
   experimental: true,
   id: "all-languages",
   name: "AllLanguages",
-  resourceType: "ValueSet",
+  resourceType: "ValueSet" as const,
   status: "active",
   title: "All Languages",
   url: "http://hl7.org/fhir/ValueSet/all-languages",
@@ -301,13 +406,21 @@ const writeOfflineLanguageSupportResourcesEffect = Effect.fn(
   }
 
   yield* fileSystem.makeDirectory(supportDir, { recursive: true });
+  const codeSystemJson = yield* encodeJsonString(
+    OfflineLanguageCodeSystemFields,
+    buildOfflineLanguageCodeSystem(codes),
+  );
   yield* fileSystem.writeFileString(
     path.join(supportDir, "CodeSystem-kbv-offline-ietf-bcp-47.json"),
-    JSON.stringify(buildOfflineLanguageCodeSystem(codes), null, 2),
+    codeSystemJson,
+  );
+  const valueSetJson = yield* encodeJsonString(
+    OfflineAllLanguagesValueSetFields,
+    buildOfflineAllLanguagesValueSet(codes),
   );
   yield* fileSystem.writeFileString(
     path.join(supportDir, "ValueSet-all-languages.json"),
-    JSON.stringify(buildOfflineAllLanguagesValueSet(codes), null, 2),
+    valueSetJson,
   );
 });
 
@@ -354,17 +467,23 @@ const getFhirRuntimeKey = (
   ].join("-");
 
 const reserveValidatorServerPort = () =>
-  Effect.async<number, Error>((resume) => {
+  Effect.async<number, FhirOracleRuntimeError>((resume) => {
     const server = createServer();
     server.unref();
     server.once("error", (error) => {
-      resume(Effect.fail(toError(error)));
+      resume(Effect.fail(toFhirOracleRuntimeError(error)));
     });
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       if (!address || typeof address === "string") {
         server.close(() =>
-          resume(Effect.fail(new Error("Failed to reserve port."))),
+          resume(
+            Effect.fail(
+              new FhirOracleRuntimeError({
+                message: "Failed to reserve port.",
+              }),
+            ),
+          ),
         );
         return;
       }
@@ -372,7 +491,7 @@ const reserveValidatorServerPort = () =>
       const { port } = address;
       server.close((error) => {
         if (error) {
-          resume(Effect.fail(toError(error)));
+          resume(Effect.fail(toFhirOracleRuntimeError(error)));
           return;
         }
         resume(Effect.succeed(port));
@@ -398,21 +517,24 @@ const waitForValidatorServerEffect = Effect.fn(
   while (Date.now() - startedAt < validatorServerStartupTimeoutMs) {
     if (child.exitCode !== null || child.killed) {
       const combined = `${stdoutLog.current}\n${stderrLog.current}`.trim();
-      throw new Error(
-        combined.length > 0
-          ? combined.slice(0, 2_000)
-          : "FHIR validator server exited before becoming ready.",
-      );
+      return yield* new FhirOracleRuntimeError({
+        message:
+          combined.length > 0
+            ? combined.slice(0, 2_000)
+            : "FHIR validator server exited before becoming ready.",
+      });
     }
 
     const response = yield* Effect.tryPromise({
-      catch: toError,
+      catch: toFhirOracleRuntimeError,
       try: () =>
-        fetch(`${baseUrl}/validateResource`, {
+        withRequestTimeout(`${baseUrl}/validateResource`, {
           method: "GET",
         }),
     }).pipe(
-      Effect.catchAll(() => Effect.succeed<Response | undefined>(undefined)),
+      Effect.catchAll(() =>
+        Effect.as(Effect.void, undefined as Response | undefined),
+      ),
     );
 
     if (response && response.status < 500) {
@@ -422,9 +544,9 @@ const waitForValidatorServerEffect = Effect.fn(
     yield* Effect.sleep(`${validatorServerPollIntervalMs} millis`);
   }
 
-  throw new Error(
-    `FHIR validator server did not become ready within ${validatorServerStartupTimeoutMs}ms.`,
-  );
+  return yield* new FhirOracleRuntimeError({
+    message: `FHIR validator server did not become ready within ${validatorServerStartupTimeoutMs}ms.`,
+  });
 });
 
 const stopValidatorServer = (handle: ValidatorServerHandle) =>
@@ -560,7 +682,8 @@ const ensureValidatorServerEffect = Effect.fn("oracles.ensureValidatorServer")(
       yield* stopValidatorServer(existing);
     }
 
-    const pending = Effect.runPromise(
+    const runtime = yield* Effect.runtime<never>();
+    const pending = Runtime.runPromise(runtime)(
       startValidatorServerEffect({
         cacheDir,
         family,
@@ -570,12 +693,11 @@ const ensureValidatorServerEffect = Effect.fn("oracles.ensureValidatorServer")(
     );
     validatorServerCache.set(cacheKey, pending);
 
-    try {
-      return yield* Effect.tryPromise(() => pending);
-    } catch (error) {
-      validatorServerCache.delete(cacheKey);
-      throw error;
-    }
+    return yield* Effect.tryPromise(() => pending).pipe(
+      Effect.tapError(() =>
+        Effect.sync(() => validatorServerCache.delete(cacheKey)),
+      ),
+    );
   },
 );
 
@@ -590,9 +712,9 @@ const validateXmlWithServerEffect = Effect.fn("oracles.validateXmlWithServer")(
     xml: string;
   }) {
     const response = yield* Effect.tryPromise({
-      catch: toError,
+      catch: toFhirOracleRuntimeError,
       try: () =>
-        fetch(`${server.baseUrl}/validateResource`, {
+        withRequestTimeout(`${server.baseUrl}/validateResource`, {
           body: xml,
           headers: {
             Accept: "application/fhir+json",
@@ -602,25 +724,18 @@ const validateXmlWithServerEffect = Effect.fn("oracles.validateXmlWithServer")(
         }),
     });
     const body = yield* Effect.tryPromise({
-      catch: toError,
+      catch: toFhirOracleRuntimeError,
       try: () => response.text(),
     });
-    const payload = yield* Effect.tryPromise<
-      OperationOutcomePayload | undefined,
-      Error
-    >({
-      catch: toError,
-      try: () =>
-        Promise.resolve().then(() => {
-          if (body.trim().length === 0) {
-            return undefined;
-          }
-
-          return JSON.parse(body) as OperationOutcomePayload;
-        }),
-    }).pipe(
+    const payload = yield* Schema.decodeUnknown(
+      Schema.parseJson(OperationOutcomePayloadFields),
+    )(body).pipe(
+      Effect.map((parsed) => (body.trim().length === 0 ? undefined : parsed)),
       Effect.catchAll(() =>
-        Effect.succeed<OperationOutcomePayload | undefined>(undefined),
+        Effect.as(
+          Effect.void,
+          undefined as OperationOutcomePayload | undefined,
+        ),
       ),
     );
     const findings = parseOperationOutcomeFindings(payload, body);

@@ -2,20 +2,8 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
 import { fileSystem, path } from "../tools/oracles/platform";
-
-interface CoverageInventory {
-  readonly asOf: string;
-  readonly families: readonly {
-    readonly canonicalModel: boolean | string;
-    readonly currentNote: string;
-    readonly family: string;
-    readonly oracleStatus: string;
-    readonly runtimeWorkflow: boolean | string;
-    readonly sourceQuarterOrVersion: string;
-    readonly testStatus: string;
-  }[];
-  readonly inventoryVersion: number;
-}
+import { CoverageInventoryFields } from "./oracle-fixture-schemas";
+import { decodeJsonFile } from "./schema-json";
 
 describe("validation coverage inventory", () => {
   it.effect("tracks the validated KBV families in machine-readable form", () =>
@@ -28,9 +16,10 @@ describe("validation coverage inventory", () => {
       );
       const markdownPath = path.join(process.cwd(), "VALIDATION_COVERAGE.md");
 
-      const inventory = JSON.parse(
-        yield* fileSystem.readFileString(inventoryPath),
-      ) as CoverageInventory;
+      const inventory = yield* decodeJsonFile(
+        inventoryPath,
+        CoverageInventoryFields,
+      );
       const markdown = yield* fileSystem.readFileString(markdownPath);
 
       expect(inventory.asOf).toBe("2026-03-14");

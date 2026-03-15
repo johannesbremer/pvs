@@ -17,9 +17,10 @@
     "oracle:prefetch": "node --experimental-strip-types tools/oracles/prefetch.mjs",
     "test": "vitest run --exclude 'test/overnight/**/*.test.ts'",
     "test:ci": "pnpm run test && PVS_PROPERTY_RUNS=25 pnpm run test:oracle:erezept",
+    "test:oracle:erezept": "vitest run --config vitest.overnight.config.ts test/overnight/erezept-emitter-oracle.test.ts test/overnight/erezept-differential-oracle.test.ts --reporter=verbose",
     "test:overnight": "node tools/oracles/reset-overnight-dashboard.mjs && PVS_PROPERTY_RUNS=1000000 PVS_ORACLE_TEST_TIMEOUT_MS=86400000 vitest --config vitest.overnight.config.ts test/overnight/erezept-emitter-oracle.test.ts test/overnight/erezept-differential-oracle.test.ts --ui",
-    "tsc": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "tsc": "pnpm effect:patch && tsc --noEmit",
+    "typecheck": "pnpm effect:patch && tsc --noEmit"
   },
   "dependencies": {
     "@confect/cli": "^2.0.0",

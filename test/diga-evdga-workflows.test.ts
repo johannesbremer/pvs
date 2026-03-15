@@ -292,7 +292,7 @@ describe("diga and evdga workflows", () => {
         if (!result.plan.found) {
           throw new Error("expected eVDGA validation plan");
         }
-        const plan = Schema.decodeUnknownSync(OraclePlanFields)(
+        const plan = yield* Schema.decodeUnknown(OraclePlanFields)(
           result.plan.plan,
         );
         expect(plan.family).toBe("eVDGA");
@@ -304,7 +304,7 @@ describe("diga and evdga workflows", () => {
             `expected completed validation outcome, got ${result.validationRun.outcome}`,
           );
         }
-        const report = Schema.decodeUnknownSync(OracleExecutionResultFields)(
+        const report = yield* Schema.decodeUnknown(OracleExecutionResultFields)(
           result.validationRun.report,
         );
         expect(report.family).toBe("eVDGA");
