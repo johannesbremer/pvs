@@ -17,8 +17,7 @@
     "oracle:prefetch": "node --experimental-strip-types tools/oracles/prefetch.mjs",
     "test": "vitest run --exclude 'test/overnight/**/*.test.ts'",
     "test:ci": "pnpm run test && PVS_PROPERTY_RUNS=25 pnpm run test:oracle:erezept",
-    "test:oracle:erezept": "vitest run test/overnight/erezept-emitter-oracle.test.ts test/overnight/erezept-differential-oracle.test.ts --reporter=verbose",
-    "test:overnight": "PVS_PROPERTY_RUNS=1000000 PVS_ORACLE_TEST_TIMEOUT_MS=86400000 pnpm run test:oracle:erezept",
+    "test:overnight": "node tools/oracles/reset-overnight-dashboard.mjs && PVS_PROPERTY_RUNS=1000000 PVS_ORACLE_TEST_TIMEOUT_MS=86400000 vitest --config vitest.overnight.config.ts test/overnight/erezept-emitter-oracle.test.ts test/overnight/erezept-differential-oracle.test.ts --ui",
     "tsc": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
@@ -41,6 +40,7 @@
     "@eslint/markdown": "^7.5.1",
     "@types/node": "latest",
     "@vitest/eslint-plugin": "^1.6.10",
+    "@vitest/ui": "^3.2.4",
     "eslint": "^9.39.4",
     "eslint-plugin-jsdoc": "^62.7.1",
     "eslint-plugin-jsonc": "^3.1.1",

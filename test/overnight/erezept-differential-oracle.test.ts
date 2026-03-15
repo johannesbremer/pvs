@@ -10,6 +10,7 @@ import {
 } from "../../tools/oracles/fhir/run";
 import { resolveOracleTestCache } from "../oracle-test-cache";
 import { ORACLE_PROPERTY_NUM_RUNS, ORACLE_TEST_TIMEOUT } from "../timeouts";
+import { runTrackedCatalogEffect, trackedAsyncProperty } from "./dashboard";
 import {
   emittedMismatchMutations,
   emittedParityMutations,
@@ -43,6 +44,60 @@ const representativeFreetextCase: ErpEmitterCase = {
   patientGiven: "Eva",
 };
 
+const overnightDifferentialSuite = "overnight eRezept differential oracle";
+const differentialSearchStopCondition =
+  "Run until canceled, timeout, or the first mismatch between the local and executable oracle classifications.";
+
+const describeDifferentialExample = (
+  testCase:
+    | {
+        input: ErpEmitterCase;
+        mutation: ErpDifferentialMutation;
+        sourceKind: "emitted";
+      }
+    | {
+        mutation: ErpDifferentialMutation;
+        sourceKind: "official";
+      },
+) =>
+  JSON.stringify(
+    {
+      expectedComparison: testCase.mutation.expectedComparison,
+      input:
+        "input" in testCase
+          ? {
+              medicationDisplay: testCase.input.medicationDisplay,
+              orderKind: testCase.input.orderKind,
+              patient: `${testCase.input.patientGiven} ${testCase.input.patientFamily}`,
+              pzn: testCase.input.pzn,
+            }
+          : undefined,
+      mutationId: testCase.mutation.id,
+      sourceKind: testCase.sourceKind,
+    },
+    null,
+    2,
+  );
+
+const summarizeDifferentialTags = (
+  testCase:
+    | {
+        input: ErpEmitterCase;
+        mutation: ErpDifferentialMutation;
+        sourceKind: "emitted";
+      }
+    | {
+        mutation: ErpDifferentialMutation;
+        sourceKind: "official";
+      },
+): readonly string[] =>
+  [
+    `source:${testCase.sourceKind}`,
+    `mutation:${testCase.mutation.id}`,
+    `expected:${testCase.mutation.expectedComparison}`,
+    ...("input" in testCase ? [`orderKind:${testCase.input.orderKind}`] : []),
+  ] as const;
+
 describe("overnight eRezept differential oracle", () => {
   it.effect(
     "keeps the declared official ERP differential mutation catalog classified as expected",
@@ -59,9 +114,10 @@ describe("overnight eRezept differential oracle", () => {
         });
 
         const baseXml = yield* loadOfficialErpExampleXmlEffect(cacheDir);
-        yield* Effect.forEach(
-          [...officialParityMutations, ...officialMismatchMutations],
-          (mutation) =>
+        yield* runTrackedCatalogEffect({
+          id: "differential-official-catalog",
+          items: [...officialParityMutations, ...officialMismatchMutations],
+          run: (mutation) =>
             assertDifferentialClassificationEffect({
               baseXml,
               cacheDir,
@@ -71,8 +127,9 @@ describe("overnight eRezept differential oracle", () => {
               },
               scenario: "official-catalog-case",
             }),
-          { concurrency: 1 },
-        );
+          suite: overnightDifferentialSuite,
+          title: "Official mutation catalog",
+        });
       }),
     ORACLE_TEST_TIMEOUT,
   );
@@ -100,29 +157,28 @@ describe("overnight eRezept differential oracle", () => {
           ...emittedMismatchMutations,
         ] as const;
 
-        yield* Effect.forEach(
-          emittedCases,
-          (input) =>
+        yield* runTrackedCatalogEffect({
+          id: "differential-emitted-catalog",
+          items: emittedCases.flatMap((input) =>
+            mutations.map((mutation) => ({ input, mutation })),
+          ),
+          run: ({ input, mutation }) =>
             Effect.gen(function* () {
               const baseXml = (yield* renderGeneratedErpXmlEffect(input)).xml;
-              yield* Effect.forEach(
-                mutations,
-                (mutation) =>
-                  assertDifferentialClassificationEffect({
-                    baseXml,
-                    cacheDir,
-                    lanePayload: {
-                      input,
-                      mutation,
-                      sourceKind: "emitted" as const,
-                    },
-                    scenario: "emitted-catalog-case",
-                  }),
-                { concurrency: 1 },
-              );
+              yield* assertDifferentialClassificationEffect({
+                baseXml,
+                cacheDir,
+                lanePayload: {
+                  input,
+                  mutation,
+                  sourceKind: "emitted" as const,
+                },
+                scenario: "emitted-catalog-case",
+              });
             }),
-          { concurrency: 1 },
-        );
+          suite: overnightDifferentialSuite,
+          title: "Emitted mutation catalog",
+        });
       }),
     ORACLE_TEST_TIMEOUT,
   );
@@ -141,54 +197,61 @@ describe("overnight eRezept differential oracle", () => {
           tempPrefix: "kbv-overnight-erp-diff-parity-",
         });
 
-        yield* Effect.tryPromise(() =>
-          fc.assert(
-            fc.asyncProperty(
-              fc.oneof(
-                fc.record({
-                  mutation: fc.constantFrom(...officialParityMutations),
-                  sourceKind: fc.constant<"official">("official"),
-                }),
-                fc.record({
-                  input: fc.oneof(
-                    erpPznCaseArbitrary,
-                    erpFreetextCaseArbitrary,
-                  ),
-                  mutation: fc.constantFrom(...emittedParityMutations),
-                  sourceKind: fc.constant<"emitted">("emitted"),
-                }),
-              ),
-              (testCase) =>
-                Effect.runPromise(
-                  Effect.gen(function* () {
-                    const baseXml =
-                      testCase.sourceKind === "official"
-                        ? yield* loadOfficialErpExampleXmlEffect(cacheDir)
-                        : (yield* renderGeneratedErpXmlEffect(testCase.input))
-                            .xml;
-                    const mutatedXml = testCase.mutation.mutate(baseXml);
-                    const localResult = runFhirOracle({
-                      family: "eRezept",
-                      xml: mutatedXml,
-                    });
-                    const executableResult =
-                      yield* runExecutableFhirOracleEffect({
-                        cacheDir,
-                        family: "eRezept",
-                        xml: mutatedXml,
-                      });
+        const trackedProperty = yield* trackedAsyncProperty({
+          arbitrary: fc.oneof(
+            fc.record({
+              mutation: fc.constantFrom(...officialParityMutations),
+              sourceKind: fc.constant<"official">("official"),
+            }),
+            fc.record({
+              input: fc.oneof(erpPznCaseArbitrary, erpFreetextCaseArbitrary),
+              mutation: fc.constantFrom(...emittedParityMutations),
+              sourceKind: fc.constant<"emitted">("emitted"),
+            }),
+          ),
+          configuredBudget: ORACLE_PROPERTY_NUM_RUNS,
+          describeExample: describeDifferentialExample,
+          id: "differential-parity-property",
+          run: (testCase) =>
+            Effect.gen(function* () {
+              const baseXml =
+                testCase.sourceKind === "official"
+                  ? yield* loadOfficialErpExampleXmlEffect(cacheDir)
+                  : (yield* renderGeneratedErpXmlEffect(testCase.input)).xml;
+              const mutatedXml = testCase.mutation.mutate(baseXml);
+              const localResult = runFhirOracle({
+                family: "eRezept",
+                xml: mutatedXml,
+              });
+              const executableResult = yield* runExecutableFhirOracleEffect({
+                cacheDir,
+                family: "eRezept",
+                xml: mutatedXml,
+              });
 
-                    yield* assertExpectedComparisonEffect({
-                      executableResult,
-                      lanePayload: testCase,
-                      localResult,
-                      mutation: testCase.mutation,
-                      scenario: "last-parity-case",
-                    });
-                  }),
-                ),
-            ),
-            { numRuns: ORACLE_PROPERTY_NUM_RUNS },
+              yield* assertExpectedComparisonEffect({
+                executableResult,
+                lanePayload: testCase,
+                localResult,
+                mutation: testCase.mutation,
+                scenario: "last-parity-case",
+              });
+            }),
+          stopCondition: differentialSearchStopCondition,
+          suite: overnightDifferentialSuite,
+          summarizeTags: summarizeDifferentialTags,
+          title: "Parity property",
+        });
+
+        yield* Effect.tryPromise(() =>
+          fc.assert(trackedProperty.property, {
+            numRuns: ORACLE_PROPERTY_NUM_RUNS,
+          }),
+        );
+        yield* Effect.sync(() =>
+          trackedProperty.complete(
+            "passed",
+            `Completed ${ORACLE_PROPERTY_NUM_RUNS} parity iterations`,
           ),
         );
       }),
@@ -209,54 +272,61 @@ describe("overnight eRezept differential oracle", () => {
           tempPrefix: "kbv-overnight-erp-diff-mismatch-",
         });
 
-        yield* Effect.tryPromise(() =>
-          fc.assert(
-            fc.asyncProperty(
-              fc.oneof(
-                fc.record({
-                  mutation: fc.constantFrom(...officialMismatchMutations),
-                  sourceKind: fc.constant<"official">("official"),
-                }),
-                fc.record({
-                  input: fc.oneof(
-                    erpPznCaseArbitrary,
-                    erpFreetextCaseArbitrary,
-                  ),
-                  mutation: fc.constantFrom(...emittedMismatchMutations),
-                  sourceKind: fc.constant<"emitted">("emitted"),
-                }),
-              ),
-              (testCase) =>
-                Effect.runPromise(
-                  Effect.gen(function* () {
-                    const baseXml =
-                      testCase.sourceKind === "official"
-                        ? yield* loadOfficialErpExampleXmlEffect(cacheDir)
-                        : (yield* renderGeneratedErpXmlEffect(testCase.input))
-                            .xml;
-                    const mutatedXml = testCase.mutation.mutate(baseXml);
-                    const localResult = runFhirOracle({
-                      family: "eRezept",
-                      xml: mutatedXml,
-                    });
-                    const executableResult =
-                      yield* runExecutableFhirOracleEffect({
-                        cacheDir,
-                        family: "eRezept",
-                        xml: mutatedXml,
-                      });
+        const trackedProperty = yield* trackedAsyncProperty({
+          arbitrary: fc.oneof(
+            fc.record({
+              mutation: fc.constantFrom(...officialMismatchMutations),
+              sourceKind: fc.constant<"official">("official"),
+            }),
+            fc.record({
+              input: fc.oneof(erpPznCaseArbitrary, erpFreetextCaseArbitrary),
+              mutation: fc.constantFrom(...emittedMismatchMutations),
+              sourceKind: fc.constant<"emitted">("emitted"),
+            }),
+          ),
+          configuredBudget: ORACLE_PROPERTY_NUM_RUNS,
+          describeExample: describeDifferentialExample,
+          id: "differential-mismatch-property",
+          run: (testCase) =>
+            Effect.gen(function* () {
+              const baseXml =
+                testCase.sourceKind === "official"
+                  ? yield* loadOfficialErpExampleXmlEffect(cacheDir)
+                  : (yield* renderGeneratedErpXmlEffect(testCase.input)).xml;
+              const mutatedXml = testCase.mutation.mutate(baseXml);
+              const localResult = runFhirOracle({
+                family: "eRezept",
+                xml: mutatedXml,
+              });
+              const executableResult = yield* runExecutableFhirOracleEffect({
+                cacheDir,
+                family: "eRezept",
+                xml: mutatedXml,
+              });
 
-                    yield* assertExpectedComparisonEffect({
-                      executableResult,
-                      lanePayload: testCase,
-                      localResult,
-                      mutation: testCase.mutation,
-                      scenario: "last-mismatch-case",
-                    });
-                  }),
-                ),
-            ),
-            { numRuns: ORACLE_PROPERTY_NUM_RUNS },
+              yield* assertExpectedComparisonEffect({
+                executableResult,
+                lanePayload: testCase,
+                localResult,
+                mutation: testCase.mutation,
+                scenario: "last-mismatch-case",
+              });
+            }),
+          stopCondition: differentialSearchStopCondition,
+          suite: overnightDifferentialSuite,
+          summarizeTags: summarizeDifferentialTags,
+          title: "Mismatch property",
+        });
+
+        yield* Effect.tryPromise(() =>
+          fc.assert(trackedProperty.property, {
+            numRuns: ORACLE_PROPERTY_NUM_RUNS,
+          }),
+        );
+        yield* Effect.sync(() =>
+          trackedProperty.complete(
+            "passed",
+            `Completed ${ORACLE_PROPERTY_NUM_RUNS} mismatch iterations`,
           ),
         );
       }),

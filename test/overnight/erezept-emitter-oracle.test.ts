@@ -5,12 +5,39 @@ import fc from "fast-check";
 import { runExecutableFhirOracleEffect } from "../../tools/oracles/fhir/run";
 import { resolveOracleTestCache } from "../oracle-test-cache";
 import { ORACLE_PROPERTY_NUM_RUNS, ORACLE_TEST_TIMEOUT } from "../timeouts";
+import { trackedAsyncProperty } from "./dashboard";
 import {
+  type ErpEmitterCase,
   erpFreetextCaseArbitrary,
   erpPznCaseArbitrary,
   persistErpOracleReplayCaseEffect,
   renderGeneratedErpXmlEffect,
 } from "./erezept-oracle-helpers";
+
+const overnightEmitterSuite = "overnight eRezept emitter oracle";
+const overnightSearchStopCondition =
+  "Run until canceled, timeout, or the first emitted bundle that the executable validator rejects.";
+
+const describeEmitterExample = (input: ErpEmitterCase) =>
+  JSON.stringify(
+    {
+      authoredOn: input.authoredOn,
+      dosageText: input.dosageText,
+      medicationDisplay: input.medicationDisplay,
+      orderKind: input.orderKind,
+      patient: `${input.patientGiven} ${input.patientFamily}`,
+      pzn: input.pzn,
+    },
+    null,
+    2,
+  );
+
+const summarizeEmitterTags = (input: ErpEmitterCase): readonly string[] =>
+  [
+    `orderKind:${input.orderKind}`,
+    `medication:${input.medicationDisplay}`,
+    ...(input.pzn ? [`pzn:${input.pzn}`] : []),
+  ] as const;
 
 describe("overnight eRezept emitter oracle", () => {
   it.effect(
@@ -27,69 +54,81 @@ describe("overnight eRezept emitter oracle", () => {
           tempPrefix: "kbv-overnight-erp-emitter-pzn-",
         });
 
+        const trackedProperty = yield* trackedAsyncProperty({
+          arbitrary: erpPznCaseArbitrary,
+          configuredBudget: ORACLE_PROPERTY_NUM_RUNS,
+          describeExample: describeEmitterExample,
+          id: "emitter-pzn",
+          run: (input) =>
+            Effect.gen(function* () {
+              const rendered = yield* renderGeneratedErpXmlEffect(input);
+              const executableResult = yield* runExecutableFhirOracleEffect({
+                cacheDir,
+                family: "eRezept",
+                xml: rendered.xml,
+              });
+
+              if (!executableResult.passed) {
+                const replayPath = yield* persistErpOracleReplayCaseEffect({
+                  lane: "emitter",
+                  payload: { branch: "pzn", input },
+                  scenario: "last-pzn-case",
+                });
+                throw new Error(
+                  [
+                    "Executable validator rejected emitted PZN ERP XML.",
+                    `replay=${replayPath}`,
+                    `input=${JSON.stringify(input)}`,
+                    `summary=${JSON.stringify({
+                      errorCount: executableResult.findings.filter(
+                        (finding) => finding.severity === "error",
+                      ).length,
+                      firstFindings: executableResult.findings.slice(0, 5),
+                      passed: executableResult.passed,
+                    })}`,
+                  ].join("\n"),
+                );
+              }
+
+              const errorFindings = executableResult.findings.filter(
+                (finding) => finding.severity === "error",
+              );
+              if (errorFindings.length > 0) {
+                const replayPath = yield* persistErpOracleReplayCaseEffect({
+                  lane: "emitter",
+                  payload: { branch: "pzn", input },
+                  scenario: "last-pzn-case",
+                });
+                throw new Error(
+                  [
+                    "Executable validator returned error findings for emitted PZN ERP XML.",
+                    `replay=${replayPath}`,
+                    `input=${JSON.stringify(input)}`,
+                    `errors=${JSON.stringify(errorFindings.slice(0, 5))}`,
+                  ].join("\n"),
+                );
+              }
+
+              expect(rendered.xml).toContain("<Bundle");
+              expect(rendered.xml).toContain("<Composition");
+              expect(rendered.xml).toContain("<MedicationRequest");
+              expect(rendered.bundleEntryCount).toBeGreaterThanOrEqual(7);
+            }),
+          stopCondition: overnightSearchStopCondition,
+          suite: overnightEmitterSuite,
+          summarizeTags: summarizeEmitterTags,
+          title: "PZN emitter property",
+        });
+
         yield* Effect.tryPromise(() =>
-          fc.assert(
-            fc.asyncProperty(erpPznCaseArbitrary, (input) =>
-              Effect.runPromise(
-                Effect.gen(function* () {
-                  const rendered = yield* renderGeneratedErpXmlEffect(input);
-                  const executableResult = yield* runExecutableFhirOracleEffect(
-                    {
-                      cacheDir,
-                      family: "eRezept",
-                      xml: rendered.xml,
-                    },
-                  );
-
-                  if (!executableResult.passed) {
-                    const replayPath = yield* persistErpOracleReplayCaseEffect({
-                      lane: "emitter",
-                      payload: { branch: "pzn", input },
-                      scenario: "last-pzn-case",
-                    });
-                    throw new Error(
-                      [
-                        "Executable validator rejected emitted PZN ERP XML.",
-                        `replay=${replayPath}`,
-                        `input=${JSON.stringify(input)}`,
-                        `summary=${JSON.stringify({
-                          errorCount: executableResult.findings.filter(
-                            (finding) => finding.severity === "error",
-                          ).length,
-                          firstFindings: executableResult.findings.slice(0, 5),
-                          passed: executableResult.passed,
-                        })}`,
-                      ].join("\n"),
-                    );
-                  }
-
-                  const errorFindings = executableResult.findings.filter(
-                    (finding) => finding.severity === "error",
-                  );
-                  if (errorFindings.length > 0) {
-                    const replayPath = yield* persistErpOracleReplayCaseEffect({
-                      lane: "emitter",
-                      payload: { branch: "pzn", input },
-                      scenario: "last-pzn-case",
-                    });
-                    throw new Error(
-                      [
-                        "Executable validator returned error findings for emitted PZN ERP XML.",
-                        `replay=${replayPath}`,
-                        `input=${JSON.stringify(input)}`,
-                        `errors=${JSON.stringify(errorFindings.slice(0, 5))}`,
-                      ].join("\n"),
-                    );
-                  }
-
-                  expect(rendered.xml).toContain("<Bundle");
-                  expect(rendered.xml).toContain("<Composition");
-                  expect(rendered.xml).toContain("<MedicationRequest");
-                  expect(rendered.bundleEntryCount).toBeGreaterThanOrEqual(7);
-                }),
-              ),
-            ),
-            { numRuns: ORACLE_PROPERTY_NUM_RUNS },
+          fc.assert(trackedProperty.property, {
+            numRuns: ORACLE_PROPERTY_NUM_RUNS,
+          }),
+        );
+        yield* Effect.sync(() =>
+          trackedProperty.complete(
+            "passed",
+            `Completed ${ORACLE_PROPERTY_NUM_RUNS} PZN iterations`,
           ),
         );
       }),
@@ -110,69 +149,81 @@ describe("overnight eRezept emitter oracle", () => {
           tempPrefix: "kbv-overnight-erp-emitter-freetext-",
         });
 
+        const trackedProperty = yield* trackedAsyncProperty({
+          arbitrary: erpFreetextCaseArbitrary,
+          configuredBudget: ORACLE_PROPERTY_NUM_RUNS,
+          describeExample: describeEmitterExample,
+          id: "emitter-freetext",
+          run: (input) =>
+            Effect.gen(function* () {
+              const rendered = yield* renderGeneratedErpXmlEffect(input);
+              const executableResult = yield* runExecutableFhirOracleEffect({
+                cacheDir,
+                family: "eRezept",
+                xml: rendered.xml,
+              });
+
+              if (!executableResult.passed) {
+                const replayPath = yield* persistErpOracleReplayCaseEffect({
+                  lane: "emitter",
+                  payload: { branch: "freetext", input },
+                  scenario: "last-freetext-case",
+                });
+                throw new Error(
+                  [
+                    "Executable validator rejected emitted freetext ERP XML.",
+                    `replay=${replayPath}`,
+                    `input=${JSON.stringify(input)}`,
+                    `summary=${JSON.stringify({
+                      errorCount: executableResult.findings.filter(
+                        (finding) => finding.severity === "error",
+                      ).length,
+                      firstFindings: executableResult.findings.slice(0, 5),
+                      passed: executableResult.passed,
+                    })}`,
+                  ].join("\n"),
+                );
+              }
+
+              const errorFindings = executableResult.findings.filter(
+                (finding) => finding.severity === "error",
+              );
+              if (errorFindings.length > 0) {
+                const replayPath = yield* persistErpOracleReplayCaseEffect({
+                  lane: "emitter",
+                  payload: { branch: "freetext", input },
+                  scenario: "last-freetext-case",
+                });
+                throw new Error(
+                  [
+                    "Executable validator returned error findings for emitted freetext ERP XML.",
+                    `replay=${replayPath}`,
+                    `input=${JSON.stringify(input)}`,
+                    `errors=${JSON.stringify(errorFindings.slice(0, 5))}`,
+                  ].join("\n"),
+                );
+              }
+
+              expect(rendered.xml).toContain("<Bundle");
+              expect(rendered.xml).toContain("<Composition");
+              expect(rendered.xml).toContain("<MedicationRequest");
+              expect(rendered.bundleEntryCount).toBeGreaterThanOrEqual(7);
+            }),
+          stopCondition: overnightSearchStopCondition,
+          suite: overnightEmitterSuite,
+          summarizeTags: summarizeEmitterTags,
+          title: "Freetext emitter property",
+        });
+
         yield* Effect.tryPromise(() =>
-          fc.assert(
-            fc.asyncProperty(erpFreetextCaseArbitrary, (input) =>
-              Effect.runPromise(
-                Effect.gen(function* () {
-                  const rendered = yield* renderGeneratedErpXmlEffect(input);
-                  const executableResult = yield* runExecutableFhirOracleEffect(
-                    {
-                      cacheDir,
-                      family: "eRezept",
-                      xml: rendered.xml,
-                    },
-                  );
-
-                  if (!executableResult.passed) {
-                    const replayPath = yield* persistErpOracleReplayCaseEffect({
-                      lane: "emitter",
-                      payload: { branch: "freetext", input },
-                      scenario: "last-freetext-case",
-                    });
-                    throw new Error(
-                      [
-                        "Executable validator rejected emitted freetext ERP XML.",
-                        `replay=${replayPath}`,
-                        `input=${JSON.stringify(input)}`,
-                        `summary=${JSON.stringify({
-                          errorCount: executableResult.findings.filter(
-                            (finding) => finding.severity === "error",
-                          ).length,
-                          firstFindings: executableResult.findings.slice(0, 5),
-                          passed: executableResult.passed,
-                        })}`,
-                      ].join("\n"),
-                    );
-                  }
-
-                  const errorFindings = executableResult.findings.filter(
-                    (finding) => finding.severity === "error",
-                  );
-                  if (errorFindings.length > 0) {
-                    const replayPath = yield* persistErpOracleReplayCaseEffect({
-                      lane: "emitter",
-                      payload: { branch: "freetext", input },
-                      scenario: "last-freetext-case",
-                    });
-                    throw new Error(
-                      [
-                        "Executable validator returned error findings for emitted freetext ERP XML.",
-                        `replay=${replayPath}`,
-                        `input=${JSON.stringify(input)}`,
-                        `errors=${JSON.stringify(errorFindings.slice(0, 5))}`,
-                      ].join("\n"),
-                    );
-                  }
-
-                  expect(rendered.xml).toContain("<Bundle");
-                  expect(rendered.xml).toContain("<Composition");
-                  expect(rendered.xml).toContain("<MedicationRequest");
-                  expect(rendered.bundleEntryCount).toBeGreaterThanOrEqual(7);
-                }),
-              ),
-            ),
-            { numRuns: ORACLE_PROPERTY_NUM_RUNS },
+          fc.assert(trackedProperty.property, {
+            numRuns: ORACLE_PROPERTY_NUM_RUNS,
+          }),
+        );
+        yield* Effect.sync(() =>
+          trackedProperty.complete(
+            "passed",
+            `Completed ${ORACLE_PROPERTY_NUM_RUNS} freetext iterations`,
           ),
         );
       }),
