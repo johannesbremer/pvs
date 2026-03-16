@@ -1,4 +1,4 @@
-import { Effect, Runtime, Schema } from "effect";
+import { Effect, Either, Runtime, Schema } from "effect";
 import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
@@ -807,6 +807,66 @@ const ensureValidatorServerEffect = Effect.fn("oracles.ensureValidatorServer")(
   },
 );
 
+const invalidateValidatorServerCacheEffect = Effect.fn(
+  "oracles.invalidateValidatorServerCache",
+)(function* ({ cacheKey }: { cacheKey: string }) {
+  const pending = validatorServerCache.get(cacheKey);
+  validatorServerCache.delete(cacheKey);
+
+  if (!pending) {
+    return;
+  }
+
+  const handle = yield* Effect.tryPromise({
+    catch: () => undefined,
+    try: () => pending,
+  }).pipe(
+    Effect.catchAll(() =>
+      Effect.as(Effect.void, undefined as undefined | ValidatorServerHandle),
+    ),
+  );
+
+  if (!handle) {
+    return;
+  }
+
+  yield* stopValidatorServer(handle);
+});
+
+export const runExecutableFhirOracleWithServerRecoveryEffect = <E>({
+  executeServer,
+  onServerRuntimeError,
+}: {
+  executeServer: Effect.Effect<OracleExecutionResult, E, never>;
+  onServerRuntimeError: (args: {
+    attempt: 1 | 2;
+    error: E;
+  }) => Effect.Effect<void, never, never>;
+}): Effect.Effect<OracleExecutionResult, E, never> =>
+  Effect.gen(function* () {
+    const firstAttempt = yield* Effect.either(executeServer);
+    if (Either.isRight(firstAttempt)) {
+      return firstAttempt.right;
+    }
+
+    yield* onServerRuntimeError({
+      attempt: 1,
+      error: firstAttempt.left,
+    });
+
+    const secondAttempt = yield* Effect.either(executeServer);
+    if (Either.isRight(secondAttempt)) {
+      return secondAttempt.right;
+    }
+
+    yield* onServerRuntimeError({
+      attempt: 2,
+      error: secondAttempt.left,
+    });
+
+    return yield* Effect.fail(secondAttempt.left);
+  });
+
 const validateXmlWithServerEffect = Effect.fn("oracles.validateXmlWithServer")(
   function* ({
     family,
@@ -1102,6 +1162,7 @@ export const runExecutableFhirOracleWithServerEffect = Effect.fn(
   const resolvedCacheDir =
     effectiveCacheDir ?? path.join(process.cwd(), ".cache", "kbv-oracles");
   const runtimeKey = getFhirRuntimeKey("exec-server", family);
+  const cacheKey = `${resolvedCacheDir}:${runtimeKey}`;
 
   const serverProgram = Effect.gen(function* () {
     const offlineLanguageCodes = extractOfflineLanguageCodes(xml);
@@ -1119,7 +1180,13 @@ export const runExecutableFhirOracleWithServerEffect = Effect.fn(
     });
   });
 
-  return yield* serverProgram;
+  return yield* runExecutableFhirOracleWithServerRecoveryEffect({
+    executeServer: serverProgram,
+    onServerRuntimeError: () =>
+      invalidateValidatorServerCacheEffect({
+        cacheKey,
+      }),
+  });
 });
 
 export const runExecutableFhirOracleEffect = Effect.fn(

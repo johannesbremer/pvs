@@ -139,7 +139,9 @@ const appendHistory = (
     return nextHistory;
   }
 
-  const newestTime = new Date(nextHistory[nextHistory.length - 1].timestamp).getTime();
+  const newestTime = new Date(
+    nextHistory[nextHistory.length - 1].timestamp,
+  ).getTime();
   const buckets = new Set<string>();
   const compacted: OvernightProgressPoint[] = [];
 

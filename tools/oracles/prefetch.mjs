@@ -3,7 +3,8 @@ import { Effect } from "effect";
 
 const jiti = createJiti(import.meta.url);
 const timestamp = () => new Date().toISOString();
-const log = (message) => process.stderr.write(`[prefetch ${timestamp()}] ${message}\n`);
+const log = (message) =>
+  process.stderr.write(`[prefetch ${timestamp()}] ${message}\n`);
 
 void Effect.runPromise(
   Effect.gen(function* () {
@@ -15,7 +16,9 @@ void Effect.runPromise(
 
     const args = process.argv.slice(2);
     const shouldPrefetchFhirDependencies = args.includes("--fhir-dependencies");
-    const requestedAssetIds = args.filter((arg) => arg !== "--fhir-dependencies");
+    const requestedAssetIds = args.filter(
+      (arg) => arg !== "--fhir-dependencies",
+    );
     const assetIds =
       requestedAssetIds.length > 0
         ? requestedAssetIds

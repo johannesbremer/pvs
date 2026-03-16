@@ -5,6 +5,7 @@ import { ensureExtractedAsset, kbvOracleAssets } from "../tools/oracles/assets";
 import {
   reconcileBatchValidationSummarySourcePaths,
   runExecutableFhirOracleEffect,
+  runExecutableFhirOracleWithServerRecoveryEffect,
   toBatchValidationSourcePathKey,
 } from "../tools/oracles/fhir/run";
 import { fileSystem, path, runEffect } from "../tools/oracles/platform";
@@ -62,6 +63,54 @@ describe("executable FHIR oracle", () => {
           toBatchValidationSourcePathKey(xmlPaths[0]),
         );
       }),
+  );
+
+  it.effect("retries the validator server once before succeeding", () =>
+    Effect.gen(function* () {
+      let serverAttempts = 0;
+      const resetAttempts: Array<1 | 2> = [];
+      const expectedResult = {
+        family: "eRezept" as const,
+        findings: [],
+        passed: true,
+        summary: "Recovered on retry.",
+      };
+
+      const result = yield* runExecutableFhirOracleWithServerRecoveryEffect({
+        executeServer: Effect.suspend(() => {
+          serverAttempts += 1;
+          return serverAttempts === 1
+            ? Effect.fail("timeout")
+            : Effect.succeed(expectedResult);
+        }),
+        onServerRuntimeError: ({ attempt }) =>
+          Effect.sync(() => {
+            resetAttempts.push(attempt);
+          }),
+      });
+
+      expect(result).toEqual(expectedResult);
+      expect(serverAttempts).toBe(2);
+      expect(resetAttempts).toEqual([1]);
+    }),
+  );
+
+  it.effect("fails after two server runtime failures", () =>
+    Effect.gen(function* () {
+      const resetAttempts: Array<1 | 2> = [];
+      const exit = yield* Effect.exit(
+        runExecutableFhirOracleWithServerRecoveryEffect({
+          executeServer: Effect.fail("timeout"),
+          onServerRuntimeError: ({ attempt }) =>
+            Effect.sync(() => {
+              resetAttempts.push(attempt);
+            }),
+        }),
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(resetAttempts).toEqual([1, 2]);
+    }),
   );
 
   it.effect(

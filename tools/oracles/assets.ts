@@ -157,46 +157,44 @@ const getCacheScopedStagingPath = ({
   );
 
 const removeIfExists = (targetPath: string) =>
-  fileSystem.remove(targetPath, { force: true, recursive: true }).pipe(
-    Effect.catchAll(() => Effect.void),
-  );
+  fileSystem
+    .remove(targetPath, { force: true, recursive: true })
+    .pipe(Effect.catchAll(() => Effect.void));
 
 const publishDirectoryAtomically = Effect.fn(
   "oracles.publishDirectoryAtomically",
-)(
-  function* ({
-    finalPath,
-    isPublished,
-    stagedPath,
-  }: {
-    finalPath: string;
-    isPublished: Effect.Effect<boolean, unknown, never>;
-    stagedPath: string;
-  }) {
-    const alreadyPublished = yield* isPublished;
-    if (alreadyPublished) {
-      yield* removeIfExists(stagedPath);
-      return finalPath;
-    }
-
-    const renameResult = yield* fileSystem.rename(stagedPath, finalPath).pipe(
-      Effect.either,
-    );
-    if (renameResult._tag === "Right") {
-      return finalPath;
-    }
-
-    const publishedAfterConflict = yield* isPublished;
-    if (publishedAfterConflict) {
-      yield* removeIfExists(stagedPath);
-      return finalPath;
-    }
-
-    yield* removeIfExists(finalPath);
-    yield* fileSystem.rename(stagedPath, finalPath);
+)(function* ({
+  finalPath,
+  isPublished,
+  stagedPath,
+}: {
+  finalPath: string;
+  isPublished: Effect.Effect<boolean, unknown, never>;
+  stagedPath: string;
+}) {
+  const alreadyPublished = yield* isPublished;
+  if (alreadyPublished) {
+    yield* removeIfExists(stagedPath);
     return finalPath;
-  },
-);
+  }
+
+  const renameResult = yield* fileSystem
+    .rename(stagedPath, finalPath)
+    .pipe(Effect.either);
+  if (renameResult._tag === "Right") {
+    return finalPath;
+  }
+
+  const publishedAfterConflict = yield* isPublished;
+  if (publishedAfterConflict) {
+    yield* removeIfExists(stagedPath);
+    return finalPath;
+  }
+
+  yield* removeIfExists(finalPath);
+  yield* fileSystem.rename(stagedPath, finalPath);
+  return finalPath;
+});
 
 export const kbvOracleAssets = {
   bfbDirectory_2026_03_10: {
@@ -766,45 +764,43 @@ export const findFileRecursive: (
 
 const validateExtractedAssetIntegrity = Effect.fn(
   "oracles.validateExtractedAssetIntegrity",
-)(
-  function* ({
-    asset,
+)(function* ({
+  asset,
+  extractDir,
+}: {
+  asset: KbvOracleAsset;
+  extractDir: string;
+}) {
+  if (asset.assetId !== "fhirValidatorService_2_2_0") {
+    return true;
+  }
+
+  const validatorJar = yield* findFileRecursive(
     extractDir,
-  }: {
-    asset: KbvOracleAsset;
-    extractDir: string;
-  }) {
-    if (asset.assetId !== "fhirValidatorService_2_2_0") {
-      return true;
-    }
+    (entryPath: string) =>
+      entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
+  );
+  if (!validatorJar) {
+    return false;
+  }
 
-    const validatorJar = yield* findFileRecursive(
-      extractDir,
-      (entryPath: string) =>
-        entryPath.includes("validator_cli") && entryPath.endsWith(".jar"),
-    );
-    if (!validatorJar) {
-      return false;
-    }
-
-    const zipInfoResult = yield* Effect.tryPromise(() =>
-      runCommand({
-        args: ["-t", validatorJar],
-        command: "zipinfo",
+  const zipInfoResult = yield* Effect.tryPromise(() =>
+    runCommand({
+      args: ["-t", validatorJar],
+      command: "zipinfo",
+    }),
+  ).pipe(
+    Effect.catchAll(() =>
+      Effect.succeed({
+        exitCode: 1,
+        stderr: "",
+        stdout: "",
       }),
-    ).pipe(
-      Effect.catchAll(() =>
-        Effect.succeed({
-          exitCode: 1,
-          stderr: "",
-          stdout: "",
-        }),
-      ),
-    );
+    ),
+  );
 
-    return zipInfoResult.exitCode === 0;
-  },
-);
+  return zipInfoResult.exitCode === 0;
+});
 
 const collectIgDirectories: (
   rootDir: string,
@@ -1080,54 +1076,55 @@ const getExternalFhirPackageReadyMarkerPath = ({
 
 const isExternalFhirPackageInstalled = Effect.fn(
   "oracles.isExternalFhirPackageInstalled",
-)(
-  function* ({
+)(function* ({
+  cacheDir,
+  packageId,
+  version,
+}: {
+  cacheDir: string;
+  packageId: string;
+  version: string;
+}) {
+  const installDir = getExternalFhirPackageInstallDir({
     cacheDir,
     packageId,
     version,
-  }: {
-    cacheDir: string;
-    packageId: string;
-    version: string;
-  }) {
-    const installDir = getExternalFhirPackageInstallDir({
-      cacheDir,
-      packageId,
-      version,
-    });
-    const packageJsonPath = path.join(installDir, "package", "package.json");
-    const readyMarkerPath = getExternalFhirPackageReadyMarkerPath({
-      cacheDir,
-      packageId,
-      version,
-    });
+  });
+  const packageJsonPath = path.join(installDir, "package", "package.json");
+  const readyMarkerPath = getExternalFhirPackageReadyMarkerPath({
+    cacheDir,
+    packageId,
+    version,
+  });
 
-    return (
-      (yield* fileExists(packageJsonPath)) && (yield* fileExists(readyMarkerPath))
-    );
-  },
-);
+  return (
+    (yield* fileExists(packageJsonPath)) && (yield* fileExists(readyMarkerPath))
+  );
+});
 
 const areFhirPackagesInstalledInRoot = Effect.fn(
   "oracles.areFhirPackagesInstalledInRoot",
-)(
-  function* (packageCacheRoot: string) {
-    const packageChecks = yield* Effect.forEach(
-      fhirValidatorPrerequisitePackages,
-      ({ packageId, version }) => {
-        const installDir = path.join(packageCacheRoot, `${packageId}#${version}`);
-        const packageJsonPath = path.join(installDir, "package", "package.json");
-        const readyMarkerPath = path.join(installDir, ".kbv-package-ready");
-        return Effect.all([
-          fileExists(packageJsonPath),
-          fileExists(readyMarkerPath),
-        ]).pipe(Effect.map(([hasPackageJson, hasReadyMarker]) => hasPackageJson && hasReadyMarker));
-      },
-    );
+)(function* (packageCacheRoot: string) {
+  const packageChecks = yield* Effect.forEach(
+    fhirValidatorPrerequisitePackages,
+    ({ packageId, version }) => {
+      const installDir = path.join(packageCacheRoot, `${packageId}#${version}`);
+      const packageJsonPath = path.join(installDir, "package", "package.json");
+      const readyMarkerPath = path.join(installDir, ".kbv-package-ready");
+      return Effect.all([
+        fileExists(packageJsonPath),
+        fileExists(readyMarkerPath),
+      ]).pipe(
+        Effect.map(
+          ([hasPackageJson, hasReadyMarker]) =>
+            hasPackageJson && hasReadyMarker,
+        ),
+      );
+    },
+  );
 
-    return packageChecks.every(Boolean);
-  },
-);
+  return packageChecks.every(Boolean);
+});
 
 const ensureFhirPackageCacheMetadata = Effect.fn(
   "oracles.ensureFhirPackageCacheMetadata",
@@ -1149,7 +1146,9 @@ const ensureFhirPackageCacheMetadata = Effect.fn(
 const areFhirPrerequisitesInstalled = Effect.fn(
   "oracles.areFhirPrerequisitesInstalled",
 )(function* (cacheDir: string) {
-  return yield* areFhirPackagesInstalledInRoot(getFhirPackageCacheRoot(cacheDir));
+  return yield* areFhirPackagesInstalledInRoot(
+    getFhirPackageCacheRoot(cacheDir),
+  );
 });
 
 const getFhirDependencyMarkerPrerequisites = () =>
@@ -1515,12 +1514,19 @@ export const ensureFhirValidatorRuntimeHome = Effect.fn(
         ".fhir",
         "packages",
       );
-      yield* fileSystem.makeDirectory(path.join(stagedRuntimeHomeRoot, ".fhir"), {
-        recursive: true,
-      });
-      yield* fileSystem.copy(sharedPackageCacheRoot, stagedRuntimePackageCacheRoot, {
-        overwrite: true,
-      });
+      yield* fileSystem.makeDirectory(
+        path.join(stagedRuntimeHomeRoot, ".fhir"),
+        {
+          recursive: true,
+        },
+      );
+      yield* fileSystem.copy(
+        sharedPackageCacheRoot,
+        stagedRuntimePackageCacheRoot,
+        {
+          overwrite: true,
+        },
+      );
       const markerJson = yield* encodeJsonString(FhirRuntimeHomeMarkerFields, {
         createdAt: new Date().toISOString(),
         dependencyMarkerWrittenAt:
