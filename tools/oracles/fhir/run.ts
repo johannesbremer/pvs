@@ -23,6 +23,12 @@ const validatorServerPollIntervalMs = 200;
 const validatorServerRequestTimeoutMs = 30_000;
 const validatorCliTimeoutMs = 60_000;
 const validatorBatchCliTimeoutMs = 180_000;
+const javaEnvKeysToStrip = [
+  "CLASSPATH",
+  "JAVA_TOOL_OPTIONS",
+  "JDK_JAVA_OPTIONS",
+  "_JAVA_OPTIONS",
+] as const;
 
 type OperationOutcomeIssue = {
   readonly code?: string;
@@ -164,6 +170,17 @@ const withRequestTimeout = (url: string, init?: RequestInit) =>
     signal: AbortSignal.timeout(validatorServerRequestTimeoutMs),
   });
 
+const getSanitizedJavaEnv = () =>
+  Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key, value]) =>
+        value !== undefined &&
+        !javaEnvKeysToStrip.includes(
+          key as (typeof javaEnvKeysToStrip)[number],
+        ),
+    ),
+  );
+
 const runValidatorCommandEffect = ({
   args,
   command,
@@ -173,7 +190,13 @@ const runValidatorCommandEffect = ({
   command: string;
   timeoutMs: number;
 }) =>
-  Effect.tryPromise(() => runCommand({ args, command })).pipe(
+  Effect.tryPromise(() =>
+    runCommand({
+      args,
+      command,
+      env: getSanitizedJavaEnv(),
+    }),
+  ).pipe(
     Effect.timeoutFail({
       duration: `${timeoutMs} millis`,
       onTimeout: () =>
@@ -692,6 +715,7 @@ const startValidatorServerEffect = Effect.fn("oracles.startValidatorServer")(
           "n/a",
         ],
         {
+          env: getSanitizedJavaEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         },
       ),

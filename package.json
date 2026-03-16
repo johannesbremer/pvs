@@ -14,12 +14,12 @@
     "lint:check": "eslint .",
     "oracle:coverage-inventory": "node tools/oracles/print-coverage-inventory.mjs",
     "oracle:official-corpus-inventory": "node tools/oracles/print-official-corpus-inventory.mjs",
-    "oracle:prefetch": "node --experimental-strip-types tools/oracles/prefetch.mjs",
-    "test": "vitest run --exclude 'test/overnight/**/*.test.ts'",
+    "oracle:prefetch": "node tools/oracles/prefetch.mjs",
+    "prepare": "effect-language-service patch",
+    "test": "node tools/oracles/prefetch.mjs --fhir-dependencies fhirValidatorService_2_2_0 kbvErpExamples_1_4 kbvFhirErp_1_4_1 && vitest run --exclude 'test/overnight/**/*.test.ts'",
     "test:fhir:fixtures": "vitest run test/executable-fhir-oracle.test.ts test/official-kbv-fixtures.test.ts test/official-evdga-fixtures.test.ts --reporter=verbose",
     "test:property": "node tools/oracles/reset-overnight-dashboard.mjs && PVS_PROPERTY_RUNS=${PVS_PROPERTY_RUNS:-1000000} PVS_ORACLE_TEST_TIMEOUT_MS=${PVS_ORACLE_TEST_TIMEOUT_MS:-86400000} vitest --config vitest.overnight.config.ts test/overnight/erezept-emitter-oracle.test.ts test/overnight/erezept-differential-oracle.test.ts --ui",
-    "tsc": "pnpm effect:patch && tsc --noEmit",
-    "typecheck": "pnpm effect:patch && tsc --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@confect/cli": "^2.0.0",

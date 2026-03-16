@@ -526,6 +526,10 @@ export const trackedAsyncProperty = <A>({
     let iteration = 0;
 
     const property = fc.asyncProperty(arbitrary, (value) =>
+      // Keep the fast-check bridge on Effect.runPromise: swapping this to a
+      // captured Runtime.runPromise regressed property-lane throughput/liveness
+      // after the FHIR batching work. Benchmark before changing it.
+      // @effect-diagnostics-next-line effect/runEffectInsideEffect:off
       Effect.runPromise(
         Effect.gen(function* () {
           iteration += 1;
