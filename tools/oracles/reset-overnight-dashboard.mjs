@@ -29,7 +29,7 @@ await writeFile(
         failedSearches: 0,
         searchCount: 0,
       },
-      suite: "overnight eRezept oracle",
+      suite: "property eRezept oracle",
     },
     null,
     2,

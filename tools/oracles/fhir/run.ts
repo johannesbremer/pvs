@@ -1,4 +1,5 @@
 import { Effect, Runtime, Schema } from "effect";
+import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 
@@ -6,25 +7,22 @@ import type { OracleExecutionResult } from "../types";
 
 import {
   ensureFhirValidatorAssets,
+  ensureFhirValidatorDependencyCache,
   ensureFhirValidatorRuntimeHome,
 } from "../assets";
-import { fileSystem, path } from "../platform";
+import { fileSystem, path, runCommand } from "../platform";
 import { resolveJavaCommand } from "../system";
 
 const debugTimingsEnabled =
   process.env.KBV_ORACLE_DEBUG === "1" ||
   process.env.KBV_ORACLE_DEBUG === "true";
+// eslint-disable-next-line no-control-regex
+const ansiColorCodePattern = /\x1B\[[0-9;]*m/gu;
 const validatorServerStartupTimeoutMs = 60_000;
 const validatorServerPollIntervalMs = 200;
 const validatorServerRequestTimeoutMs = 30_000;
-const validatorBatchConcurrency = Number.parseInt(
-  process.env.PVS_FHIR_VALIDATOR_BATCH_CONCURRENCY ?? "1",
-  10,
-);
-const effectiveValidatorBatchConcurrency =
-  Number.isInteger(validatorBatchConcurrency) && validatorBatchConcurrency > 0
-    ? validatorBatchConcurrency
-    : 1;
+const validatorCliTimeoutMs = 60_000;
+const validatorBatchCliTimeoutMs = 180_000;
 
 type OperationOutcomeIssue = {
   readonly code?: string;
@@ -165,6 +163,28 @@ const withRequestTimeout = (url: string, init?: RequestInit) =>
     ...init,
     signal: AbortSignal.timeout(validatorServerRequestTimeoutMs),
   });
+
+const runValidatorCommandEffect = ({
+  args,
+  command,
+  timeoutMs,
+}: {
+  args: readonly string[];
+  command: string;
+  timeoutMs: number;
+}) =>
+  Effect.tryPromise(() => runCommand({ args, command })).pipe(
+    Effect.timeoutFail({
+      duration: `${timeoutMs} millis`,
+      onTimeout: () =>
+        new FhirOracleRuntimeError({
+          message: `FHIR validator CLI timed out after ${timeoutMs}ms.`,
+        }),
+    }),
+  );
+
+const stripAnsiColorCodes = (value: string) =>
+  value.replace(ansiColorCodePattern, "");
 
 const logDebug = (message: string) => {
   if (!debugTimingsEnabled) {
@@ -427,6 +447,62 @@ const writeOfflineLanguageSupportResourcesEffect = Effect.fn(
 export const toBatchValidationSourcePathKey = (sourcePath: string) =>
   sourcePath.normalize("NFC");
 
+const coerceExecOutput = (value: unknown) => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Buffer.isBuffer(value)) {
+    return value.toString("utf8");
+  }
+  return "";
+};
+
+const parseBatchValidationSections = (stdout: string) => {
+  const cleanedOutput = stripAnsiColorCodes(stdout);
+  const summaries: {
+    errorCount: number;
+    noteCount: number;
+    passed: boolean;
+    rawSection: string;
+    sourcePath: string;
+    summaryLine: string;
+    warningCount: number;
+  }[] = [];
+
+  for (const section of cleanedOutput.split(/^-- /mu).slice(1)) {
+    const [headerLine = "", ...bodyLines] = section.split("\n");
+    const sourcePath = toBatchValidationSourcePathKey(
+      headerLine.replace(/\s-+$/u, "").trim(),
+    );
+    const body = bodyLines.join("\n");
+    const summaryLine = body
+      .split("\n")
+      .map((line) => line.trim())
+      .find(
+        (line) => line.startsWith("Success:") || line.startsWith("*FAILURE*:"),
+      );
+
+    if (!sourcePath || !summaryLine) {
+      continue;
+    }
+
+    const countsMatch = /(\d+) errors?, (\d+) warnings?, (\d+) notes?/u.exec(
+      summaryLine,
+    );
+    summaries.push({
+      errorCount: Number.parseInt(countsMatch?.[1] ?? "0", 10),
+      noteCount: Number.parseInt(countsMatch?.[3] ?? "0", 10),
+      passed: summaryLine.startsWith("Success:"),
+      rawSection: body.trim(),
+      sourcePath,
+      summaryLine,
+      warningCount: Number.parseInt(countsMatch?.[2] ?? "0", 10),
+    });
+  }
+
+  return summaries;
+};
+
 const alignBatchValidationSummarySourcePaths = ({
   summaries,
   xmlPaths,
@@ -457,7 +533,7 @@ const alignBatchValidationSummarySourcePaths = ({
 };
 
 const getFhirRuntimeKey = (
-  mode: "exec" | "exec-batch",
+  mode: "exec" | "exec-batch" | "exec-server",
   family: "eAU" | "eRezept" | "eVDGA",
 ) =>
   [
@@ -668,7 +744,10 @@ const ensureValidatorServerEffect = Effect.fn("oracles.ensureValidatorServer")(
     const existingPromise = validatorServerCache.get(cacheKey);
 
     if (existingPromise) {
-      const existing = yield* Effect.tryPromise(() => existingPromise);
+      const existing = yield* Effect.tryPromise({
+        catch: toFhirOracleRuntimeError,
+        try: () => existingPromise,
+      });
       const canReuse =
         existing.child.exitCode === null &&
         !existing.child.killed &&
@@ -693,7 +772,10 @@ const ensureValidatorServerEffect = Effect.fn("oracles.ensureValidatorServer")(
     );
     validatorServerCache.set(cacheKey, pending);
 
-    return yield* Effect.tryPromise(() => pending).pipe(
+    return yield* Effect.tryPromise({
+      catch: toFhirOracleRuntimeError,
+      try: () => pending,
+    }).pipe(
       Effect.tapError(() =>
         Effect.sync(() => validatorServerCache.delete(cacheKey)),
       ),
@@ -848,8 +930,8 @@ export const runFhirOracle = ({
   };
 };
 
-export const runExecutableFhirOracleEffect = Effect.fn(
-  "oracles.runExecutableFhirOracle",
+const runExecutableFhirOracleCliEffect = Effect.fn(
+  "oracles.runExecutableFhirOracleCli",
 )(function* ({
   cacheDir,
   family,
@@ -857,35 +939,106 @@ export const runExecutableFhirOracleEffect = Effect.fn(
 }: {
   cacheDir?: string;
   family: "eAU" | "eRezept" | "eVDGA";
-  xml?: string;
+  xml: string;
 }) {
-  if (!xml || xml.trim().length === 0) {
-    return runFhirOracle({ family, xml });
-  }
-
   const effectiveCacheDir = cacheDir ?? process.env.KBV_UPDATE_CACHE_DIR;
   const resolvedCacheDir =
     effectiveCacheDir ?? path.join(process.cwd(), ".cache", "kbv-oracles");
-  const runtimeKey = getFhirRuntimeKey("exec", family);
+  const runtimeKey = getFhirRuntimeKey("exec-server", family);
+  const program = Effect.scoped(
+    Effect.gen(function* () {
+      const userHomeOverride = yield* ensureFhirValidatorRuntimeHome({
+        cacheDir: resolvedCacheDir,
+        runtimeKey,
+      });
+      const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "kbv-fhir-oracle-",
+      });
+      const xmlPath = path.join(tempDir, `${family}.xml`);
+      const supportDir = path.join(tempDir, "support");
 
-  return yield* Effect.gen(function* () {
-    const offlineLanguageCodes = extractOfflineLanguageCodes(xml);
-    const server = yield* ensureValidatorServerEffect({
-      cacheDir: resolvedCacheDir,
-      family,
-      languageCodes: offlineLanguageCodes,
-      runtimeKey,
-    });
+      const assetsStart = Date.now();
+      logDebug(`starting ensureFhirValidatorAssets(${family})`);
+      const assets = yield* ensureFhirValidatorAssets({
+        family,
+        ...(cacheDir ? { cacheDir } : {}),
+      });
+      logTiming(`ensureFhirValidatorAssets(${family})`, assetsStart);
 
-    return yield* validateXmlWithServerEffect({
-      family,
-      server,
-      xml,
-    });
-  }).pipe(
+      const dependencyStart = Date.now();
+      logDebug(`starting ensureFhirValidatorDependencyCache(${family})`);
+      yield* ensureFhirValidatorDependencyCache({
+        ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
+      });
+      logTiming(
+        `ensureFhirValidatorDependencyCache(${family})`,
+        dependencyStart,
+      );
+
+      const writeStart = Date.now();
+      logDebug(`starting writeInputXml(${family})`);
+      yield* fileSystem.makeDirectory(userHomeOverride, { recursive: true });
+      yield* fileSystem.writeFileString(xmlPath, xml);
+      const offlineLanguageCodes = extractOfflineLanguageCodes(xml);
+      yield* writeOfflineLanguageSupportResourcesEffect({
+        codes: offlineLanguageCodes,
+        supportDir,
+      });
+      logTiming(`writeInputXml(${family})`, writeStart);
+
+      const mountedIgPaths =
+        offlineLanguageCodes.length > 0
+          ? [supportDir, ...assets.igPaths]
+          : assets.igPaths;
+      const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
+      const execStart = Date.now();
+      logDebug(`starting validatorCli(${family})`);
+      const javaCommand = yield* resolveJavaCommand();
+      const { exitCode, stderr, stdout } = yield* runValidatorCommandEffect({
+        args: [
+          `-Duser.home=${userHomeOverride}`,
+          "-jar",
+          assets.validatorJar,
+          "-version",
+          "4.0.1",
+          xmlPath,
+          ...igArgs,
+          "-tx",
+          "n/a",
+        ],
+        command: javaCommand,
+        timeoutMs: validatorCliTimeoutMs,
+      });
+      logTiming(`validatorCli(${family})`, execStart);
+
+      const combined = `${stdout}\n${stderr}`;
+      const findings = parseFhirValidatorFindings(combined);
+      const passed =
+        exitCode === 0 &&
+        findings.every((finding) => finding.severity !== "error");
+
+      return {
+        family,
+        findings,
+        passed,
+        summary: passed
+          ? `${family} executable validator completed without error findings.`
+          : `${family} executable validator reported errors.`,
+      } satisfies OracleExecutionResult;
+    }),
+  );
+
+  return yield* program.pipe(
     Effect.catchAll((error) => {
       const errorOutput =
-        error instanceof Error ? error.message : String(error);
+        typeof error === "object" &&
+        error !== null &&
+        "stdout" in error &&
+        "stderr" in error
+          ? `${coerceExecOutput(error.stdout)}\n${coerceExecOutput(error.stderr)}`
+          : error instanceof Error
+            ? error.message
+            : String(error);
       const findings = parseFhirValidatorFindings(errorOutput);
       return Effect.succeed({
         family,
@@ -906,12 +1059,80 @@ export const runExecutableFhirOracleEffect = Effect.fn(
   );
 });
 
+export const runExecutableFhirOracleWithServerEffect = Effect.fn(
+  "oracles.runExecutableFhirOracleWithServer",
+)(function* ({
+  cacheDir,
+  family,
+  xml,
+}: {
+  cacheDir?: string;
+  family: "eAU" | "eRezept" | "eVDGA";
+  xml?: string;
+}) {
+  if (!xml || xml.trim().length === 0) {
+    return runFhirOracle({ family, xml });
+  }
+
+  const effectiveCacheDir = cacheDir ?? process.env.KBV_UPDATE_CACHE_DIR;
+  const resolvedCacheDir =
+    effectiveCacheDir ?? path.join(process.cwd(), ".cache", "kbv-oracles");
+  const runtimeKey = getFhirRuntimeKey("exec-server", family);
+
+  const serverProgram = Effect.gen(function* () {
+    const offlineLanguageCodes = extractOfflineLanguageCodes(xml);
+    const server = yield* ensureValidatorServerEffect({
+      cacheDir: resolvedCacheDir,
+      family,
+      languageCodes: offlineLanguageCodes,
+      runtimeKey,
+    });
+
+    return yield* validateXmlWithServerEffect({
+      family,
+      server,
+      xml,
+    });
+  });
+
+  return yield* serverProgram;
+});
+
+export const runExecutableFhirOracleEffect = Effect.fn(
+  "oracles.runExecutableFhirOracle",
+)(function* ({
+  cacheDir,
+  family,
+  xml,
+}: {
+  cacheDir?: string;
+  family: "eAU" | "eRezept" | "eVDGA";
+  xml?: string;
+}) {
+  if (!xml || xml.trim().length === 0) {
+    return runFhirOracle({ family, xml });
+  }
+
+  return yield* runExecutableFhirOracleCliEffect({
+    cacheDir,
+    family,
+    xml,
+  });
+});
+
 export const runExecutableFhirOracle = (args: {
   cacheDir?: string;
   family: "eAU" | "eRezept" | "eVDGA";
   xml?: string;
 }): Promise<OracleExecutionResult> =>
   Effect.runPromise(runExecutableFhirOracleEffect(args));
+
+export const runExecutableFhirOracleWithServer = (args: {
+  cacheDir?: string;
+  family: "eAU" | "eRezept" | "eVDGA";
+  xml?: string;
+}): Promise<OracleExecutionResult> =>
+  Effect.runPromise(runExecutableFhirOracleWithServerEffect(args));
 
 export const runExecutableFhirValidationBatchEffect = Effect.fn(
   "oracles.runExecutableFhirValidationBatch",
@@ -937,77 +1158,104 @@ export const runExecutableFhirValidationBatchEffect = Effect.fn(
   const resolvedCacheDir =
     effectiveCacheDir ?? path.join(process.cwd(), ".cache", "kbv-oracles");
   const runtimeKey = getFhirRuntimeKey("exec-batch", family);
-  return yield* Effect.gen(function* () {
-    const xmlEntries = yield* Effect.forEach(xmlPaths, (xmlPath) =>
-      Effect.gen(function* () {
-        const xml = yield* fileSystem.readFileString(xmlPath);
-        return {
-          languageCodes: extractOfflineLanguageCodes(xml),
-          xml,
-          xmlPath,
-        };
-      }),
-    );
-    const offlineLanguageCodes = [
-      ...new Set(xmlEntries.flatMap((entry) => entry.languageCodes)),
-    ].sort();
-    const server = yield* ensureValidatorServerEffect({
-      cacheDir: resolvedCacheDir,
-      family,
-      languageCodes: offlineLanguageCodes,
-      runtimeKey,
-    });
-    const summaries = yield* Effect.forEach(
-      xmlEntries,
-      ({ xml, xmlPath }) =>
-        Effect.gen(function* () {
-          const result = yield* validateXmlWithServerEffect({
-            family,
-            server,
-            xml,
-          });
-          const errorCount = result.findings.filter(
-            (finding) => finding.severity === "error",
-          ).length;
-          const warningCount = result.findings.filter(
-            (finding) => finding.severity === "warning",
-          ).length;
-          const noteCount = result.findings.filter(
-            (finding) => finding.severity === "info",
-          ).length;
+  const program = Effect.scoped(
+    Effect.gen(function* () {
+      const userHomeOverride = yield* ensureFhirValidatorRuntimeHome({
+        cacheDir: resolvedCacheDir,
+        runtimeKey,
+      });
+      const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "kbv-fhir-batch-oracle-",
+      });
+      const supportDir = path.join(tempDir, "support");
 
-          return {
-            errorCount,
-            noteCount,
-            passed: result.passed,
-            rawSection:
-              result.findings.length === 0
-                ? formatFindingsSummary(result.findings)
-                : [
-                    formatFindingsSummary(result.findings),
-                    ...result.findings.map(
-                      (finding) =>
-                        `${finding.severity.toUpperCase()}: ${finding.code}: ${finding.message}`,
-                    ),
-                  ].join("\n"),
-            sourcePath: toBatchValidationSourcePathKey(xmlPath),
-            summaryLine: formatFindingsSummary(result.findings),
-            warningCount,
-          };
-        }),
-      { concurrency: effectiveValidatorBatchConcurrency },
-    );
+      const assets = yield* ensureFhirValidatorAssets({
+        family,
+        ...(cacheDir ? { cacheDir } : {}),
+      });
+      yield* ensureFhirValidatorDependencyCache({
+        ...(effectiveCacheDir ? { cacheDir: effectiveCacheDir } : {}),
+      });
 
-    return {
-      passed: summaries.every((summary) => summary.passed),
-      stderr: "",
-      stdout: "",
-      summaries: alignBatchValidationSummarySourcePaths({
-        summaries,
+      const xmlDocuments = yield* Effect.forEach(xmlPaths, (xmlPath) =>
+        fileSystem.readFileString(xmlPath),
+      );
+      const offlineLanguageCodes = [
+        ...new Set(
+          xmlDocuments.flatMap((xml) => extractOfflineLanguageCodes(xml)),
+        ),
+      ].sort();
+
+      yield* fileSystem.makeDirectory(userHomeOverride, { recursive: true });
+      yield* writeOfflineLanguageSupportResourcesEffect({
+        codes: offlineLanguageCodes,
+        supportDir,
+      });
+
+      const mountedIgPaths =
+        offlineLanguageCodes.length > 0
+          ? [supportDir, ...assets.igPaths]
+          : assets.igPaths;
+      const igArgs = mountedIgPaths.flatMap((igPath) => ["-ig", igPath]);
+
+      const javaCommand = yield* resolveJavaCommand();
+      const { exitCode, stderr, stdout } = yield* runValidatorCommandEffect({
+        args: [
+          `-Duser.home=${userHomeOverride}`,
+          "-jar",
+          assets.validatorJar,
+          "-version",
+          "4.0.1",
+          ...xmlPaths,
+          ...igArgs,
+          "-tx",
+          "n/a",
+        ],
+        command: javaCommand,
+        timeoutMs: validatorBatchCliTimeoutMs,
+      });
+
+      const summaries = alignBatchValidationSummarySourcePaths({
+        summaries: parseBatchValidationSections(stdout),
         xmlPaths,
-      }),
-    } satisfies ExecutableFhirBatchValidationResult;
-  });
+      });
+
+      return {
+        passed:
+          exitCode === 0 &&
+          summaries.length === xmlPaths.length &&
+          summaries.every((summary) => summary.passed),
+        stderr,
+        stdout,
+        summaries,
+      } satisfies ExecutableFhirBatchValidationResult;
+    }),
+  );
+
+  return yield* program.pipe(
+    Effect.catchAll((error) => {
+      const stdout =
+        typeof error === "object" && error !== null && "stdout" in error
+          ? coerceExecOutput(error.stdout)
+          : "";
+      const stderr =
+        typeof error === "object" && error !== null && "stderr" in error
+          ? coerceExecOutput(error.stderr)
+          : error instanceof Error
+            ? error.message
+            : String(error);
+
+      return Effect.succeed<ExecutableFhirBatchValidationResult>({
+        passed: false,
+        stderr,
+        stdout,
+        summaries: alignBatchValidationSummarySourcePaths({
+          summaries: parseBatchValidationSections(stdout),
+          xmlPaths,
+        }),
+      });
+    }),
+  );
 });
 
 export const runExecutableFhirValidationBatch = (args: {

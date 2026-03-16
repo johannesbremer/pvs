@@ -9,7 +9,7 @@ const emptyDashboardState = () => ({
   lanes: {},
   recentEvents: [],
   startedAt: new Date().toISOString(),
-  suite: "overnight eRezept oracle",
+  suite: "property eRezept oracle",
   summary: {
     activeSearches: 0,
     checksCompleted: 0,
@@ -431,7 +431,7 @@ const renderDashboardPage = () => `<!doctype html>
           <div class="lane-header">
             <div>
               <h2>Search Dynamics</h2>
-              <div class="meta">Only the long-running overnight fast-check lanes</div>
+              <div class="meta">Only the long-running property-search lanes</div>
             </div>
             <div class="meta">\${formatDuration(totalElapsedMs)}</div>
           </div>

@@ -96,6 +96,7 @@ const FhirDependencyMarkerFields = Schema.Struct({
 
 const FhirRuntimeHomeMarkerFields = Schema.Struct({
   createdAt: Schema.String,
+  dependencyMarkerWrittenAt: Schema.optional(Schema.String),
   runtimeKey: Schema.String,
   sharedPackageCacheRoot: Schema.String,
 });
@@ -914,6 +915,35 @@ const writeFhirDependencyMarker = Effect.fn(
   yield* fileSystem.writeFileString(markerPath, markerJson);
 });
 
+const readFhirDependencyMarker = Effect.fn("oracles.readFhirDependencyMarker")(
+  function* (cacheDir: string) {
+    const markerPath = getFhirDependencyMarkerPath(cacheDir);
+    const exists = yield* fileExists(markerPath);
+    if (!exists) {
+      return undefined;
+    }
+
+    return yield* Effect.flatMap(
+      fileSystem.readFileString(markerPath),
+      Schema.decodeUnknown(Schema.parseJson(FhirDependencyMarkerFields)),
+    ).pipe(Effect.option);
+  },
+);
+
+const readFhirRuntimeHomeMarker = Effect.fn(
+  "oracles.readFhirRuntimeHomeMarker",
+)(function* (markerPath: string) {
+  const exists = yield* fileExists(markerPath);
+  if (!exists) {
+    return undefined;
+  }
+
+  return yield* Effect.flatMap(
+    fileSystem.readFileString(markerPath),
+    Schema.decodeUnknown(Schema.parseJson(FhirRuntimeHomeMarkerFields)),
+  ).pipe(Effect.option);
+});
+
 const downloadExternalFhirPackage = Effect.fn(
   "oracles.downloadExternalFhirPackage",
 )(function* ({
@@ -1131,7 +1161,17 @@ export const ensureFhirValidatorRuntimeHome = Effect.fn(
       );
       const markerPath = path.join(runtimeHomeRoot, ".kbv-runtime-ready");
 
-      if (yield* fileExists(markerPath)) {
+      const dependencyMarker =
+        yield* readFhirDependencyMarker(resolvedCacheDir);
+      const runtimeMarker = yield* readFhirRuntimeHomeMarker(markerPath);
+      const runtimeCacheIsFresh =
+        runtimeMarker?._tag === "Some" &&
+        dependencyMarker?._tag === "Some" &&
+        runtimeMarker.value.sharedPackageCacheRoot === sharedPackageCacheRoot &&
+        runtimeMarker.value.dependencyMarkerWrittenAt ===
+          dependencyMarker.value.writtenAt;
+
+      if (runtimeCacheIsFresh) {
         return runtimeHomeRoot;
       }
 
@@ -1147,6 +1187,10 @@ export const ensureFhirValidatorRuntimeHome = Effect.fn(
       });
       const markerJson = yield* encodeJsonString(FhirRuntimeHomeMarkerFields, {
         createdAt: new Date().toISOString(),
+        dependencyMarkerWrittenAt:
+          dependencyMarker?._tag === "Some"
+            ? dependencyMarker.value.writtenAt
+            : undefined,
         runtimeKey,
         sharedPackageCacheRoot,
       });

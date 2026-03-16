@@ -1,53 +1,31 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import fc from "fast-check";
 
-import type { OracleExecutionResult } from "../../tools/oracles/types";
-
 import {
-  runExecutableFhirOracleEffect,
+  runExecutableFhirOracleWithServerEffect,
   runFhirOracle,
 } from "../../tools/oracles/fhir/run";
 import { encodeJsonStringSync } from "../../tools/oracles/json-schema";
-import { OracleFindingFields } from "../../tools/oracles/types";
+import {
+  assertExpectedComparisonEffect,
+  type DifferentialLanePayload,
+} from "../erezept-differential-shared";
 import { resolveOracleTestCache } from "../oracle-test-cache";
 import { ORACLE_PROPERTY_NUM_RUNS, ORACLE_TEST_TIMEOUT } from "../timeouts";
-import { runTrackedCatalogEffect, trackedAsyncProperty } from "./dashboard";
+import { trackedAsyncProperty } from "./dashboard";
 import {
   emittedMismatchMutations,
   emittedParityMutations,
-  type ErpDifferentialMutation,
-  type ErpEmitterCase,
-  ErpEmitterCaseFields,
   erpFreetextCaseArbitrary,
   erpPznCaseArbitrary,
   loadOfficialErpExampleXmlEffect,
   officialMismatchMutations,
   officialParityMutations,
-  persistErpOracleReplayCaseEffect,
   renderGeneratedErpXmlEffect,
 } from "./erezept-oracle-helpers";
 
-const representativePznCase: ErpEmitterCase = {
-  authoredOn: "2026-03-10T09:05:00.000Z",
-  dosageText: "1-0-1",
-  medicationDisplay: "Diclofenac Test",
-  orderKind: "pzn",
-  patientFamily: "Keller",
-  patientGiven: "Lina",
-  pzn: "99999993",
-};
-
-const representativeFreetextCase: ErpEmitterCase = {
-  authoredOn: "2026-03-10T09:05:00.000Z",
-  dosageText: "1 Tablette morgens",
-  medicationDisplay: "Rezeptur Salbe 2%",
-  orderKind: "freetext",
-  patientFamily: "Meyer",
-  patientGiven: "Eva",
-};
-
-const overnightDifferentialSuite = "overnight eRezept differential oracle";
+const propertyDifferentialSuite = "property eRezept differential oracle";
 const differentialSearchStopCondition =
   "Run until canceled, timeout, or the first mismatch between the local and executable oracle classifications.";
 
@@ -71,30 +49,7 @@ const DifferentialExampleFields = Schema.Struct({
   sourceKind: DifferentialSourceKind,
 });
 
-const DifferentialReplayPayloadFields = Schema.Struct({
-  expectedComparison: DifferentialExpectedComparison,
-  input: Schema.optional(ErpEmitterCaseFields),
-  mutationId: Schema.String,
-  sourceKind: DifferentialSourceKind,
-});
-
-const DifferentialExecSummaryFields = Schema.Struct({
-  firstFindings: Schema.Array(OracleFindingFields),
-  passed: Schema.Boolean,
-});
-
-const describeDifferentialExample = (
-  testCase:
-    | {
-        input: ErpEmitterCase;
-        mutation: ErpDifferentialMutation;
-        sourceKind: "emitted";
-      }
-    | {
-        mutation: ErpDifferentialMutation;
-        sourceKind: "official";
-      },
-) =>
+const describeDifferentialExample = (testCase: DifferentialLanePayload) =>
   encodeJsonStringSync(DifferentialExampleFields)({
     expectedComparison: testCase.mutation.expectedComparison,
     input:
@@ -111,16 +66,7 @@ const describeDifferentialExample = (
   });
 
 const summarizeDifferentialTags = (
-  testCase:
-    | {
-        input: ErpEmitterCase;
-        mutation: ErpDifferentialMutation;
-        sourceKind: "emitted";
-      }
-    | {
-        mutation: ErpDifferentialMutation;
-        sourceKind: "official";
-      },
+  testCase: DifferentialLanePayload,
 ): readonly string[] =>
   [
     `source:${testCase.sourceKind}`,
@@ -129,91 +75,7 @@ const summarizeDifferentialTags = (
     ...("input" in testCase ? [`orderKind:${testCase.input.orderKind}`] : []),
   ] as const;
 
-describe("overnight eRezept differential oracle", () => {
-  it.effect(
-    "keeps the declared official ERP differential mutation catalog classified as expected",
-    () =>
-      Effect.gen(function* () {
-        const { cacheDir } = yield* resolveOracleTestCache({
-          assetIds: [
-            "fhirValidatorService_2_2_0",
-            "kbvErpExamples_1_4",
-            "kbvFhirErp_1_4_1",
-          ],
-          needsFhirDependencies: true,
-          tempPrefix: "kbv-overnight-erp-diff-official-catalog-",
-        });
-
-        const baseXml = yield* loadOfficialErpExampleXmlEffect(cacheDir);
-        yield* runTrackedCatalogEffect({
-          id: "differential-official-catalog",
-          items: [...officialParityMutations, ...officialMismatchMutations],
-          run: (mutation) =>
-            assertDifferentialClassificationEffect({
-              baseXml,
-              cacheDir,
-              lanePayload: {
-                mutation,
-                sourceKind: "official" as const,
-              },
-              scenario: "official-catalog-case",
-            }),
-          suite: overnightDifferentialSuite,
-          title: "Official mutation catalog",
-        });
-      }),
-    ORACLE_TEST_TIMEOUT,
-  );
-
-  it.effect(
-    "keeps the declared emitted ERP differential mutation catalog classified as expected for representative PZN and freetext bundles",
-    () =>
-      Effect.gen(function* () {
-        const { cacheDir } = yield* resolveOracleTestCache({
-          assetIds: [
-            "fhirValidatorService_2_2_0",
-            "kbvErpExamples_1_4",
-            "kbvFhirErp_1_4_1",
-          ],
-          needsFhirDependencies: true,
-          tempPrefix: "kbv-overnight-erp-diff-emitted-catalog-",
-        });
-
-        const emittedCases = [
-          representativePznCase,
-          representativeFreetextCase,
-        ] as const;
-        const mutations = [
-          ...emittedParityMutations,
-          ...emittedMismatchMutations,
-        ] as const;
-
-        yield* runTrackedCatalogEffect({
-          id: "differential-emitted-catalog",
-          items: emittedCases.flatMap((input) =>
-            mutations.map((mutation) => ({ input, mutation })),
-          ),
-          run: ({ input, mutation }) =>
-            Effect.gen(function* () {
-              const baseXml = (yield* renderGeneratedErpXmlEffect(input)).xml;
-              yield* assertDifferentialClassificationEffect({
-                baseXml,
-                cacheDir,
-                lanePayload: {
-                  input,
-                  mutation,
-                  sourceKind: "emitted" as const,
-                },
-                scenario: "emitted-catalog-case",
-              });
-            }),
-          suite: overnightDifferentialSuite,
-          title: "Emitted mutation catalog",
-        });
-      }),
-    ORACLE_TEST_TIMEOUT,
-  );
-
+describe("property eRezept differential oracle", () => {
   it.effect(
     "keeps local and executable ERP rejection in sync for shared structural failures",
     () =>
@@ -225,7 +87,7 @@ describe("overnight eRezept differential oracle", () => {
             "kbvFhirErp_1_4_1",
           ],
           needsFhirDependencies: true,
-          tempPrefix: "kbv-overnight-erp-diff-parity-",
+          tempPrefix: "kbv-property-erp-diff-parity-",
         });
 
         const trackedProperty = yield* trackedAsyncProperty({
@@ -254,11 +116,12 @@ describe("overnight eRezept differential oracle", () => {
                 family: "eRezept",
                 xml: mutatedXml,
               });
-              const executableResult = yield* runExecutableFhirOracleEffect({
-                cacheDir,
-                family: "eRezept",
-                xml: mutatedXml,
-              });
+              const executableResult =
+                yield* runExecutableFhirOracleWithServerEffect({
+                  cacheDir,
+                  family: "eRezept",
+                  xml: mutatedXml,
+                });
 
               yield* assertExpectedComparisonEffect({
                 executableResult,
@@ -269,7 +132,7 @@ describe("overnight eRezept differential oracle", () => {
               });
             }),
           stopCondition: differentialSearchStopCondition,
-          suite: overnightDifferentialSuite,
+          suite: propertyDifferentialSuite,
           summarizeTags: summarizeDifferentialTags,
           title: "Parity property",
         });
@@ -300,7 +163,7 @@ describe("overnight eRezept differential oracle", () => {
             "kbvFhirErp_1_4_1",
           ],
           needsFhirDependencies: true,
-          tempPrefix: "kbv-overnight-erp-diff-mismatch-",
+          tempPrefix: "kbv-property-erp-diff-mismatch-",
         });
 
         const trackedProperty = yield* trackedAsyncProperty({
@@ -329,11 +192,12 @@ describe("overnight eRezept differential oracle", () => {
                 family: "eRezept",
                 xml: mutatedXml,
               });
-              const executableResult = yield* runExecutableFhirOracleEffect({
-                cacheDir,
-                family: "eRezept",
-                xml: mutatedXml,
-              });
+              const executableResult =
+                yield* runExecutableFhirOracleWithServerEffect({
+                  cacheDir,
+                  family: "eRezept",
+                  xml: mutatedXml,
+                });
 
               yield* assertExpectedComparisonEffect({
                 executableResult,
@@ -344,7 +208,7 @@ describe("overnight eRezept differential oracle", () => {
               });
             }),
           stopCondition: differentialSearchStopCondition,
-          suite: overnightDifferentialSuite,
+          suite: propertyDifferentialSuite,
           summarizeTags: summarizeDifferentialTags,
           title: "Mismatch property",
         });
@@ -364,107 +228,3 @@ describe("overnight eRezept differential oracle", () => {
     ORACLE_TEST_TIMEOUT,
   );
 });
-
-const assertDifferentialClassificationEffect = ({
-  baseXml,
-  cacheDir,
-  lanePayload,
-  scenario,
-}: {
-  baseXml: string;
-  cacheDir: string;
-  lanePayload:
-    | {
-        input: ErpEmitterCase;
-        mutation: ErpDifferentialMutation;
-        sourceKind: "emitted";
-      }
-    | {
-        mutation: ErpDifferentialMutation;
-        sourceKind: "official";
-      };
-  scenario: string;
-}) =>
-  Effect.gen(function* () {
-    const mutatedXml = lanePayload.mutation.mutate(baseXml);
-    const localResult = runFhirOracle({
-      family: "eRezept",
-      xml: mutatedXml,
-    });
-    const executableResult = yield* runExecutableFhirOracleEffect({
-      cacheDir,
-      family: "eRezept",
-      xml: mutatedXml,
-    });
-
-    yield* assertExpectedComparisonEffect({
-      executableResult,
-      lanePayload,
-      localResult,
-      mutation: lanePayload.mutation,
-      scenario,
-    });
-  });
-
-const assertExpectedComparisonEffect = ({
-  executableResult,
-  lanePayload,
-  localResult,
-  mutation,
-  scenario,
-}: {
-  executableResult: OracleExecutionResult;
-  lanePayload:
-    | {
-        input: ErpEmitterCase;
-        mutation: ErpDifferentialMutation;
-        sourceKind: "emitted";
-      }
-    | {
-        mutation: ErpDifferentialMutation;
-        sourceKind: "official";
-      };
-  localResult: ReturnType<typeof runFhirOracle>;
-  mutation: ErpDifferentialMutation;
-  scenario: string;
-}) =>
-  Effect.gen(function* () {
-    const matchesExpectation =
-      mutation.expectedComparison === "same-reject"
-        ? !localResult.passed && !executableResult.passed
-        : localResult.passed && !executableResult.passed;
-
-    if (matchesExpectation) {
-      return;
-    }
-
-    const replayPath = yield* persistErpOracleReplayCaseEffect({
-      lane: "differential",
-      payload: {
-        expectedComparison: mutation.expectedComparison,
-        input: "input" in lanePayload ? lanePayload.input : undefined,
-        mutationId: mutation.id,
-        sourceKind: lanePayload.sourceKind,
-      },
-      payloadSchema: DifferentialReplayPayloadFields,
-      scenario,
-    });
-
-    throw new Error(
-      [
-        `ERP differential mutation changed classification from ${mutation.expectedComparison}.`,
-        `replay=${replayPath}`,
-        `testCase=${encodeJsonStringSync(DifferentialReplayPayloadFields)({
-          expectedComparison: mutation.expectedComparison,
-          input: "input" in lanePayload ? lanePayload.input : undefined,
-          mutationId: mutation.id,
-          sourceKind: lanePayload.sourceKind,
-        })}`,
-        `localPassed=${String(localResult.passed)}`,
-        `execSummary=${encodeJsonStringSync(DifferentialExecSummaryFields)({
-          firstFindings: executableResult.findings.slice(0, 5),
-          passed: executableResult.passed,
-        })}`,
-      ].join("\n"),
-    );
-  });

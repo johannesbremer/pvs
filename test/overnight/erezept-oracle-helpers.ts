@@ -22,6 +22,14 @@ const erpSeedContextSchema = Schema.Struct({
   practitionerId: GenericId.GenericId("practitioners"),
 });
 
+type RenderedErpBundle = {
+  readonly bundleEntryCount: number;
+  readonly payload: unknown;
+  readonly xml: string;
+};
+
+const renderedErpBundleCache = new Map<string, Promise<RenderedErpBundle>>();
+
 export type ErpDifferentialMutation = {
   readonly expectedComparison: "exec-reject-local-pass" | "same-reject";
   readonly id: string;
@@ -47,6 +55,9 @@ export const ErpEmitterCaseFields = Schema.Struct({
   patientGiven: Schema.String,
   pzn: Schema.optional(Schema.String),
 });
+
+const getRenderedErpBundleCacheKey = (input: ErpEmitterCase) =>
+  encodeJsonStringSync(ErpEmitterCaseFields)(input);
 
 type ErpSeedContext = typeof erpSeedContextSchema.Type;
 
@@ -129,129 +140,156 @@ export const loadOfficialErpExampleXmlEffect = (cacheDir: string) =>
     );
   });
 
-export const renderGeneratedErpXmlEffect = (input: ErpEmitterCase) =>
-  provideTestConfect(
-    Effect.gen(function* () {
-      const test = yield* TestConfect;
-      const patient = yield* test.mutation(refs.public.patients.createManual, {
-        patient: {
-          addresses: [],
-          capturedAt: input.authoredOn,
-          names: [
-            {
-              family: input.patientFamily,
-              given: [input.patientGiven],
-              prefixes: [],
+export const renderGeneratedErpXmlEffect = (input: ErpEmitterCase) => {
+  const cacheKey = getRenderedErpBundleCacheKey(input);
+  const cached = renderedErpBundleCache.get(cacheKey);
+  if (cached) {
+    return Effect.promise(() => cached);
+  }
+
+  const pending = Effect.runPromise(
+    provideTestConfect(
+      Effect.gen(function* () {
+        const test = yield* TestConfect;
+        const patient = yield* test.mutation(
+          refs.public.patients.createManual,
+          {
+            patient: {
+              addresses: [],
+              capturedAt: input.authoredOn,
+              names: [
+                {
+                  family: input.patientFamily,
+                  given: [input.patientGiven],
+                  prefixes: [],
+                },
+              ],
+              preferredLanguages: [],
+              telecom: [],
             },
-          ],
-          preferredLanguages: [],
-          telecom: [],
-        },
-      });
+          },
+        );
 
-      const { coverageId, organizationId, practitionerId } = yield* test.run(
-        seedErpContextEffect(patient.patientId, input.authoredOn),
-        erpSeedContextSchema,
-      );
+        const { coverageId, organizationId, practitionerId } = yield* test.run(
+          seedErpContextEffect(patient.patientId, input.authoredOn),
+          erpSeedContextSchema,
+        );
 
-      let medicationCatalogRefId: Id<"medicationCatalogRefs"> | undefined;
-      if (input.orderKind === "pzn") {
-        const pkg = yield* test.mutation(
-          refs.public.coding.registerMasterDataPackage,
+        let medicationCatalogRefId: Id<"medicationCatalogRefs"> | undefined;
+        if (input.orderKind === "pzn") {
+          const pkg = yield* test.mutation(
+            refs.public.coding.registerMasterDataPackage,
+            {
+              artifact: {
+                byteSize: 1,
+                contentType: "application/zip",
+                sha256: `emit-amdb-${input.pzn}`,
+                storageId: seedStorageId,
+              },
+              family: "AMDB",
+              importedAt: input.authoredOn,
+              sourcePath: `fixtures/amdb/${input.pzn}`,
+              status: "active",
+              version: "2026.1",
+            },
+          );
+
+          yield* test.mutation(
+            refs.public.catalog.importMedicationCatalogRefs,
+            {
+              entries: [
+                {
+                  displayName: input.medicationDisplay,
+                  pzn: input.pzn!,
+                  regionalArvFlags: [],
+                },
+              ],
+              sourcePackageId: pkg.packageId,
+            },
+          );
+
+          const lookup = yield* test.query(
+            refs.public.catalog.lookupMedicationByPzn,
+            {
+              pzn: input.pzn!,
+            },
+          );
+          if (!lookup.found) {
+            throw new Error(`expected medication for PZN ${input.pzn}`);
+          }
+          medicationCatalogRefId = lookup.entry._id;
+        }
+
+        const order = yield* test.mutation(
+          refs.public.prescriptions.createOrder,
+          {
+            authoredOn: input.authoredOn,
+            coverageId,
+            ...(input.dosageText ? { dosageText: input.dosageText } : {}),
+            ...(input.orderKind === "freetext"
+              ? { freeTextMedication: input.medicationDisplay }
+              : {}),
+            ...(medicationCatalogRefId ? { medicationCatalogRefId } : {}),
+            orderKind: input.orderKind,
+            organizationId,
+            patientId: patient.patientId,
+            practitionerId,
+            prescriptionContext: "regular",
+            prescriptionMode: "electronic",
+            status: "draft",
+          },
+        );
+
+        const finalized = yield* test.mutation(
+          refs.public.prescriptions.finalizeOrder,
           {
             artifact: {
-              byteSize: 1,
-              contentType: "application/zip",
-              sha256: `emit-amdb-${input.pzn}`,
-              storageId: seedStorageId,
+              attachment: {
+                byteSize: 128,
+                contentType: "application/fhir+xml",
+                sha256: `erp-payload-${input.patientFamily}-${input.medicationDisplay}`,
+                storageId: seedStorageId,
+              },
             },
-            family: "AMDB",
-            importedAt: input.authoredOn,
-            sourcePath: `fixtures/amdb/${input.pzn}`,
-            status: "active",
-            version: "2026.1",
+            finalizedAt: input.authoredOn,
+            medicationOrderId: order.medicationOrderId,
           },
         );
-
-        yield* test.mutation(refs.public.catalog.importMedicationCatalogRefs, {
-          entries: [
-            {
-              displayName: input.medicationDisplay,
-              pzn: input.pzn!,
-              regionalArvFlags: [],
-            },
-          ],
-          sourcePackageId: pkg.packageId,
-        });
-
-        const lookup = yield* test.query(
-          refs.public.catalog.lookupMedicationByPzn,
-          {
-            pzn: input.pzn!,
-          },
-        );
-        if (!lookup.found) {
-          throw new Error(`expected medication for PZN ${input.pzn}`);
+        if (finalized.outcome !== "finalized") {
+          throw new Error(
+            `expected finalized outcome, got ${finalized.outcome}`,
+          );
         }
-        medicationCatalogRefId = lookup.entry._id;
-      }
 
-      const order = yield* test.mutation(
-        refs.public.prescriptions.createOrder,
-        {
-          authoredOn: input.authoredOn,
-          coverageId,
-          ...(input.dosageText ? { dosageText: input.dosageText } : {}),
-          ...(input.orderKind === "freetext"
-            ? { freeTextMedication: input.medicationDisplay }
-            : {}),
-          ...(medicationCatalogRefId ? { medicationCatalogRefId } : {}),
-          orderKind: input.orderKind,
-          organizationId,
-          patientId: patient.patientId,
-          practitionerId,
-          prescriptionContext: "regular",
-          prescriptionMode: "electronic",
-          status: "draft",
-        },
-      );
-
-      const finalized = yield* test.mutation(
-        refs.public.prescriptions.finalizeOrder,
-        {
-          artifact: {
-            attachment: {
-              byteSize: 128,
-              contentType: "application/fhir+xml",
-              sha256: `erp-payload-${input.patientFamily}-${input.medicationDisplay}`,
-              storageId: seedStorageId,
-            },
+        const rendered = yield* test.query(
+          refs.public.prescriptions.renderErpBundle,
+          {
+            medicationOrderId: order.medicationOrderId,
           },
-          finalizedAt: input.authoredOn,
-          medicationOrderId: order.medicationOrderId,
-        },
-      );
-      if (finalized.outcome !== "finalized") {
-        throw new Error(`expected finalized outcome, got ${finalized.outcome}`);
-      }
+        );
+        if (!rendered.found) {
+          throw new Error("expected rendered ERP bundle");
+        }
 
-      const rendered = yield* test.query(
-        refs.public.prescriptions.renderErpBundle,
-        {
-          medicationOrderId: order.medicationOrderId,
-        },
-      );
-      if (!rendered.found) {
-        throw new Error("expected rendered ERP bundle");
-      }
-
-      return {
-        bundleEntryCount: rendered.payload.bundle.entry.length,
-        payload: rendered.payload,
-        xml: rendered.xml.xml,
-      };
-    }),
+        return {
+          bundleEntryCount: rendered.payload.bundle.entry.length,
+          payload: rendered.payload,
+          xml: rendered.xml.xml,
+        } satisfies RenderedErpBundle;
+      }),
+    ),
   );
+
+  renderedErpBundleCache.set(cacheKey, pending);
+
+  return Effect.promise(() => pending).pipe(
+    Effect.tapError(() =>
+      Effect.sync(() => {
+        renderedErpBundleCache.delete(cacheKey);
+      }),
+    ),
+  );
+};
 
 export const loadEmittedErpExampleXmlEffect = (input: ErpEmitterCase) =>
   Effect.map(renderGeneratedErpXmlEffect(input), (rendered) => rendered.xml);

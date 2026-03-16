@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import fc from "fast-check";
 
-import { runExecutableFhirOracleEffect } from "../../tools/oracles/fhir/run";
+import { runExecutableFhirOracleWithServerEffect } from "../../tools/oracles/fhir/run";
 import { encodeJsonStringSync } from "../../tools/oracles/json-schema";
 import { OracleFindingFields } from "../../tools/oracles/types";
 import { resolveOracleTestCache } from "../oracle-test-cache";
@@ -17,8 +17,8 @@ import {
   renderGeneratedErpXmlEffect,
 } from "./erezept-oracle-helpers";
 
-const overnightEmitterSuite = "overnight eRezept emitter oracle";
-const overnightSearchStopCondition =
+const propertyEmitterSuite = "property eRezept emitter oracle";
+const propertySearchStopCondition =
   "Run until canceled, timeout, or the first emitted bundle that the executable validator rejects.";
 
 const EmitterExampleFields = Schema.Struct({
@@ -58,7 +58,7 @@ const summarizeEmitterTags = (input: ErpEmitterCase): readonly string[] =>
     ...(input.pzn ? [`pzn:${input.pzn}`] : []),
   ] as const;
 
-describe("overnight eRezept emitter oracle", () => {
+describe("property eRezept emitter oracle", () => {
   it.effect(
     "emits executable-valid ERP XML for generated PZN orders",
     () =>
@@ -70,7 +70,7 @@ describe("overnight eRezept emitter oracle", () => {
             "kbvFhirErp_1_4_1",
           ],
           needsFhirDependencies: true,
-          tempPrefix: "kbv-overnight-erp-emitter-pzn-",
+          tempPrefix: "kbv-property-erp-emitter-pzn-",
         });
 
         const trackedProperty = yield* trackedAsyncProperty({
@@ -81,11 +81,12 @@ describe("overnight eRezept emitter oracle", () => {
           run: (input) =>
             Effect.gen(function* () {
               const rendered = yield* renderGeneratedErpXmlEffect(input);
-              const executableResult = yield* runExecutableFhirOracleEffect({
-                cacheDir,
-                family: "eRezept",
-                xml: rendered.xml,
-              });
+              const executableResult =
+                yield* runExecutableFhirOracleWithServerEffect({
+                  cacheDir,
+                  family: "eRezept",
+                  xml: rendered.xml,
+                });
 
               if (!executableResult.passed) {
                 const replayPath = yield* persistErpOracleReplayCaseEffect({
@@ -137,8 +138,8 @@ describe("overnight eRezept emitter oracle", () => {
               expect(rendered.xml).toContain("<MedicationRequest");
               expect(rendered.bundleEntryCount).toBeGreaterThanOrEqual(7);
             }),
-          stopCondition: overnightSearchStopCondition,
-          suite: overnightEmitterSuite,
+          stopCondition: propertySearchStopCondition,
+          suite: propertyEmitterSuite,
           summarizeTags: summarizeEmitterTags,
           title: "PZN emitter property",
         });
@@ -169,7 +170,7 @@ describe("overnight eRezept emitter oracle", () => {
             "kbvFhirErp_1_4_1",
           ],
           needsFhirDependencies: true,
-          tempPrefix: "kbv-overnight-erp-emitter-freetext-",
+          tempPrefix: "kbv-property-erp-emitter-freetext-",
         });
 
         const trackedProperty = yield* trackedAsyncProperty({
@@ -180,11 +181,12 @@ describe("overnight eRezept emitter oracle", () => {
           run: (input) =>
             Effect.gen(function* () {
               const rendered = yield* renderGeneratedErpXmlEffect(input);
-              const executableResult = yield* runExecutableFhirOracleEffect({
-                cacheDir,
-                family: "eRezept",
-                xml: rendered.xml,
-              });
+              const executableResult =
+                yield* runExecutableFhirOracleWithServerEffect({
+                  cacheDir,
+                  family: "eRezept",
+                  xml: rendered.xml,
+                });
 
               if (!executableResult.passed) {
                 const replayPath = yield* persistErpOracleReplayCaseEffect({
@@ -236,8 +238,8 @@ describe("overnight eRezept emitter oracle", () => {
               expect(rendered.xml).toContain("<MedicationRequest");
               expect(rendered.bundleEntryCount).toBeGreaterThanOrEqual(7);
             }),
-          stopCondition: overnightSearchStopCondition,
-          suite: overnightEmitterSuite,
+          stopCondition: propertySearchStopCondition,
+          suite: propertyEmitterSuite,
           summarizeTags: summarizeEmitterTags,
           title: "Freetext emitter property",
         });
