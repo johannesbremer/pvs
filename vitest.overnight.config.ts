@@ -346,27 +346,26 @@ const renderDashboardPage = () => `<!doctype html>
         \`;
       };
 
-      const rateSeries = (history) =>
-        history.slice(1).map((point, index) => {
-          const previous = history[index];
-          const deltaChecks = point.checksCompleted - previous.checksCompleted;
-          const deltaMs = new Date(point.timestamp).getTime() - new Date(previous.timestamp).getTime();
-          return {
-            checksCompleted: deltaMs <= 0 ? 0 : (deltaChecks / deltaMs) * 60000,
-            timestamp: point.timestamp,
-          };
-        });
+      const rollingRateSeries = (history, windowMs = 30_000) => {
+        let windowStart = 0;
+        return history.map((point, index) => {
+          const pointTime = new Date(point.timestamp).getTime();
+          while (
+            windowStart < index
+            && pointTime - new Date(history[windowStart].timestamp).getTime() > windowMs
+          ) {
+            windowStart += 1;
+          }
 
-      const smoothSeries = (history, windowSize = 6) =>
-        history.map((point, index) => {
-          const slice = history.slice(Math.max(0, index - windowSize + 1), index + 1);
-          const average =
-            slice.reduce((sum, entry) => sum + entry.checksCompleted, 0) / Math.max(1, slice.length);
+          const startPoint = history[windowStart];
+          const deltaChecks = point.checksCompleted - startPoint.checksCompleted;
+          const deltaMs = pointTime - new Date(startPoint.timestamp).getTime();
           return {
-            checksCompleted: average,
+            checksCompleted: deltaMs <= 0 ? 0 : (deltaChecks / deltaMs) * 60_000,
             timestamp: point.timestamp,
           };
         });
+      };
 
       const activeLane = (lanes) =>
         lanes.find((lane) => lane.status === "running")
@@ -441,8 +440,8 @@ const renderDashboardPage = () => `<!doctype html>
           </div>
           <div style="margin-top:12px;" class="muted">Cumulative checks</div>
           \${renderChart(state.history ?? [], (point) => point.checksCompleted, "#60a5fa", "The run graph appears once checks begin.")}
-          <div style="margin-top:12px;" class="muted">Average rate</div>
-          \${renderChart(smoothSeries(rateSeries(state.history ?? [])), (point) => point.checksCompleted, "#f59e0b", "The rate graph appears after at least two samples.")}
+          <div style="margin-top:12px;" class="muted">Rolling rate (30s)</div>
+          \${renderChart(rollingRateSeries(state.history ?? []), (point) => point.checksCompleted, "#f59e0b", "The rolling rate graph appears after checks begin.")}
         \`;
 
         laneGrid.innerHTML = searchLanes.length

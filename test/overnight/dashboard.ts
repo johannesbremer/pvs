@@ -68,6 +68,12 @@ const dashboardStatePath = path.join(dashboardDirectory, "state.json");
 const MAX_EVENTS = 20;
 const MAX_EXAMPLES = 8;
 const MAX_TAGS = 12;
+const HISTORY_RETENTION = [
+  { maxAgeMs: 5 * 60_000, resolutionMs: 250 },
+  { maxAgeMs: 30 * 60_000, resolutionMs: 1_000 },
+  { maxAgeMs: 2 * 60 * 60_000, resolutionMs: 5_000 },
+  { maxAgeMs: Number.POSITIVE_INFINITY, resolutionMs: 30_000 },
+] as const;
 
 const createEmptyState = (): OvernightDashboardState => {
   const startedAt = new Date().toISOString();
@@ -127,7 +133,38 @@ const saveState = (state: OvernightDashboardState) => {
 const appendHistory = (
   history: readonly OvernightProgressPoint[],
   point: OvernightProgressPoint,
-): readonly OvernightProgressPoint[] => [...history, point];
+): readonly OvernightProgressPoint[] => {
+  const nextHistory = [...history, point];
+  if (nextHistory.length <= 2) {
+    return nextHistory;
+  }
+
+  const newestTime = new Date(nextHistory[nextHistory.length - 1].timestamp).getTime();
+  const buckets = new Set<string>();
+  const compacted: OvernightProgressPoint[] = [];
+
+  for (let index = nextHistory.length - 1; index >= 0; index -= 1) {
+    const entry = nextHistory[index];
+    if (index === 0 || index === nextHistory.length - 1) {
+      compacted.push(entry);
+      continue;
+    }
+
+    const entryTime = new Date(entry.timestamp).getTime();
+    const ageMs = Math.max(0, newestTime - entryTime);
+    const resolutionMs =
+      HISTORY_RETENTION.find((retention) => ageMs <= retention.maxAgeMs)
+        ?.resolutionMs ?? 30_000;
+    const bucket = Math.floor(entryTime / resolutionMs);
+    const key = `${resolutionMs}:${bucket}`;
+    if (!buckets.has(key)) {
+      buckets.add(key);
+      compacted.push(entry);
+    }
+  }
+
+  return compacted.reverse();
+};
 
 const pushEvent = (
   events: readonly OvernightDashboardEvent[],
