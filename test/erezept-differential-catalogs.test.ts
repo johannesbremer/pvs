@@ -3,8 +3,13 @@ import { Effect } from "effect";
 
 import type { ErpEmitterCase } from "./overnight/erezept-oracle-helpers";
 
-import { runExecutableFhirOracleEffect } from "../tools/oracles/fhir/run";
-import { assertDifferentialClassificationEffect } from "./erezept-differential-shared";
+import {
+  runExecutableFhirValidationBatchEffect,
+  runFhirOracle,
+  toBatchValidationSourcePathKey,
+} from "../tools/oracles/fhir/run";
+import { fileSystem, path } from "../tools/oracles/platform";
+import { assertExpectedComparisonEffect } from "./erezept-differential-shared";
 import { resolveOracleTestCache } from "./oracle-test-cache";
 import {
   emittedMismatchMutations,
@@ -35,6 +40,98 @@ const representativeFreetextCase: ErpEmitterCase = {
   patientGiven: "Eva",
 };
 
+const assertDifferentialCatalogBatchEffect = ({
+  cacheDir,
+  cases,
+  scenario,
+}: {
+  cacheDir: string;
+  cases: readonly {
+    baseXml: string;
+    lanePayload:
+      | {
+          input: ErpEmitterCase;
+          mutation: (typeof emittedMismatchMutations)[number];
+          sourceKind: "emitted";
+        }
+      | {
+          mutation: (typeof emittedParityMutations)[number];
+          sourceKind: "official";
+        };
+  }[];
+  scenario: string;
+}) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "kbv-erp-diff-catalog-",
+      });
+      const preparedCases = yield* Effect.forEach(cases, (testCase, index) =>
+        Effect.gen(function* () {
+          const mutatedXml = testCase.lanePayload.mutation.mutate(
+            testCase.baseXml,
+          );
+          const xmlPath = path.join(
+            tempDir,
+            `${String(index).padStart(2, "0")}-${testCase.lanePayload.mutation.id}.xml`,
+          );
+          yield* fileSystem.writeFileString(xmlPath, mutatedXml);
+
+          return {
+            lanePayload: testCase.lanePayload,
+            localResult: runFhirOracle({
+              family: "eRezept",
+              xml: mutatedXml,
+            }),
+            mutation: testCase.lanePayload.mutation,
+            xmlPath,
+          } as const;
+        }),
+      );
+
+      const result = yield* runExecutableFhirValidationBatchEffect({
+        cacheDir,
+        family: "eRezept",
+        xmlPaths: preparedCases.map((testCase) => testCase.xmlPath),
+      });
+      const summaries = new Map(
+        result.summaries.map((summary) => [
+          toBatchValidationSourcePathKey(summary.sourcePath),
+          summary,
+        ]),
+      );
+
+      for (const testCase of preparedCases) {
+        const summary = summaries.get(
+          toBatchValidationSourcePathKey(testCase.xmlPath),
+        );
+        if (!summary) {
+          throw new Error(
+            [
+              `Missing batch summary for ${testCase.mutation.id}.`,
+              `path=${testCase.xmlPath}`,
+              `stdout=${result.stdout}`,
+              `stderr=${result.stderr}`,
+            ].join("\n"),
+          );
+        }
+
+        yield* assertExpectedComparisonEffect({
+          executableResult: {
+            family: "eRezept",
+            findings: [],
+            passed: summary.passed,
+            summary: summary.summaryLine,
+          },
+          lanePayload: testCase.lanePayload,
+          localResult: testCase.localResult,
+          mutation: testCase.mutation,
+          scenario,
+        });
+      }
+    }),
+  );
+
 describe("eRezept differential mutation catalogs", () => {
   it.effect(
     "keeps the declared official ERP differential mutation catalog classified as expected",
@@ -51,21 +148,19 @@ describe("eRezept differential mutation catalogs", () => {
         });
 
         const baseXml = yield* loadOfficialErpExampleXmlEffect(cacheDir);
-        for (const mutation of [
-          ...officialParityMutations,
-          ...officialMismatchMutations,
-        ]) {
-          yield* assertDifferentialClassificationEffect({
-            baseXml,
-            cacheDir,
-            execute: runExecutableFhirOracleEffect,
-            lanePayload: {
-              mutation,
-              sourceKind: "official",
-            },
-            scenario: "official-catalog-case",
-          });
-        }
+        yield* assertDifferentialCatalogBatchEffect({
+          cacheDir,
+          cases: [...officialParityMutations, ...officialMismatchMutations].map(
+            (mutation) => ({
+              baseXml,
+              lanePayload: {
+                mutation,
+                sourceKind: "official" as const,
+              },
+            }),
+          ),
+          scenario: "official-catalog-case",
+        });
       }),
     ORACLE_TEST_TIMEOUT,
   );
@@ -93,22 +188,26 @@ describe("eRezept differential mutation catalogs", () => {
           ...emittedMismatchMutations,
         ] as const;
 
+        const cases = [];
         for (const input of emittedCases) {
           const baseXml = (yield* renderGeneratedErpXmlEffect(input)).xml;
           for (const mutation of mutations) {
-            yield* assertDifferentialClassificationEffect({
+            cases.push({
               baseXml,
-              cacheDir,
-              execute: runExecutableFhirOracleEffect,
               lanePayload: {
                 input,
                 mutation,
-                sourceKind: "emitted",
+                sourceKind: "emitted" as const,
               },
-              scenario: "emitted-catalog-case",
             });
           }
         }
+
+        yield* assertDifferentialCatalogBatchEffect({
+          cacheDir,
+          cases,
+          scenario: "emitted-catalog-case",
+        });
       }),
     ORACLE_TEST_TIMEOUT,
   );
