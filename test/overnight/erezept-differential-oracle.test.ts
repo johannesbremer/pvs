@@ -120,6 +120,7 @@ describe("property eRezept differential oracle", () => {
                 yield* runExecutableFhirOracleWithServerEffect({
                   cacheDir,
                   family: "eRezept",
+                  serverInstanceKey: "overnight-differential-parity",
                   xml: mutatedXml,
                 });
 
@@ -149,7 +150,7 @@ describe("property eRezept differential oracle", () => {
           ),
         );
       }),
-    ORACLE_TEST_TIMEOUT,
+    { concurrent: true, timeout: ORACLE_TEST_TIMEOUT },
   );
 
   it.effect(
@@ -196,6 +197,7 @@ describe("property eRezept differential oracle", () => {
                 yield* runExecutableFhirOracleWithServerEffect({
                   cacheDir,
                   family: "eRezept",
+                  serverInstanceKey: "overnight-differential-mismatch",
                   xml: mutatedXml,
                 });
 
@@ -225,6 +227,6 @@ describe("property eRezept differential oracle", () => {
           ),
         );
       }),
-    ORACLE_TEST_TIMEOUT,
+    { concurrent: true, timeout: ORACLE_TEST_TIMEOUT },
   );
 });

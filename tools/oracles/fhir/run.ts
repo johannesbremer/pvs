@@ -565,6 +565,9 @@ const getFhirRuntimeKey = (
     family,
   ].join("-");
 
+const normalizeServerInstanceKey = (value: string) =>
+  value.replaceAll(/[^\w.-]+/g, "-");
+
 const reserveValidatorServerPort = () =>
   Effect.async<number, FhirOracleRuntimeError>((resume) => {
     const server = createServer();
@@ -1148,10 +1151,12 @@ export const runExecutableFhirOracleWithServerEffect = Effect.fn(
 )(function* ({
   cacheDir,
   family,
+  serverInstanceKey,
   xml,
 }: {
   cacheDir?: string;
   family: "eAU" | "eRezept" | "eVDGA";
+  serverInstanceKey?: string;
   xml?: string;
 }) {
   if (!xml || xml.trim().length === 0) {
@@ -1161,7 +1166,14 @@ export const runExecutableFhirOracleWithServerEffect = Effect.fn(
   const effectiveCacheDir = cacheDir ?? process.env.KBV_UPDATE_CACHE_DIR;
   const resolvedCacheDir =
     effectiveCacheDir ?? path.join(process.cwd(), ".cache", "kbv-oracles");
-  const runtimeKey = getFhirRuntimeKey("exec-server", family);
+  const runtimeKey = [
+    getFhirRuntimeKey("exec-server", family),
+    serverInstanceKey
+      ? normalizeServerInstanceKey(serverInstanceKey)
+      : undefined,
+  ]
+    .filter((value) => value !== undefined)
+    .join("-");
   const cacheKey = `${resolvedCacheDir}:${runtimeKey}`;
 
   const serverProgram = Effect.gen(function* () {
@@ -1221,6 +1233,7 @@ export const runExecutableFhirOracle = (args: {
 export const runExecutableFhirOracleWithServer = (args: {
   cacheDir?: string;
   family: "eAU" | "eRezept" | "eVDGA";
+  serverInstanceKey?: string;
   xml?: string;
 }): Promise<OracleExecutionResult> =>
   Effect.runPromise(runExecutableFhirOracleWithServerEffect(args));

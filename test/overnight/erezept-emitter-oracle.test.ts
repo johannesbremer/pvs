@@ -85,6 +85,7 @@ describe("property eRezept emitter oracle", () => {
                 yield* runExecutableFhirOracleWithServerEffect({
                   cacheDir,
                   family: "eRezept",
+                  serverInstanceKey: "overnight-emitter-pzn",
                   xml: rendered.xml,
                 });
 
@@ -156,7 +157,7 @@ describe("property eRezept emitter oracle", () => {
           ),
         );
       }),
-    ORACLE_TEST_TIMEOUT,
+    { concurrent: true, timeout: ORACLE_TEST_TIMEOUT },
   );
 
   it.effect(
@@ -185,6 +186,7 @@ describe("property eRezept emitter oracle", () => {
                 yield* runExecutableFhirOracleWithServerEffect({
                   cacheDir,
                   family: "eRezept",
+                  serverInstanceKey: "overnight-emitter-freetext",
                   xml: rendered.xml,
                 });
 
@@ -256,6 +258,6 @@ describe("property eRezept emitter oracle", () => {
           ),
         );
       }),
-    ORACLE_TEST_TIMEOUT,
+    { concurrent: true, timeout: ORACLE_TEST_TIMEOUT },
   );
 });

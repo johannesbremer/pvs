@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { availableParallelism, cpus } from "node:os";
 import { defineConfig } from "vitest/config";
 
 import { overnightDashboardStatePath } from "./test/overnight/dashboard";
@@ -17,6 +18,11 @@ const emptyDashboardState = () => ({
     searchCount: 0,
   },
 });
+
+const overnightWorkerCount = Math.max(
+  1,
+  availableParallelism?.() ?? cpus().length,
+);
 
 const renderDashboardPage = () => `<!doctype html>
 <html lang="en">
@@ -576,10 +582,16 @@ const dashboardPlugin = () => {
 export default defineConfig({
   plugins: [dashboardPlugin()],
   test: {
-    fileParallelism: false,
+    fileParallelism: true,
+    maxConcurrency: overnightWorkerCount,
+    maxWorkers: "100%",
+    minWorkers: "100%",
     outputFile: {
       html: ".cache/vitest/overnight/index.html",
     },
     reporters: ["default", "html"],
+    sequence: {
+      concurrent: true,
+    },
   },
 });

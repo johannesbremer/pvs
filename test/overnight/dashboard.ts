@@ -1,6 +1,12 @@
 import { Effect } from "effect";
 import fc from "fast-check";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 
 type OvernightDashboardEvent = {
@@ -64,10 +70,13 @@ const dashboardDirectory = path.join(
 );
 
 const dashboardStatePath = path.join(dashboardDirectory, "state.json");
+const dashboardLockPath = path.join(dashboardDirectory, ".state.lock");
 
 const MAX_EVENTS = 20;
 const MAX_EXAMPLES = 8;
 const MAX_TAGS = 12;
+const LOCK_RETRY_MS = 20;
+const LOCK_STALE_MS = 30_000;
 const HISTORY_RETENTION = [
   { maxAgeMs: 5 * 60_000, resolutionMs: 250 },
   { maxAgeMs: 30 * 60_000, resolutionMs: 1_000 },
@@ -128,6 +137,52 @@ const loadState = (): OvernightDashboardState => {
 const saveState = (state: OvernightDashboardState) => {
   mkdirSync(dashboardDirectory, { recursive: true });
   writeFileSync(dashboardStatePath, JSON.stringify(state, null, 2));
+};
+
+const sleepSync = (ms: number) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
+
+const withDashboardLock = <A>(run: () => A): A => {
+  mkdirSync(dashboardDirectory, { recursive: true });
+  const startedAt = Date.now();
+
+  while (true) {
+    try {
+      mkdirSync(dashboardLockPath);
+      break;
+    } catch (error) {
+      const isLockContention =
+        error instanceof Error && "code" in error && error.code === "EEXIST";
+      if (!isLockContention) {
+        throw error;
+      }
+
+      try {
+        const ageMs = Date.now() - statSync(dashboardLockPath).mtimeMs;
+        if (ageMs > LOCK_STALE_MS) {
+          rmSync(dashboardLockPath, { force: true, recursive: true });
+          continue;
+        }
+      } catch {
+        continue;
+      }
+
+      if (Date.now() - startedAt > LOCK_STALE_MS * 2) {
+        throw new Error(
+          "Timed out while waiting for the overnight dashboard lock.",
+        );
+      }
+
+      sleepSync(LOCK_RETRY_MS);
+    }
+  }
+
+  try {
+    return run();
+  } finally {
+    rmSync(dashboardLockPath, { force: true, recursive: true });
+  }
 };
 
 const appendHistory = (
@@ -216,17 +271,21 @@ const addTagCounts = (
 const mutateState = (
   updater: (state: OvernightDashboardState) => OvernightDashboardState,
 ) => {
-  const nextState = updater(loadState());
-  saveState({
-    ...nextState,
-    generatedAt: new Date().toISOString(),
-    summary: summarize(nextState.lanes),
+  withDashboardLock(() => {
+    const nextState = updater(loadState());
+    saveState({
+      ...nextState,
+      generatedAt: new Date().toISOString(),
+      summary: summarize(nextState.lanes),
+    });
   });
 };
 
 export const resetOvernightDashboard = () =>
   Effect.sync(() => {
-    saveState(createEmptyState());
+    withDashboardLock(() => {
+      saveState(createEmptyState());
+    });
   });
 
 export const registerOvernightLane = ({
