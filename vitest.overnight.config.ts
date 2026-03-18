@@ -102,6 +102,7 @@ const renderDashboardPage = () => `<!doctype html>
 
       .toolbar,
       .metrics,
+      .suite-grid,
       .lane-grid,
       .overview {
         display: grid;
@@ -123,7 +124,12 @@ const renderDashboardPage = () => `<!doctype html>
       }
 
       .lane-grid {
-        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        grid-template-columns: 1fr;
+        margin-top: 18px;
+      }
+
+      .suite-grid {
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         margin-top: 18px;
       }
 
@@ -164,6 +170,18 @@ const renderDashboardPage = () => `<!doctype html>
       .status-passed { color: var(--ok); }
       .status-failed { color: var(--danger); }
       .status-idle { color: var(--muted); }
+
+      .kind {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 8px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
 
       .search-meta,
       .stats {
@@ -217,6 +235,25 @@ const renderDashboardPage = () => `<!doctype html>
         white-space: pre-wrap;
       }
 
+      .suite-section {
+        display: grid;
+        gap: 16px;
+      }
+
+      .suite-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: baseline;
+        margin-top: 4px;
+      }
+
+      .suite-lanes {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        gap: 16px;
+      }
+
       a {
         color: #93c5fd;
       }
@@ -249,6 +286,7 @@ const renderDashboardPage = () => `<!doctype html>
         <article class="card" id="focusCard"></article>
         <article class="card" id="overviewCard"></article>
       </section>
+      <section class="suite-grid" id="suiteGrid"></section>
       <section class="lane-grid" id="laneGrid"></section>
       <section style="margin-top: 18px;">
         <article class="card">
@@ -265,6 +303,7 @@ const renderDashboardPage = () => `<!doctype html>
       const metrics = document.getElementById("metrics");
       const focusCard = document.getElementById("focusCard");
       const overviewCard = document.getElementById("overviewCard");
+      const suiteGrid = document.getElementById("suiteGrid");
       const laneGrid = document.getElementById("laneGrid");
       const events = document.getElementById("events");
       const startedAt = document.getElementById("startedAt");
@@ -299,6 +338,7 @@ const renderDashboardPage = () => `<!doctype html>
           .replaceAll(">", "&gt;");
 
       const statusClass = (status) => \`status status-\${status}\`;
+      const kindLabel = (kind) => kind === "catalog" ? "Catalog" : "Search";
 
       const normalizeLane = (lane) => ({
         ...lane,
@@ -378,12 +418,49 @@ const renderDashboardPage = () => `<!doctype html>
         ?? lanes.find((lane) => lane.status === "failed")
         ?? lanes[0];
 
+      const groupBySuite = (lanes) =>
+        lanes.reduce((groups, lane) => {
+          const suite = lane.suite || "Uncategorized";
+          groups[suite] = [...(groups[suite] ?? []), lane];
+          return groups;
+        }, {});
+
+      const renderLaneCard = (lane) => \`
+        <article class="card">
+          <div class="lane-header">
+            <div>
+              <h3>\${lane.title}</h3>
+              <div class="meta">\${lane.suite}</div>
+            </div>
+            <div class="\${statusClass(lane.status)}">\${lane.status}</div>
+          </div>
+          <div style="margin-top:10px;"><span class="kind">\${kindLabel(lane.kind)}</span></div>
+          <div class="stats">
+            <div class="stat"><span class="muted">\${lane.kind === "search" ? "Current candidate" : "Current case"}</span><strong>\${integer.format(lane.currentIteration || lane.checksCompleted)}</strong></div>
+            <div class="stat"><span class="muted">Checks completed</span><strong>\${integer.format(lane.checksCompleted)}</strong></div>
+            <div class="stat"><span class="muted">Last update</span><strong>\${compactFormatter.format(new Date(lane.lastUpdatedAt))}</strong></div>
+            <div class="stat"><span class="muted">Rate</span><strong>\${lane.ratePerMinute.toFixed(2)}/min</strong></div>
+          </div>
+          <div style="margin-top:12px;" class="muted">Last result</div>
+          <p>\${lane.lastDetail ?? "Waiting for first result."}</p>
+          <div style="margin-top:12px;" class="muted">\${lane.kind === "search" ? "Current or last example" : "Last recorded example"}</div>
+          <pre class="code-block">\${escapeHtml(lane.currentExample ?? lane.lastExample ?? "No recorded example yet.")}</pre>
+          \${lane.lastError ? \`<div style="margin-top:12px;" class="muted">Failure</div><pre class="code-block">\${escapeHtml(lane.lastError)}</pre>\` : ""}
+        </article>
+      \`;
+
       const render = (state) => {
-        const searchLanes = Object.values(state.lanes)
+        const lanes = Object.values(state.lanes)
           .map(normalizeLane)
-          .filter((lane) => lane.kind === "search")
-          .sort((left, right) => left.id.localeCompare(right.id));
-        const active = activeLane(searchLanes);
+          .sort((left, right) =>
+            left.suite === right.suite
+              ? left.title.localeCompare(right.title)
+              : left.suite.localeCompare(right.suite),
+          );
+        const searchLanes = lanes.filter((lane) => lane.kind === "search");
+        const catalogLanes = lanes.filter((lane) => lane.kind === "catalog");
+        const active = activeLane(lanes);
+        const suiteGroups = groupBySuite(lanes);
         const totalElapsedMs = Math.max(
           0,
           new Date(state.generatedAt).getTime() - new Date(state.startedAt).getTime(),
@@ -396,8 +473,11 @@ const renderDashboardPage = () => `<!doctype html>
 
         metrics.innerHTML = [
           ["Checks completed", integer.format(state.summary.checksCompleted)],
+          ["Tracked lanes", integer.format(lanes.length)],
+          ["Search lanes", integer.format(searchLanes.length)],
+          ["Catalog lanes", integer.format(catalogLanes.length)],
           ["Failed searches", state.summary.failedSearches],
-          ["Checks / min", overallRate.toFixed(2)],
+          ["Search checks / min", overallRate.toFixed(2)],
           ["Current focus", active ? active.title : "Waiting"],
         ]
           .map(
@@ -414,29 +494,30 @@ const renderDashboardPage = () => `<!doctype html>
           ? \`
               <div class="lane-header">
                 <div>
-                  <h2>Current Search</h2>
+                  <h2>Current Focus</h2>
                   <div class="meta">\${active.title}</div>
                 </div>
                 <div class="\${statusClass(active.status)}">\${active.status}</div>
               </div>
+              <div style="margin-top:10px;"><span class="kind">\${kindLabel(active.kind)}</span></div>
               <div class="big-number">\${integer.format(active.currentIteration || active.checksCompleted)}</div>
-              <div class="meta">candidate currently under test</div>
+              <div class="meta">\${active.kind === "search" ? "candidate currently under test" : "test case currently under test"}</div>
               <div class="stats">
                 <div class="stat"><span class="muted">Checks completed</span><strong>\${integer.format(active.checksCompleted)}</strong></div>
-                <div class="stat"><span class="muted">Search lanes</span><strong>\${integer.format(state.summary.searchCount)}</strong></div>
+                <div class="stat"><span class="muted">Suite</span><strong>\${escapeHtml(active.suite)}</strong></div>
                 <div class="stat"><span class="muted">Rate</span><strong>\${active.ratePerMinute.toFixed(2)}/min</strong></div>
                 <div class="stat"><span class="muted">Updated</span><strong>\${compactFormatter.format(new Date(active.lastUpdatedAt))}</strong></div>
               </div>
-              <div style="margin-top:14px;" class="muted">Current example</div>
-              <pre class="code-block">\${escapeHtml(active.currentExample ?? active.lastExample ?? "Waiting for the first generated candidate.")}</pre>
+              <div style="margin-top:14px;" class="muted">\${active.kind === "search" ? "Current example" : "Last recorded example"}</div>
+              <pre class="code-block">\${escapeHtml(active.currentExample ?? active.lastExample ?? "Waiting for the first recorded example.")}</pre>
             \`
-          : '<div class="empty">No long-running search lane has started yet.</div>';
+          : '<div class="empty">No tracked lane has started yet.</div>';
 
         overviewCard.innerHTML = \`
           <div class="lane-header">
             <div>
               <h2>Search Dynamics</h2>
-              <div class="meta">Only the long-running property-search lanes</div>
+              <div class="meta">Long-running property lanes stay here; the full test list is grouped below by suite.</div>
             </div>
             <div class="meta">\${formatDuration(totalElapsedMs)}</div>
           </div>
@@ -450,44 +531,70 @@ const renderDashboardPage = () => `<!doctype html>
           \${renderChart(rollingRateSeries(state.history ?? []), (point) => point.checksCompleted, "#f59e0b", "The rolling rate graph appears after checks begin.")}
         \`;
 
-        laneGrid.innerHTML = searchLanes.length
-          ? searchLanes.map((lane) => \`
-              <article class="card">
-                <div class="lane-header">
-                  <div>
-                    <h3>\${lane.title}</h3>
-                    <div class="meta">\${lane.suite}</div>
+        suiteGrid.innerHTML = Object.entries(suiteGroups).length
+          ? Object.entries(suiteGroups)
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([suite, suiteLanes]) => {
+                const runningCount = suiteLanes.filter((lane) => lane.status === "running").length;
+                const failedCount = suiteLanes.filter((lane) => lane.status === "failed").length;
+                const suiteSearchCount = suiteLanes.filter((lane) => lane.kind === "search").length;
+                const suiteCatalogCount = suiteLanes.filter((lane) => lane.kind === "catalog").length;
+                return \`
+                  <article class="card">
+                    <div class="lane-header">
+                      <div>
+                        <h3>\${escapeHtml(suite)}</h3>
+                        <div class="meta">\${integer.format(suiteLanes.length)} tracked lane(s)</div>
+                      </div>
+                      <div class="meta">\${runningCount} running / \${failedCount} failed</div>
+                    </div>
+                    <div class="stats">
+                      <div class="stat"><span class="muted">Search lanes</span><strong>\${integer.format(suiteSearchCount)}</strong></div>
+                      <div class="stat"><span class="muted">Catalog lanes</span><strong>\${integer.format(suiteCatalogCount)}</strong></div>
+                    </div>
+                  </article>
+                \`;
+              })
+              .join("")
+          : '<article class="card empty">No suite-level data yet.</article>';
+
+        laneGrid.innerHTML = Object.entries(suiteGroups).length
+          ? Object.entries(suiteGroups)
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([suite, suiteLanes]) => \`
+                <section class="suite-section">
+                  <div class="suite-header">
+                    <div>
+                      <h2>\${escapeHtml(suite)}</h2>
+                      <div class="meta">Showing both long-running searches and finite catalog checks.</div>
+                    </div>
+                    <div class="meta">\${integer.format(suiteLanes.length)} lane(s)</div>
                   </div>
-                  <div class="\${statusClass(lane.status)}">\${lane.status}</div>
-                </div>
-                <div class="stats">
-                  <div class="stat"><span class="muted">Current candidate</span><strong>\${integer.format(lane.currentIteration || lane.checksCompleted)}</strong></div>
-                  <div class="stat"><span class="muted">Checks completed</span><strong>\${integer.format(lane.checksCompleted)}</strong></div>
-                  <div class="stat"><span class="muted">Last update</span><strong>\${compactFormatter.format(new Date(lane.lastUpdatedAt))}</strong></div>
-                  <div class="stat"><span class="muted">Rate</span><strong>\${lane.ratePerMinute.toFixed(2)}/min</strong></div>
-                </div>
-                <div style="margin-top:12px;" class="muted">Last result</div>
-                <p>\${lane.lastDetail ?? "Waiting for first candidate."}</p>
-                <div style="margin-top:12px;" class="muted">Current or last example</div>
-                <pre class="code-block">\${escapeHtml(lane.currentExample ?? lane.lastExample ?? "No generated example recorded yet.")}</pre>
-                \${lane.lastError ? \`<div style="margin-top:12px;" class="muted">Failure</div><pre class="code-block">\${escapeHtml(lane.lastError)}</pre>\` : ""}
-              </article>
-            \`).join("")
-          : '<article class="card empty">No long-running search lanes are active yet.</article>';
+                  <div class="suite-lanes">
+                    \${suiteLanes.map((lane) => renderLaneCard(lane)).join("")}
+                  </div>
+                </section>
+              \`)
+              .join("")
+          : '<article class="card empty">No tracked lanes are active yet.</article>';
 
         events.innerHTML = state.recentEvents.length
           ? [...state.recentEvents]
               .reverse()
-              .map((event) => \`
+              .map((event) => {
+                const lane = state.lanes[event.laneId];
+                return \`
                 <div class="event-row">
                   <div>
-                    <strong>\${event.laneId}</strong>
+                    <strong>\${escapeHtml(lane?.title ?? event.laneId)}</strong>
                     <span class="\${statusClass(event.status)}">\${event.status}</span>
+                    <div class="meta">\${escapeHtml(lane?.suite ?? event.laneId)}</div>
                     <div>\${escapeHtml(event.detail ?? "Activity recorded")}</div>
                   </div>
                   <div class="event-time">\${compactFormatter.format(new Date(event.timestamp))}</div>
                 </div>
-              \`)
+              \`;
+              })
               .join("")
           : '<div class="empty">No events yet.</div>';
       };

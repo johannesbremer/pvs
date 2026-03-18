@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect";
 
 import {
   runExecutableFhirOracleEffect,
+  runExecutableFhirOracleWithServerEffect,
   runExecutableFhirValidationBatchEffect,
   toBatchValidationSourcePathKey,
 } from "../tools/oracles/fhir/run";
@@ -112,4 +113,96 @@ describe("official eVDGA fixture sweeps", () => {
       }),
     ORACLE_TEST_TIMEOUT,
   );
+
+  it.effect(
+    "keeps validator_cli and the validator server aligned for official eVDGA inputs",
+    () =>
+      Effect.gen(function* () {
+        const positiveXml = yield* fileSystem
+          .readFileString(
+            path.join(evdgaExamplesDir, "EVDGA_Bundle_Beispiel.xml"),
+          )
+          .pipe(Effect.catchAll(() => Effect.void));
+        const negativeXml = yield* fileSystem
+          .readFileString(
+            path.join(
+              evdgaExamplesDir,
+              "EVDGA_Bundle_PKV_negativer_Testfall.xml",
+            ),
+          )
+          .pipe(Effect.catchAll(() => Effect.void));
+        if (!positiveXml || !negativeXml) {
+          return;
+        }
+
+        yield* assertCliAndServerParityEffect({
+          cacheDir,
+          label: "official positive eVDGA example",
+          serverInstanceKey: "evdga-positive",
+          xml: positiveXml,
+        });
+        yield* assertCliAndServerParityEffect({
+          cacheDir,
+          label: "official negative eVDGA example",
+          serverInstanceKey: "evdga-negative",
+          xml: negativeXml,
+        });
+      }),
+    ORACLE_TEST_TIMEOUT,
+  );
 });
+
+// Helpers
+
+const countSeverity = (
+  result: Schema.Schema.Type<typeof OracleExecutionResultFields>,
+  severity: "error" | "info" | "warning",
+) => result.findings.filter((finding) => finding.severity === severity).length;
+
+const assertCliAndServerParityEffect = ({
+  cacheDir,
+  label,
+  serverInstanceKey,
+  xml,
+}: {
+  cacheDir: string;
+  label: string;
+  serverInstanceKey: string;
+  xml: string;
+}) =>
+  Effect.gen(function* () {
+    const cliResult = yield* Schema.decodeUnknown(OracleExecutionResultFields)(
+      yield* runExecutableFhirOracleEffect({
+        cacheDir,
+        family: "eVDGA",
+        xml,
+      }),
+    );
+    const serverResult = yield* Schema.decodeUnknown(
+      OracleExecutionResultFields,
+    )(
+      yield* runExecutableFhirOracleWithServerEffect({
+        cacheDir,
+        family: "eVDGA",
+        serverInstanceKey,
+        xml,
+      }),
+    );
+
+    expect(
+      {
+        errorCount: countSeverity(serverResult, "error"),
+        family: serverResult.family,
+        passed: serverResult.passed,
+        summary: serverResult.summary,
+        warningCount: countSeverity(serverResult, "warning"),
+      },
+      `${label} should classify the same through validator_cli and the validator server.`,
+    ).toEqual({
+      errorCount: countSeverity(cliResult, "error"),
+      family: cliResult.family,
+      passed: cliResult.passed,
+      summary: cliResult.summary,
+      warningCount: countSeverity(cliResult, "warning"),
+    });
+  });
