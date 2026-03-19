@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@confect/cli": "^2.0.0",
+    "@confect/cli": "^3.0.0",
     "@confect/core": "latest",
     "@confect/server": "latest",
     "@effect/platform": "^0.95.0",
